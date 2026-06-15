@@ -1,12 +1,12 @@
 import { createBrowserRouter } from "react-router";
-import { Root } from "./components/Root";
-import { Login } from "./components/auth/Login";
-import { Register } from "./components/auth/Register";
-import { EditorDashboard } from "./components/editor/EditorDashboard";
-import { BoardApproval } from "./components/board/BoardApproval";
-import { MangakaStudio } from "./components/mangaka/MangakaStudio";
-import { AssistantPortal } from "./components/assistant/AssistantPortal";
-import { VotingRoom } from "./components/board/VotingRoom";
+import { Root } from "../components/layout/Root";
+import { Login } from "../pages/auth/Login";
+import { Register } from "../pages/auth/Register";
+import { EditorDashboard } from "../pages/editor/EditorDashboard";
+import { BoardApproval } from "../pages/board/BoardApproval";
+import { MangakaStudio } from "../pages/mangaka/MangakaStudio";
+import { AssistantPortal } from "../pages/assistant/AssistantPortal";
+import { VotingRoom } from "../pages/board/VotingRoom";
 
 export const router = createBrowserRouter([
   {

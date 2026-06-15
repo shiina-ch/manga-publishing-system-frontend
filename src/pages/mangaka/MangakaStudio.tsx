@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AppLayout } from "../shared/AppLayout";
+import { AppLayout } from "../../components/layout/AppLayout";
 import {
   Calendar, FileText, Users, Layers, Send, Plus, Check,
   ChevronRight, Clock, AlertTriangle, CheckCircle, Circle,

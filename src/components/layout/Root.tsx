@@ -1,5 +1,5 @@
 import { Outlet } from "react-router";
-import { DemoNav } from "./shared/DemoNav";
+import { DemoNav } from "./DemoNav";
 
 export function Root() {
   return (

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AppLayout } from "../shared/AppLayout";
+import { AppLayout } from "../../components/layout/AppLayout";
 import {
   Send, RefreshCw, ArrowUpRight, X, MessageSquare, BookOpen,
   Tag, Clock, Eye, MoreHorizontal, Sparkles, User, CheckCircle,

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { AppLayout } from "../shared/AppLayout";
+import { AppLayout } from "../../components/layout/AppLayout";
 import {
   Brush, Layers, Send, CheckCircle, AlertTriangle,
   Plus, Eraser, Pipette, ZoomIn, ZoomOut,

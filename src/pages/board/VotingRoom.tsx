@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { AppLayout } from "../shared/AppLayout";
+import { AppLayout } from "../../components/layout/AppLayout";
 import {
   CheckCircle, X, Users, ThumbsUp, ThumbsDown, Clock, Eye,
   ChevronLeft, ChevronRight, Package, Share2, Download,
