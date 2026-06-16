@@ -238,7 +238,7 @@ function PublishingCalendarView() {
             const isToday = day === today;
             return (
               <div key={day} style={{ minHeight: 80, padding: 8, borderRight: "1px solid var(--mf-border)", borderBottom: "1px solid var(--mf-border)", background: isToday ? "rgba(255,42,122,0.06)" : "transparent", position: "relative" }}>
-                <div style={{ fontSize: 12, fontWeight: isToday ? 900 : 600, color: isToday ? "var(--mf-magenta)" : "var(--mf-text-muted)", marginBottom: 5, width: 24, height: 24, borderRadius: "50%", background: isToday ? "var(--mf-magenta)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", color: isToday ? "#fff" : "var(--mf-text-muted)" }}>{day}</div>
+                <div style={{ fontSize: 12, fontWeight: isToday ? 900 : 600, color: isToday ? "var(--mf-magenta)" : "var(--mf-text-muted)", marginBottom: 5, width: 24, height: 24, borderRadius: "50%", background: isToday ? "var(--mf-magenta)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>{day}</div>
                 {events.map((ev, ei) => (
                   <div key={ei} style={{ padding: "2px 6px", background: `${ev.color}20`, border: `1px solid ${ev.color}40`, borderRadius: 4, fontSize: 9, color: ev.color, fontWeight: 700, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.title}</div>
                 ))}
