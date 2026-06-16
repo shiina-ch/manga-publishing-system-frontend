@@ -109,27 +109,10 @@ export function Login() {
 
           <p style={{ textAlign: "center", marginTop: 22, fontSize: 13, color: "var(--mf-text-muted)" }}>
             Don't have an account?{" "}
-            <button onClick={() => navigate("/register")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-cyan)", fontWeight: 700, fontSize: 13 }}>Create one →</button>
+            <button onClick={() => navigate("/register")} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-cyan)", fontWeight: 700, fontSize: 13 }}>Submit information →</button>
           </p>
 
-          {/* Demo role shortcuts */}
-          <div style={{ marginTop: 32, padding: 18, background: "var(--mf-bg-surface)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
-            <p style={{ fontSize: 10, color: "var(--mf-text-muted)", letterSpacing: "0.08em", marginBottom: 12 }}>DEMO — QUICK ACCESS BY ROLE</p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
-              {[
-                { label: "Editor", path: "/editor", color: "var(--mf-cyan)" },
-                { label: "Board Member", path: "/board", color: "var(--mf-orange)" },
-                { label: "Mangaka", path: "/mangaka", color: "var(--mf-magenta)" },
-                { label: "Assistant", path: "/assistant", color: "var(--mf-green)" },
-              ].map(r => (
-                <button key={r.label} onClick={() => navigate(r.path)}
-                  style={{ padding: "8px 10px", background: "transparent", border: `1px solid ${r.color}35`, borderRadius: 8, color: r.color, fontSize: 12, fontWeight: 700, cursor: "pointer", letterSpacing: "0.04em", transition: "all 0.15s" }}
-                  onMouseEnter={e => (e.currentTarget.style.background = `${r.color}12`)}
-                  onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                >{r.label}</button>
-              ))}
-            </div>
-          </div>
+
         </div>
       </div>
     </div>

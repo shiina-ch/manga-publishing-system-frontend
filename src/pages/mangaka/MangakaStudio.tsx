@@ -172,13 +172,6 @@ function ScriptDrafts() {
 }
 
 // --- Assistant Delegation Tab ---
-const pages = [
-  { id: 1, panels: [{ id: "1a", label: "Wide Shot — Skyline", assigned: null }, { id: "1b", label: "Close-up — Kaito Eye", assigned: "Aiko (Color)" }, { id: "1c", label: "Street Scene", assigned: null }] },
-  { id: 2, panels: [{ id: "2a", label: "Two-shot Dialogue", assigned: "Kenji (BG Art)" }, { id: "2b", label: "Reveal Shot", assigned: null }, { id: "2c", label: "Reaction Panel", assigned: null }] },
-  { id: 3, panels: [{ id: "3a", label: "Action Spread", assigned: null }, { id: "3b", label: "FX Panel", assigned: null }] },
-  { id: 4, panels: [{ id: "4a", label: "Background — Cyberpunk City", assigned: null }, { id: "4b", label: "Crowd Scene", assigned: null }, { id: "4c", label: "Interior Lab", assigned: "Kenji (BG Art)" }] },
-];
-
 const assistants = [
   { name: "Aiko Suzuki", skills: ["Coloring", "Screentone"], color: "var(--mf-magenta)" },
   { name: "Kenji Mori", skills: ["Background Art", "Props"], color: "var(--mf-cyan)" },
@@ -187,27 +180,102 @@ const assistants = [
 
 const taskTags = ["Coloring", "Background Art", "Screentone", "Effects", "Line Clean-up", "Props"];
 
+type DrawnPanel = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  assignedTo?: string;
+  tags: string[];
+};
+
 function DelegationPanel() {
-  const [selectedPanel, setSelectedPanel] = useState<{ pageId: number; panelId: string } | null>(null);
-  const [assignments, setAssignments] = useState<Record<string, { assistant: string; tags: string[] }>>({
-    "1b": { assistant: "Aiko Suzuki", tags: ["Coloring"] },
-    "2a": { assistant: "Kenji Mori", tags: ["Background Art"] },
-    "4c": { assistant: "Kenji Mori", tags: ["Background Art", "Props"] },
-  });
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [panels, setPanels] = useState<DrawnPanel[]>([]);
+  
+  // Drawing state
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [startPos, setStartPos] = useState({ x: 0, y: 0 });
+  const [currentBox, setCurrentBox] = useState<{ x: number, y: number, width: number, height: number } | null>(null);
+  
+  // Assignment state
+  const [selectedPanelId, setSelectedPanelId] = useState<string | null>(null);
   const [pendingAssistant, setPendingAssistant] = useState("");
   const [pendingTags, setPendingTags] = useState<string[]>([]);
 
-  const openAssign = (pageId: number, panelId: string) => {
-    setSelectedPanel({ pageId, panelId });
-    const existing = assignments[panelId];
-    setPendingAssistant(existing?.assistant || "");
-    setPendingTags(existing?.tags || []);
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setUploadedImage(url);
+      setPanels([]); // Reset panels on new image upload
+      setSelectedPanelId(null);
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (selectedPanelId) {
+       setSelectedPanelId(null);
+    }
+    
+    // To prevent drawing when clicking on existing boxes, check if e.target is the container
+    if ((e.target as HTMLElement).id === "image-draw-container" || (e.target as HTMLElement).tagName === "IMG") {
+        const rect = e.currentTarget.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        setIsDrawing(true);
+        setStartPos({ x, y });
+        setCurrentBox({ x, y, width: 0, height: 0 });
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDrawing) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const currentX = e.clientX - rect.left;
+    const currentY = e.clientY - rect.top;
+    
+    setCurrentBox({
+      x: Math.min(startPos.x, currentX),
+      y: Math.min(startPos.y, currentY),
+      width: Math.abs(currentX - startPos.x),
+      height: Math.abs(currentY - startPos.y),
+    });
+  };
+
+  const handleMouseUp = () => {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+    if (currentBox && currentBox.width > 20 && currentBox.height > 20) {
+      const newPanel = {
+        id: Math.random().toString(36).substr(2, 9),
+        ...currentBox,
+        tags: []
+      };
+      setPanels([...panels, newPanel]);
+      openAssign(newPanel.id, newPanel);
+    }
+    setCurrentBox(null);
+  };
+
+  const openAssign = (panelId: string, precomputedPanel?: DrawnPanel) => {
+    setSelectedPanelId(panelId);
+    const panel = precomputedPanel || panels.find(p => p.id === panelId);
+    if (panel) {
+      setPendingAssistant(panel.assignedTo || "");
+      setPendingTags(panel.tags || []);
+    }
   };
 
   const saveAssignment = () => {
-    if (!selectedPanel || !pendingAssistant) return;
-    setAssignments(prev => ({ ...prev, [selectedPanel.panelId]: { assistant: pendingAssistant, tags: pendingTags } }));
-    setSelectedPanel(null);
+    if (!selectedPanelId || !pendingAssistant) return;
+    setPanels(panels.map(p => 
+      p.id === selectedPanelId 
+        ? { ...p, assignedTo: pendingAssistant, tags: pendingTags }
+        : p
+    ));
+    setSelectedPanelId(null);
   };
 
   const toggleTag = (tag: string) => {
@@ -216,83 +284,214 @@ function DelegationPanel() {
 
   return (
     <div style={{ padding: "24px 28px", height: "100%", display: "flex", gap: 22, overflow: "hidden" }}>
-      {/* Pages grid */}
-      <div style={{ flex: 1, overflowY: "auto" }}>
-        <div style={{ marginBottom: 20 }}>
-          <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em" }}>Assistant Delegation</h2>
-          <p style={{ fontSize: 13, color: "var(--mf-text-muted)", marginTop: 3 }}>Select a panel to assign an assistant</p>
+      {/* Main Area */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em" }}>Assistant Delegation</h2>
+            <p style={{ fontSize: 13, color: "var(--mf-text-muted)", marginTop: 3 }}>
+              {uploadedImage ? "Drag to draw panels on the page, then assign to assistants" : "Upload a raw page to begin"}
+            </p>
+          </div>
+          <div>
+            <input 
+              type="file" 
+              accept="image/*" 
+              id="upload-page" 
+              style={{ display: "none" }} 
+              onChange={handleImageUpload} 
+            />
+            <label 
+              htmlFor="upload-page"
+              style={{
+                padding: "9px 18px",
+                background: "var(--mf-bg-elevated)",
+                border: "1px solid var(--mf-border-bright)",
+                borderRadius: 10,
+                color: "var(--mf-text)",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                transition: "all 0.2s"
+              }}
+            >
+              <Upload size={14} /> {uploadedImage ? "Replace Page" : "Upload Page"}
+            </label>
+          </div>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 16 }}>
-          {pages.map(page => (
-            <div key={page.id} style={{ background: "var(--mf-bg-surface)", borderRadius: 14, border: "1px solid var(--mf-border)", overflow: "hidden" }}>
-              <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--mf-border)", display: "flex", alignItems: "center", gap: 8 }}>
-                <Image size={13} color="var(--mf-magenta)" />
-                <span style={{ fontSize: 12, fontWeight: 800, color: "var(--mf-text)" }}>Page {page.id}</span>
-                <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--mf-text-muted)" }}>{page.panels.filter(p => assignments[p.id]).length}/{page.panels.length} assigned</span>
-              </div>
-              {/* Page thumbnail mock */}
-              <div style={{ margin: 12, height: 120, background: "var(--mf-bg-deep)", borderRadius: 8, display: "grid", gridTemplateColumns: `repeat(${page.panels.length}, 1fr)`, gap: 4, padding: 8, border: "1px solid var(--mf-border)" }}>
-                {page.panels.map((panel, pi) => {
-                  const asgn = assignments[panel.id];
-                  return (
-                    <button
-                      key={panel.id}
-                      onClick={() => openAssign(page.id, panel.id)}
-                      style={{
-                        background: asgn
-                          ? (assistants.find(a => a.name === asgn.assistant)?.color + "20" || "var(--mf-magenta-dim)")
-                          : "var(--mf-bg-elevated)",
-                        border: `1px solid ${asgn ? (assistants.find(a => a.name === asgn.assistant)?.color || "var(--mf-magenta)") + "50" : "var(--mf-border)"}`,
-                        borderRadius: 6,
-                        cursor: "pointer",
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 4,
-                        padding: 4,
-                        transition: "all 0.15s",
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.borderColor = "var(--mf-cyan)")}
-                      onMouseLeave={e => (e.currentTarget.style.borderColor = asgn ? (assistants.find(a => a.name === asgn.assistant)?.color || "var(--mf-magenta)") + "50" : "var(--mf-border)")}
-                    >
-                      <span style={{ fontSize: 8, color: asgn ? "var(--mf-text-secondary)" : "var(--mf-text-muted)", textAlign: "center", lineHeight: 1.3 }}>P{pi + 1}</span>
-                      {asgn ? <Check size={10} color={assistants.find(a => a.name === asgn.assistant)?.color || "var(--mf-green)"} /> : <Plus size={10} color="var(--mf-text-muted)" />}
-                    </button>
-                  );
-                })}
-              </div>
-              <div style={{ padding: "0 12px 12px" }}>
-                {page.panels.map(panel => {
-                  const asgn = assignments[panel.id];
-                  const ast = assistants.find(a => a.name === asgn?.assistant);
-                  return (
-                    <div key={panel.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                      <div style={{ width: 4, height: 4, borderRadius: "50%", background: asgn ? (ast?.color || "var(--mf-text-muted)") : "var(--mf-text-muted)", flexShrink: 0 }} />
-                      <span style={{ flex: 1, fontSize: 11, color: "var(--mf-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{panel.label}</span>
-                      {asgn ? (
-                        <span style={{ fontSize: 10, color: ast?.color, fontWeight: 700, letterSpacing: "0.03em", flexShrink: 0 }}>{asgn.assistant.split(" ")[0]}</span>
+
+        {uploadedImage ? (
+          <div 
+            style={{ 
+              flex: 1, 
+              background: "var(--mf-bg-deep)", 
+              borderRadius: 14, 
+              border: "1px solid var(--mf-border)", 
+              overflow: "auto",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "flex-start",
+              padding: 20
+            }}
+          >
+            {/* The Drawing Container */}
+            <div 
+              id="image-draw-container"
+              style={{ 
+                position: "relative", 
+                cursor: "crosshair",
+                boxShadow: "0 10px 40px rgba(0,0,0,0.5)",
+                display: "inline-block" // Ensure it fits image exactly
+              }}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+            >
+              <img 
+                src={uploadedImage} 
+                alt="Page Layout" 
+                draggable="false"
+                style={{ 
+                  display: "block", 
+                  maxWidth: "100%", 
+                  height: "auto",
+                  userSelect: "none",
+                  pointerEvents: "none" // Let container handle events
+                }} 
+              />
+              
+              {/* Render drawn panels */}
+              {panels.map((panel, i) => {
+                const asgn = assistants.find(a => a.name === panel.assignedTo);
+                const isSelected = selectedPanelId === panel.id;
+                return (
+                  <div 
+                    key={panel.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openAssign(panel.id);
+                    }}
+                    style={{
+                      position: "absolute",
+                      left: panel.x,
+                      top: panel.y,
+                      width: panel.width,
+                      height: panel.height,
+                      border: `2px ${panel.assignedTo ? 'solid' : 'dashed'} ${isSelected ? '#fff' : (asgn?.color || 'var(--mf-magenta)')}`,
+                      background: asgn ? `${asgn.color}20` : "rgba(255, 42, 109, 0.1)",
+                      cursor: "pointer",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      transition: "all 0.2s",
+                      boxShadow: isSelected ? `0 0 15px ${asgn?.color || 'var(--mf-magenta)'}` : "none",
+                      zIndex: 10
+                    }}
+                  >
+                    <div style={{
+                      background: "rgba(0,0,0,0.6)",
+                      padding: "4px 8px",
+                      borderRadius: 6,
+                      backdropFilter: "blur(4px)",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 4
+                    }}>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: "white" }}>Panel {i + 1}</span>
+                      {panel.assignedTo ? (
+                        <span style={{ fontSize: 11, color: asgn?.color, fontWeight: 700 }}>
+                          <Check size={10} style={{ marginRight: 4, verticalAlign: "-2px" }} />
+                          {panel.assignedTo.split(' ')[0]}
+                        </span>
                       ) : (
-                        <button onClick={() => openAssign(page.id, panel.id)} style={{ fontSize: 10, color: "var(--mf-text-muted)", background: "none", border: "none", cursor: "pointer", padding: "2px 6px", borderRadius: 4 }}>Assign</button>
+                        <span style={{ fontSize: 9, color: "var(--mf-text-muted)" }}>Click to assign</span>
                       )}
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })}
+
+              {/* Render box currently being drawn */}
+              {isDrawing && currentBox && (
+                <div style={{
+                  position: "absolute",
+                  left: currentBox.x,
+                  top: currentBox.y,
+                  width: currentBox.width,
+                  height: currentBox.height,
+                  border: "2px dashed var(--mf-magenta)",
+                  background: "rgba(255, 42, 109, 0.2)",
+                  pointerEvents: "none",
+                  zIndex: 20
+                }} />
+              )}
             </div>
-          ))}
-        </div>
+          </div>
+        ) : (
+          <div style={{ 
+            flex: 1, 
+            background: "var(--mf-bg-surface)", 
+            borderRadius: 14, 
+            border: "1px dashed var(--mf-border-bright)", 
+            display: "flex", 
+            flexDirection: "column", 
+            alignItems: "center", 
+            justifyContent: "center",
+            gap: 16
+          }}>
+            <div style={{ width: 64, height: 64, borderRadius: 16, background: "var(--mf-bg-elevated)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Image size={28} color="var(--mf-text-muted)" />
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "var(--mf-text)", marginBottom: 4 }}>No Page Uploaded</div>
+              <div style={{ fontSize: 13, color: "var(--mf-text-muted)" }}>Upload a raw sketch or layout to start delegating</div>
+            </div>
+            <label 
+              htmlFor="upload-page-center"
+              style={{
+                padding: "10px 20px",
+                background: "var(--mf-magenta)",
+                borderRadius: 10,
+                color: "#fff",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginTop: 8,
+                boxShadow: "0 0 15px var(--mf-magenta-glow)"
+              }}
+            >
+              <Upload size={14} /> Upload Page
+            </label>
+            <input 
+              type="file" 
+              accept="image/*" 
+              id="upload-page-center" 
+              style={{ display: "none" }} 
+              onChange={handleImageUpload} 
+            />
+          </div>
+        )}
       </div>
 
       {/* Assignment drawer */}
-      {selectedPanel && (
+      {selectedPanelId && (
         <div style={{ width: 280, flexShrink: 0, background: "var(--mf-bg-surface)", borderRadius: 16, border: "1px solid var(--mf-border-bright)", padding: 20, display: "flex", flexDirection: "column", gap: 16, overflowY: "auto" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ fontSize: 14, fontWeight: 800, color: "var(--mf-text)" }}>Assign Panel</div>
-            <button onClick={() => setSelectedPanel(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)" }}><X size={14} /></button>
+            <button onClick={() => setSelectedPanelId(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)" }}><X size={14} /></button>
           </div>
+          
           <div style={{ padding: "10px 12px", background: "var(--mf-bg-elevated)", borderRadius: 9, fontSize: 12, color: "var(--mf-text-secondary)" }}>
-            Page {selectedPanel.pageId} — Panel {selectedPanel.panelId.slice(-1).toUpperCase()}
+            Panel #{panels.findIndex(p => p.id === selectedPanelId) + 1}
           </div>
 
           <div>
@@ -333,7 +532,7 @@ function DelegationPanel() {
           <button
             onClick={saveAssignment}
             disabled={!pendingAssistant}
-            style={{ padding: "11px", background: pendingAssistant ? "var(--mf-magenta)" : "var(--mf-bg-elevated)", border: "none", borderRadius: 10, color: pendingAssistant ? "#fff" : "var(--mf-text-muted)", fontSize: 13, fontWeight: 800, cursor: pendingAssistant ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, boxShadow: pendingAssistant ? "0 0 18px var(--mf-magenta-glow)" : "none" }}
+            style={{ padding: "11px", background: pendingAssistant ? "var(--mf-magenta)" : "var(--mf-bg-elevated)", border: "none", borderRadius: 10, color: pendingAssistant ? "#fff" : "var(--mf-text-muted)", fontSize: 13, fontWeight: 800, cursor: pendingAssistant ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 7, boxShadow: pendingAssistant ? "0 0 18px var(--mf-magenta-glow)" : "none", marginTop: "auto" }}
           >
             <Tag size={13} /> Assign Task
           </button>
