@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { BookOpen, Eye, EyeOff, Zap } from "lucide-react";
+import { toast } from "react-toastify";
+import { login } from "../../services/adminApi";
 
 function MangaArt() {
   return (
@@ -49,6 +51,7 @@ export function Login() {
   const navigate = useNavigate();
   const [showPw, setShowPw] = useState(false);
   const [form, setForm] = useState({ email: "", password: "", remember: false });
+  const [loading, setLoading] = useState(false);
 
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
@@ -70,7 +73,26 @@ export function Login() {
             <p style={{ color: "var(--mf-text-secondary)", fontSize: 14 }}>Sign in to continue creating manga.</p>
           </div>
 
-          <form onSubmit={e => { e.preventDefault(); navigate("/editor"); }}>
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+
+            // Validate trống
+            if (!form.email.trim() || !form.password.trim()) {
+              toast.warning("Vui lòng nhập email và password", { toastId: "empty-fields" });
+              return;
+            }
+
+            setLoading(true);
+            try {
+              const data = await login({ email: form.email, password: form.password });
+              toast.success("Chào mừng bạn đến với hệ thống 🎉");
+              navigate("/board/voting");
+            } catch {
+              toast.error("Email hoặc mật khẩu không hợp lệ. Vui lòng kiểm tra lại!");
+            } finally {
+              setLoading(false);
+            }
+          }}>
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: "block", fontSize: 11, fontWeight: 800, color: "var(--mf-text-secondary)", marginBottom: 7, letterSpacing: "0.06em" }}>EMAIL ADDRESS</label>
               <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="you@mangaflow.io"
@@ -99,11 +121,11 @@ export function Login() {
               </label>
               <button type="button" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-cyan)", fontSize: 13, fontWeight: 700 }}>Forgot password?</button>
             </div>
-            <button type="submit" style={{ width: "100%", padding: "13px", background: "var(--mf-magenta)", border: "none", borderRadius: 10, color: "#fff", fontSize: 14, fontWeight: 900, cursor: "pointer", letterSpacing: "0.04em", boxShadow: "0 0 24px var(--mf-magenta-glow)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
-              onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 0 40px var(--mf-magenta-glow)")}
+            <button type="submit" disabled={loading} style={{ width: "100%", padding: "13px", background: loading ? "var(--mf-border-bright)" : "var(--mf-magenta)", border: "none", borderRadius: 10, color: "#fff", fontSize: 14, fontWeight: 900, cursor: loading ? "not-allowed" : "pointer", letterSpacing: "0.04em", boxShadow: "0 0 24px var(--mf-magenta-glow)", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+              onMouseEnter={e => !loading && (e.currentTarget.style.boxShadow = "0 0 40px var(--mf-magenta-glow)")}
               onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 0 24px var(--mf-magenta-glow)")}
             >
-              <Zap size={15} /> LOGIN TO WORKSPACE
+              <Zap size={15} /> {loading ? "ĐANG ĐĂNG NHẬP..." : "LOGIN TO WORKSPACE"}
             </button>
           </form>
 
