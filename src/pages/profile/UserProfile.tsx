@@ -1,6 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
-import { ArrowLeft, User, Phone, Mail, Camera, Shield, Zap } from "lucide-react";
+import { ArrowLeft, User, Phone, Mail, Camera, Shield, Zap, Activity } from "lucide-react";
+import { getAccountProfile } from "../../services/accountApi";
+import { tokenStorage } from "../../storage/tokenStorage";
 
 export const UserProfile = () => {
   const navigate = useNavigate();
@@ -9,7 +11,29 @@ export const UserProfile = () => {
     lastName: "System",
     phoneNumber: "0123456789",
     email: "admin@gmail.com",
+    status: "ACTIVE",
   });
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const account = tokenStorage.getAccount();
+        if (account?.id) {
+          const data = await getAccountProfile(account.id);
+          setProfileData({
+            firstName: data.firstName || "",
+            lastName: data.lastName || "",
+            phoneNumber: data.phoneNumber || "",
+            email: data.email || "",
+            status: data.status || "ACTIVE",
+          });
+        }
+      } catch (err) {
+        console.error("Failed to fetch profile", err);
+      }
+    };
+    fetchProfile();
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -183,12 +207,27 @@ export const UserProfile = () => {
                   />
                 </div>
 
+                <div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, color: "var(--mf-cyan, #00E5FF)", letterSpacing: "0.05em", marginBottom: 8 }}>
+                    <Activity size={12} /> ACCOUNT STATUS
+                  </label>
+                  <div style={{
+                    width: "100%", padding: "14px 16px", background: "rgba(0, 229, 255, 0.05)", 
+                    border: "1px solid rgba(0, 229, 255, 0.2)", borderRadius: 12, 
+                    color: "var(--mf-cyan, #00E5FF)", fontSize: 15, fontWeight: 800,
+                    display: "flex", alignItems: "center", gap: 10, boxSizing: "border-box"
+                  }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: profileData.status === "ACTIVE" ? "var(--mf-cyan, #00E5FF)" : "rgba(255, 255, 255, 0.5)", boxShadow: profileData.status === "ACTIVE" ? "0 0 10px var(--mf-cyan, #00E5FF)" : "none" }} />
+                    {profileData.status}
+                  </div>
+                </div>
+
               </div>
             </div>
 
             <div style={{ marginTop: 40, paddingTop: 30, borderTop: "1px solid rgba(255,255,255,0.1)", display: "flex", justifyContent: "flex-end", gap: 16 }}>
               <button type="button" onClick={() => setProfileData({
-                firstName: "Admin", lastName: "System", phoneNumber: "0123456789", email: "admin@gmail.com"
+                firstName: "Admin", lastName: "System", phoneNumber: "0123456789", email: "admin@gmail.com", status: "ACTIVE"
               })} style={{
                 padding: "14px 24px", background: "transparent", border: "1px solid rgba(255,255,255,0.2)",
                 borderRadius: 12, color: "var(--mf-text-secondary, #b4acc6)", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all 0.2s"

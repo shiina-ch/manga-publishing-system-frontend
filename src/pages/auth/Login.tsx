@@ -86,7 +86,13 @@ export function Login() {
             try {
               const data = await login({ email: form.email, password: form.password });
               toast.success("Chào mừng bạn đến với hệ thống 🎉");
-              navigate("/board/voting");
+              
+              const isAdmin = data.account.systemRole?.some(role => role.roleName.toLowerCase().includes("admin"));
+              if (isAdmin) {
+                navigate("/admin");
+              } else {
+                navigate("/board/voting");
+              }
             } catch {
               toast.error("Email hoặc mật khẩu không hợp lệ. Vui lòng kiểm tra lại!");
             } finally {

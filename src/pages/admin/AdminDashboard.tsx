@@ -8,6 +8,7 @@ import {
   BarChart3, Zap, Globe, PenTool, Layers, Edit3, ArrowUpRight,
   Info,
 } from "lucide-react";
+import { getAllAccounts, approveAccount, type AdminAccount } from "../../services/adminApi";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -268,11 +269,11 @@ function TableHeader({ columns }: { columns: { label: string; width?: string | n
 // ─── Tab 1: System Overview ──────────────────────────────────────────────────
 
 function OverviewTab({ onlineUsers, chapters, registrations, activities }: {
-  onlineUsers: OnlineUser[]; chapters: ChapterStatus[]; registrations: RegistrationRequest[]; activities: ActivityEvent[];
+  onlineUsers: OnlineUser[]; chapters: ChapterStatus[]; registrations: AdminAccount[]; activities: ActivityEvent[];
 }) {
   const totalOnline = onlineUsers.filter(u => u.status === "online").length;
   const publishedCount = chapters.filter(c => c.status === "published").length;
-  const pendingRegs = registrations.filter(r => r.status === "pending").length;
+  const pendingRegs = registrations.filter(r => r.status === "PENDING").length;
   const inReviewCount = chapters.filter(c => c.status === "in_review").length;
 
   // Pipeline counts
@@ -1034,18 +1035,24 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole }: {
 // ─── Tab 4: Registration Requests ─────────────────────────────────────────────
 
 function RegistrationRequestsTab({ registrations, onApprove, onReject }: {
-  registrations: RegistrationRequest[];
-  onApprove: (id: number) => void;
+  registrations: AdminAccount[];
+  onApprove: (id: number, role: string) => void;
   onReject: (id: number) => void;
 }) {
   const [selected, setSelected] = useState<number | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("all");
 
-  const pendingCount = registrations.filter(r => r.status === "pending").length;
-  const approvedCount = registrations.filter(r => r.status === "approved").length;
-  const rejectedCount = registrations.filter(r => r.status === "rejected").length;
+  const pendingCount = registrations.filter(r => r.status === "PENDING").length;
+  const approvedCount = registrations.filter(r => r.status === "ACTIVE").length;
+  const rejectedCount = registrations.filter(r => r.status === "REJECTED").length;
 
-  const filtered = registrations.filter(r => filterStatus === "all" || r.status === filterStatus);
+  const filtered = registrations.filter(r => {
+    if (filterStatus === "all") return true;
+    if (filterStatus === "pending") return r.status === "PENDING";
+    if (filterStatus === "approved") return r.status === "ACTIVE";
+    if (filterStatus === "rejected") return r.status === "REJECTED";
+    return true;
+  });
   const selectedReq = filtered.find(r => r.id === selected) || filtered[0];
 
   if (filtered.length === 0) {
@@ -1104,13 +1111,12 @@ function RegistrationRequestsTab({ registrations, onApprove, onReject }: {
             >
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, color: "var(--mf-text)" }}>{req.firstName} {req.lastName}</span>
-                <RegistrationStatusBadge status={req.status} />
+                <RegistrationStatusBadge status={(req.status || "pending").toLowerCase()} />
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--mf-text-muted)" }}>
-                <span style={{ color: roleColor[req.role] || "var(--mf-text-muted)", fontWeight: 700 }}>{roleLabel[req.role] || req.role}</span>
+                <span style={{ color: roleColor[req.requestedRole || ""] || "var(--mf-text-muted)", fontWeight: 700 }}>{req.requestedRole || "N/A"}</span>
                 <span style={{ opacity: 0.4 }}>·</span>
-                <Clock size={10} />
-                <span>{req.submittedAt}</span>
+                <span>{req.email}</span>
               </div>
             </button>
           ))}
@@ -1124,11 +1130,11 @@ function RegistrationRequestsTab({ registrations, onApprove, onReject }: {
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
                 <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em", margin: 0 }}>{selectedReq.firstName} {selectedReq.lastName}</h2>
-                <RegistrationStatusBadge status={selectedReq.status} />
+                <RegistrationStatusBadge status={(selectedReq.status || "pending").toLowerCase()} />
               </div>
               <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--mf-text-muted)" }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Shield size={10} />{roleLabel[selectedReq.role] || selectedReq.role}</span>
-                <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Clock size={10} />{selectedReq.submittedAt}</span>
+                <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Shield size={10} />{selectedReq.requestedRole || "N/A"}</span>
+                <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Mail size={10} />{selectedReq.email}</span>
               </div>
             </div>
           </div>
@@ -1138,9 +1144,9 @@ function RegistrationRequestsTab({ registrations, onApprove, onReject }: {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
               {[
                 { icon: Mail, label: "EMAIL", value: selectedReq.email },
-                { icon: Phone, label: "PHONE", value: selectedReq.phone },
-                { icon: Shield, label: "WISHLIST ROLE", value: roleLabel[selectedReq.role] || selectedReq.role, valueColor: roleColor[selectedReq.role] },
-                { icon: MapPin, label: "ADDRESS", value: selectedReq.address },
+                { icon: Phone, label: "PHONE", value: selectedReq.phoneNumber || "—" },
+                { icon: Shield, label: "REQUESTED ROLE", value: selectedReq.requestedRole || "N/A", valueColor: roleColor[selectedReq.requestedRole || ""] },
+                { icon: Activity, label: "STATUS", value: selectedReq.status },
               ].map((info, i) => {
                 const InfoIcon = info.icon;
                 return (
@@ -1155,61 +1161,32 @@ function RegistrationRequestsTab({ registrations, onApprove, onReject }: {
               })}
             </div>
 
-            {/* CV Attachment */}
-            <div style={{ padding: "14px 16px", background: "var(--mf-bg-elevated)", borderRadius: 12, border: "1px solid var(--mf-border)", marginBottom: 18, display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--mf-magenta-dim)", border: "1px solid var(--mf-magenta)30", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <FileText size={18} color="var(--mf-magenta)" />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--mf-text)" }}>{selectedReq.cvFileName}</div>
-                <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 2 }}>{selectedReq.cvSize}</div>
-              </div>
-              <button style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 14px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border-bright)", borderRadius: 8, color: "var(--mf-text-secondary)", fontSize: 12, cursor: "pointer", fontWeight: 600 }}>
-                <Download size={12} /> Download
-              </button>
-            </div>
 
-            {/* Info note - always visible with status-specific message */}
-            {selectedReq.status === "pending" && (
-              <div style={{
-                padding: "12px 16px", background: "var(--mf-cyan-dim)", borderRadius: 10,
-                border: "1px solid rgba(0,240,255,0.2)", display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 18,
-              }}>
+
+            {/* Info note */}
+            {selectedReq.status === "PENDING" && (
+              <div style={{ padding: "12px 16px", background: "var(--mf-cyan-dim)", borderRadius: 10, border: "1px solid rgba(0,240,255,0.2)", display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 18 }}>
                 <Info size={14} color="var(--mf-cyan)" style={{ flexShrink: 0, marginTop: 1 }} />
                 <div style={{ fontSize: 11, color: "var(--mf-text-secondary)", lineHeight: 1.5 }}>
-                  <strong style={{ color: "var(--mf-cyan)" }}>Note:</strong> Approving this request will add the user to <strong>User Management</strong> with no assigned role. The role can be assigned separately in the User Management tab.
+                  <strong style={{ color: "var(--mf-cyan)" }}>Note:</strong> Approving will assign the requested role <strong style={{ color: roleColor[selectedReq.requestedRole || ""] }}>{selectedReq.requestedRole}</strong> to this account.
                 </div>
               </div>
             )}
-            {selectedReq.status === "approved" && (
-              <div style={{
-                padding: "12px 16px", background: "var(--mf-green-dim)", borderRadius: 10,
-                border: "1px solid rgba(57,255,138,0.2)", display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 18,
-              }}>
+            {selectedReq.status === "ACTIVE" && (
+              <div style={{ padding: "12px 16px", background: "var(--mf-green-dim)", borderRadius: 10, border: "1px solid rgba(57,255,138,0.2)", display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 18 }}>
                 <CheckCircle size={14} color="var(--mf-green)" style={{ flexShrink: 0, marginTop: 1 }} />
                 <div style={{ fontSize: 11, color: "var(--mf-text-secondary)", lineHeight: 1.5 }}>
-                  <strong style={{ color: "var(--mf-green)" }}>Approved:</strong> This user has been approved and added to <strong>User Management</strong>. You can assign their role in the User Management tab.
-                </div>
-              </div>
-            )}
-            {selectedReq.status === "rejected" && (
-              <div style={{
-                padding: "12px 16px", background: "var(--mf-magenta-dim)", borderRadius: 10,
-                border: "1px solid rgba(255,42,122,0.2)", display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 18,
-              }}>
-                <XCircle size={14} color="var(--mf-magenta)" style={{ flexShrink: 0, marginTop: 1 }} />
-                <div style={{ fontSize: 11, color: "var(--mf-text-secondary)", lineHeight: 1.5 }}>
-                  <strong style={{ color: "var(--mf-magenta)" }}>Rejected:</strong> This registration request was rejected. The applicant has been notified.
+                  <strong style={{ color: "var(--mf-green)" }}>Approved:</strong> This account is now active with role <strong>{selectedReq.requestedRole}</strong>.
                 </div>
               </div>
             )}
           </div>
 
           {/* Action bar */}
-          {selectedReq.status === "pending" && (
+          {selectedReq.status === "PENDING" && (
             <div style={{ padding: "14px 24px", borderTop: "1px solid var(--mf-border)", display: "flex", alignItems: "center", gap: 10 }}>
               <button
-                onClick={() => onApprove(selectedReq.id)}
+                onClick={() => onApprove(selectedReq.id, selectedReq.requestedRole || "")}
                 style={{
                   display: "flex", alignItems: "center", gap: 7, padding: "10px 22px",
                   background: "var(--mf-green)", border: "none", borderRadius: 10,
@@ -1246,7 +1223,7 @@ export function AdminDashboard() {
   const [activeNav, setActiveNav] = useState("System Overview");
   const [onlineUsers, setOnlineUsers] = useState(initialOnlineUsers);
   const [chapters, setChapters] = useState(initialChapters);
-  const [registrations, setRegistrations] = useState(initialRegistrations);
+  const [registrations, setRegistrations] = useState<AdminAccount[]>([]);
   const [activities] = useState(initialActivities);
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>(() => {
     // Build initial managed users from existing online users
@@ -1279,6 +1256,13 @@ export function AdminDashboard() {
   });
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
 
+  // Fetch real registration data from API
+  useEffect(() => {
+    getAllAccounts()
+      .then(accounts => setRegistrations(accounts))
+      .catch(err => console.error("Failed to fetch accounts", err));
+  }, []);
+
   // Simulate real-time updates
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1306,20 +1290,24 @@ export function AdminDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleApprove = useCallback((id: number) => {
-    setRegistrations(prev => prev.map(r => r.id === id ? { ...r, status: "approved" as const } : r));
-    // Add approved user to managed users with no roles
+  const handleApprove = useCallback(async (id: number, roleName: string) => {
+    try {
+      await approveAccount(id, roleName);
+      setRegistrations(prev => prev.map(r => r.id === id ? { ...r, status: "ACTIVE" } : r));
+    } catch (err: any) {
+      console.error("Failed to approve account", err);
+    }
+    // Add approved user to managed users
     setRegistrations(prev => {
       const reg = prev.find(r => r.id === id);
       if (reg) {
         setManagedUsers(mu => {
-          // Don't add duplicates
           if (mu.some(u => u.id === 1000 + id)) return mu;
           return [...mu, {
             id: 1000 + id,
             name: `${reg.firstName} ${reg.lastName}`,
             email: reg.email,
-            roles: [],
+            roles: [reg.requestedRole || ""].filter(Boolean),
             avatar: `${reg.firstName[0]}${reg.lastName[0]}`,
             status: "offline" as const,
             lastActive: "Just now",

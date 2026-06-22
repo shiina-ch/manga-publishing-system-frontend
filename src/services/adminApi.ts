@@ -18,6 +18,33 @@ export interface LoginResponse {
   };
 }
 
+export interface RegisterRequest {
+  firstName: string;
+  lastName: string;
+  phoneNumber: string;
+  email: string;
+  password: string;
+  requestedRole: string;
+}
+
+export interface RegisterResponse {
+  code: number;
+  message: string;
+  data: {
+    account: Account;
+  };
+}
+
+export interface AdminAccount {
+  id: number;
+  firstName: string;
+  lastName: string;
+  phoneNumber: string;
+  email: string;
+  requestedRole: string | null;
+  status: string;
+}
+
 export interface ApiError {
   code: number;
   message: string;
@@ -27,7 +54,7 @@ export interface ApiError {
 
 async function handleResponse<T>(res: Response): Promise<T> {
   const json = await res.json();
-  if (!res.ok || json.code !== 200) {
+  if (!res.ok || (json.code !== 200 && json.code !== 201)) {
     const err: ApiError = { code: json.code ?? res.status, message: json.message ?? "Đã xảy ra lỗi" };
     throw err;
   }
@@ -65,21 +92,62 @@ export async function login(credentials: LoginRequest): Promise<LoginResponse["d
 }
 
 /**
+ * POST /api/auth/accounts
+ * Đăng ký tài khoản mới.
+ */
+export async function registerAccount(payload: RegisterRequest): Promise<RegisterResponse["data"]> {
+  const res = await fetch(`${BASE_URL}/auth/accounts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await handleResponse<RegisterResponse>(res);
+  return data.data;
+}
+
+/**
  * Xóa token và account khỏi localStorage.
  */
 export function logout(): void {
   tokenStorage.clear();
 }
 
-// ─── Admin API (ví dụ, thêm sau) ─────────────────────────────────────────────
+// ─── Admin API ─────────────────────────────────────────────────────────────────
 
 /**
- * GET /api/admin/accounts  (ví dụ — cần token)
+ * GET /api/admin/accounts — lấy danh sách tất cả tài khoản (cần token)
  */
-export async function getAccounts() {
+export async function getAllAccounts(): Promise<AdminAccount[]> {
   const res = await fetch(`${BASE_URL}/admin/accounts`, {
     method: "GET",
     headers: authHeaders(),
   });
-  return handleResponse(res);
+  const json = await handleResponse<{ code: number; message: string; data: any[] }>(res);
+  // Chỉ trả về các trường cần thiết
+  return (json as any).data.map((acc: any) => ({
+    id: acc.id,
+    firstName: acc.firstName,
+    lastName: acc.lastName,
+    phoneNumber: acc.phoneNumber,
+    email: acc.email,
+    requestedRole: acc.requestedRole,
+    status: acc.status,
+  }));
 }
+
+/**
+ * POST /api/admin/accounts/{id}/approve?roleName=...
+ * Duyệt tài khoản và gán quyền
+ */
+export async function approveAccount(accountId: number, roleName: string): Promise<void> {
+  const res = await fetch(
+    `${BASE_URL}/admin/accounts/${accountId}/approve?roleName=${roleName.toLowerCase()}`,
+    {
+      method: "POST",
+      headers: authHeaders(),
+    }
+  );
+  await handleResponse(res);
+}
+
