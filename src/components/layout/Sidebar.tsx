@@ -4,7 +4,7 @@ import {
   BookOpen, Hash, Settings, Bell, ChevronDown, ChevronRight,
   Plus, Edit3, Users, PenTool, Brush, Home, Search,
   FileText, Clock, AlertTriangle, CheckCircle, BarChart3, Layers, Star,
-  Inbox,
+  Inbox, User
 } from "lucide-react";
 
 type Role = "editor" | "board" | "mangaka" | "assistant";
@@ -191,14 +191,15 @@ export function Sidebar({ role, activeNav, onNavClick }: SidebarProps) {
         <div style={{ width: 32, height: 32, borderRadius: 8, background: `linear-gradient(135deg, ${config.color}, ${config.color}50)`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
           <RoleIcon size={15} color="#fff" />
         </div>
-        <div style={{ flex: 1, overflow: "hidden" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--mf-text)" }}>{config.user}</div>
+        <div style={{ flex: 1, overflow: "hidden", cursor: "pointer" }} onClick={() => navigate("/profile")}>
+          <div style={{ fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--mf-text)", transition: "color 0.2s" }} onMouseEnter={e => e.currentTarget.style.color = "var(--mf-cyan)"} onMouseLeave={e => e.currentTarget.style.color = "var(--mf-text)"}>{config.user}</div>
           <div style={{ fontSize: 10, color: config.color, fontWeight: 700 }}>{config.label}</div>
         </div>
-        <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)", padding: 2 }} onClick={() => navigate("/")}>
-          <Settings size={13} />
+        <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)", padding: 4, transition: "color 0.2s" }} onMouseEnter={e => e.currentTarget.style.color = "var(--mf-cyan)"} onMouseLeave={e => e.currentTarget.style.color = "var(--mf-text-muted)"} onClick={() => navigate("/profile")}>
+          <User size={14} />
         </button>
       </div>
     </div>
   );
 }
+
