@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Sidebar } from "./Sidebar";
 
-type Role = "editor" | "board" | "mangaka" | "assistant";
+type Role = "editor" | "board" | "mangaka" | "assistant" | "admin";
 
 interface AppLayoutProps {
   role: Role;
