@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useLocation } from "react-router";
-import { Layers, X, ChevronRight, BookOpen, Edit3, Users, PenTool, Brush, Vote, LogIn, UserPlus } from "lucide-react";
+import { Layers, X, ChevronRight, BookOpen, Edit3, Users, PenTool, Brush, Vote, LogIn, UserPlus, Shield } from "lucide-react";
 
 const screens = [
   { path: "/", label: "Login", role: "Auth — Screen 1", icon: LogIn, color: "var(--mf-magenta)" },
@@ -10,6 +10,7 @@ const screens = [
   { path: "/mangaka", label: "Mangaka Studio Workspace", role: "Mangaka — Screen 5", icon: PenTool, color: "var(--mf-magenta)" },
   { path: "/assistant", label: "Assistant Canvas Portal", role: "Assistant — Screen 6", icon: Brush, color: "var(--mf-green)" },
   { path: "/board/voting", label: "Board Publishing & Voting", role: "Board Member — Screen 7", icon: Vote, color: "var(--mf-orange)" },
+  { path: "/admin", label: "Admin Dashboard", role: "Admin — Screen 8", icon: Shield, color: "var(--mf-cyan)" },
 ];
 
 export function DemoNav() {

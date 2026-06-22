@@ -70,7 +70,7 @@ export function Login() {
             <p style={{ color: "var(--mf-text-secondary)", fontSize: 14 }}>Sign in to continue creating manga.</p>
           </div>
 
-          <form onSubmit={e => { e.preventDefault(); navigate("/editor"); }}>
+          <form onSubmit={e => { e.preventDefault(); navigate("/admin"); }}>
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: "block", fontSize: 11, fontWeight: 800, color: "var(--mf-text-secondary)", marginBottom: 7, letterSpacing: "0.06em" }}>EMAIL ADDRESS</label>
               <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="you@mangaflow.io"

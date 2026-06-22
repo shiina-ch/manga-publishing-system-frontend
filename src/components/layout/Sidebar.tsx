@@ -4,10 +4,10 @@ import {
   BookOpen, Hash, Settings, Bell, ChevronDown, ChevronRight,
   Plus, Edit3, Users, PenTool, Brush, Home, Search,
   FileText, Clock, AlertTriangle, CheckCircle, BarChart3, Layers, Star,
-  Inbox,
+  Inbox, Shield, Activity, UserPlus, Eye,
 } from "lucide-react";
 
-type Role = "editor" | "board" | "mangaka" | "assistant";
+type Role = "editor" | "board" | "mangaka" | "assistant" | "admin";
 
 const roleConfig = {
   editor: {
@@ -52,6 +52,17 @@ const roleConfig = {
     ],
     channels: ["assistant-coloring", "background-art", "team-updates"],
     dms: ["Mangaka: Kishimoto-san", "Lead Aiko"],
+  },
+  admin: {
+    label: "Admin", color: "var(--mf-cyan)", icon: Shield, user: "System Admin",
+    nav: [
+      { icon: Activity, label: "System Overview" },
+      { icon: UserPlus, label: "Registration Requests", badge: 4, badgeColor: "var(--mf-orange)" },
+      { icon: Eye, label: "Chapter Monitor" },
+      { icon: Users, label: "User Management" },
+    ],
+    channels: ["system-alerts", "admin-logs", "moderation", "announcements"],
+    dms: ["Chief Editor Yamamoto", "Director Tanaka", "Support Team"],
   },
 };
 

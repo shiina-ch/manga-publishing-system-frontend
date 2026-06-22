@@ -7,6 +7,7 @@ import { BoardApproval } from "../pages/board/BoardApproval";
 import { MangakaStudio } from "../pages/mangaka/MangakaStudio";
 import { AssistantPortal } from "../pages/assistant/AssistantPortal";
 import { VotingRoom } from "../pages/board/VotingRoom";
+import { AdminDashboard } from "../pages/admin/AdminDashboard";
 
 export const router = createBrowserRouter([
   {
@@ -20,6 +21,7 @@ export const router = createBrowserRouter([
       { path: "mangaka", Component: MangakaStudio },
       { path: "assistant", Component: AssistantPortal },
       { path: "board/voting", Component: VotingRoom },
+      { path: "admin", Component: AdminDashboard },
     ],
   },
 ]);
