@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router";
+import { toast } from "react-toastify";
 import {
   BookOpen, Hash, Settings, Bell, ChevronDown, ChevronRight,
   Plus, Edit3, Users, PenTool, Brush, Home, Search,
   FileText, Clock, AlertTriangle, CheckCircle, BarChart3, Layers, Star,
-  Inbox, Shield, Activity, UserPlus, Eye, User
+  Inbox, Shield, Activity, UserPlus, Eye, User, LogOut
 } from "lucide-react";
+import { logout } from "../../services/adminApi";
 
 type Role = "editor" | "board" | "mangaka" | "assistant" | "admin";
 
@@ -80,6 +82,12 @@ export function Sidebar({ role, activeNav, onNavClick }: SidebarProps) {
   const [dmsOpen, setDmsOpen] = useState(true);
 
   const effectiveActive = activeNav ?? config.nav[0].label;
+
+  function handleLogout() {
+    logout();
+    toast.success("Đăng xuất thành công");
+    navigate("/", { replace: true });
+  }
 
   return (
     <div style={{ width: 240, flexShrink: 0, background: "var(--mf-sidebar)", borderRight: "1px solid var(--mf-border)", display: "flex", flexDirection: "column", height: "100%", userSelect: "none" }}>
@@ -208,6 +216,15 @@ export function Sidebar({ role, activeNav, onNavClick }: SidebarProps) {
         </div>
         <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)", padding: 4, transition: "color 0.2s" }} onMouseEnter={e => e.currentTarget.style.color = "var(--mf-cyan)"} onMouseLeave={e => e.currentTarget.style.color = "var(--mf-text-muted)"} onClick={() => navigate("/profile")}>
           <User size={14} />
+        </button>
+        <button
+          title="Đăng xuất"
+          onClick={handleLogout}
+          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)", padding: 4, transition: "color 0.2s" }}
+          onMouseEnter={e => (e.currentTarget.style.color = "#ff4d6d")}
+          onMouseLeave={e => (e.currentTarget.style.color = "var(--mf-text-muted)")}
+        >
+          <LogOut size={14} />
         </button>
       </div>
     </div>
