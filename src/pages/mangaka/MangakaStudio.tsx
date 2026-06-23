@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppLayout } from "../../components/layout/AppLayout";
 import {
   Calendar, FileText, Users, Layers, Send, Plus, Check,
@@ -6,6 +6,7 @@ import {
   Brush, Palette, Image, GripVertical, Tag, X, User,
   ArrowRight, Sparkles, Upload,
 } from "lucide-react";
+import { getChapters, type ChapterApi } from "../../services/workflowApi";
 
 // --- Production Schedule Tab ---
 const milestones = [
@@ -675,6 +676,65 @@ function SubmittedChapters() {
   );
 }
 
+function SubmittedChaptersApi() {
+  const [chapters, setChapters] = useState<ChapterApi[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    getChapters()
+      .then(rows => {
+        if (!cancelled) setChapters(rows);
+      })
+      .catch((err: { message?: string }) => {
+        if (!cancelled) setError(err.message || "Failed to load submitted chapters.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <div style={{ padding: "24px 28px" }}>
+      <div style={{ marginBottom: 22 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em" }}>Submitted Chapters</h2>
+        <p style={{ fontSize: 13, color: "var(--mf-text-muted)", marginTop: 3 }}>Database chapter rows</p>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {loading && <div style={{ color: "var(--mf-text-muted)", textAlign: "center", padding: 36 }}>Loading submitted chapters...</div>}
+        {!loading && error && <div style={{ color: "var(--mf-magenta)", padding: 18 }}>{error}</div>}
+        {!loading && !error && chapters.length === 0 && <div style={{ color: "var(--mf-text-muted)", textAlign: "center", padding: 36 }}>No chapter rows found in the database.</div>}
+        {!loading && !error && chapters.map(ch => {
+          const status = (ch.status || "under-review").toLowerCase();
+          const st = chapterStatusMap[status] || chapterStatusMap["under-review"];
+          return (
+            <div key={ch.id} style={{ padding: "18px 20px", background: "var(--mf-bg-surface)", borderRadius: 14, border: "1px solid var(--mf-border)", display: "flex", alignItems: "center", gap: 20 }}>
+              <div style={{ width: 56, height: 70, borderRadius: 8, background: "linear-gradient(160deg, var(--mf-magenta-dim), var(--mf-bg-deep))", border: "1px solid var(--mf-magenta)30", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <FileText size={22} color="var(--mf-magenta)" style={{ opacity: 0.7 }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "var(--mf-text)", marginBottom: 4 }}>{ch.title || `Chapter #${ch.id}`}</div>
+                <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--mf-text-muted)" }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Clock size={11} /> From API</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}><FileText size={11} /> Ch. {ch.chapterNumber ?? "N/A"}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}><User size={11} /> Backend</span>
+                </div>
+              </div>
+              <div style={{ padding: "6px 14px", background: `${st.color}18`, border: `1px solid ${st.color}40`, borderRadius: 8, fontSize: 12, fontWeight: 700, color: st.color, flexShrink: 0 }}>
+                {st.label}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // --- Main Component ---
 const tabs = [
   { id: "schedule", label: "Production Schedule", icon: Calendar },
@@ -750,7 +810,7 @@ export function MangakaStudio() {
         {/* Tab content */}
         <div style={{ flex: 1, overflowY: "auto" }}>
           {activeNav === "Submitted" ? (
-            <SubmittedChapters />
+            <SubmittedChaptersApi />
           ) : (
             <>
               {activeTab === "schedule" && <ProductionSchedule />}

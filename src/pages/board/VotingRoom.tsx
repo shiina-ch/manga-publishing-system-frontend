@@ -5,6 +5,15 @@ import {
   ChevronLeft, ChevronRight, Package, Share2, Download,
   Star, BookOpen, Zap, Shield,
 } from "lucide-react";
+import { tokenStorage } from "../../storage/tokenStorage";
+import {
+  castSubmissionReviewVote,
+  getSketchPages,
+  getSubmissionReviews,
+  getVotesForSubmissionReview,
+  voteToItem,
+  type VoteItem,
+} from "../../services/workflowApi";
 
 const chapterPages = [
   { id: 1, label: "Opening — Neo-Tokyo Skyline", type: "wide" },
@@ -28,12 +37,16 @@ const chaptersAwaitingVote = [
 ];
 
 export function VotingRoom() {
-  const [selectedChapter, setSelectedChapter] = useState(1);
+  const [chaptersAwaitingVote, setChaptersAwaitingVote] = useState<{ id: number; title: string; votes: string; pct: number; status: string }[]>([]);
+  const [chapterPages, setChapterPages] = useState<{ id: number; label: string; type: string }[]>([]);
+  const [selectedChapter, setSelectedChapter] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [myVote, setMyVote] = useState<"publish" | "reject" | null>(null);
-  const [votes, setVotes] = useState(precastVotes);
+  const [votes, setVotes] = useState<VoteItem[]>([]);
   const [showSuccess, setShowSuccess] = useState(false);
   const [autoVotePct, setAutoVotePct] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const totalVoters = 5;
   const publishVotes = votes.filter(v => v.vote === "publish").length + (myVote === "publish" ? 1 : 0);
@@ -42,6 +55,57 @@ export function VotingRoom() {
   const approvalPct = totalCast > 0 ? Math.round((publishVotes / totalVoters) * 100) : 0;
   const isComplete = totalCast >= totalVoters;
   const isPassed = isComplete && approvalPct >= 60;
+  const selectedChapterData = chaptersAwaitingVote.find(ch => ch.id === selectedChapter);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    Promise.all([getSubmissionReviews(), getSketchPages()])
+      .then(([reviews, pages]) => {
+        if (cancelled) return;
+        const mappedReviews = reviews.map(review => ({
+          id: review.id,
+          title: `Submission review #${review.id}`,
+          votes: "0/5",
+          pct: 0,
+          status: review.decision || "voting",
+        }));
+        const mappedPages = pages.map(page => ({
+          id: page.id,
+          label: page.status || `Page ${page.pageNumber ?? page.id}`,
+          type: "standard",
+        }));
+        setChaptersAwaitingVote(mappedReviews);
+        setChapterPages(mappedPages.length > 0 ? mappedPages : [{ id: 0, label: "No sketch pages available", type: "standard" }]);
+        setSelectedChapter(mappedReviews[0]?.id ?? null);
+      })
+      .catch((err: { message?: string }) => {
+        if (!cancelled) setError(err.message || "Failed to load voting data.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedChapter) {
+      setVotes([]);
+      return;
+    }
+    let cancelled = false;
+    getVotesForSubmissionReview(selectedChapter)
+      .then(rows => {
+        if (!cancelled) setVotes(rows.map(voteToItem));
+      })
+      .catch(() => {
+        if (!cancelled) setVotes([]);
+      });
+    return () => { cancelled = true; };
+  }, [selectedChapter]);
 
   useEffect(() => {
     if (isPassed && !showSuccess) {
@@ -61,10 +125,32 @@ export function VotingRoom() {
     return () => clearInterval(timer);
   }, [approvalPct]);
 
-  const castVote = (vote: "publish" | "reject") => {
+  const castVote = async (vote: "publish" | "reject") => {
     if (myVote) return;
-    setMyVote(vote);
+    const account = tokenStorage.getAccount();
+    if (!selectedChapter || !account?.id) {
+      setError("Cannot cast a vote because no review or account is selected.");
+      return;
+    }
+    try {
+      await castSubmissionReviewVote({
+        submissionReviewId: selectedChapter,
+        voterId: account.id,
+        voteValue: vote === "publish" ? "APPROVE" : "REJECT",
+      });
+      setMyVote(vote);
+    } catch (err: any) {
+      setError(err.message || "Failed to cast vote.");
+    }
   };
+
+  if (loading) {
+    return <AppLayout role="board"><div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-text-muted)" }}>Loading voting room...</div></AppLayout>;
+  }
+
+  if (error && chaptersAwaitingVote.length === 0) {
+    return <AppLayout role="board"><div style={{ padding: 24, color: "var(--mf-magenta)" }}>{error}</div></AppLayout>;
+  }
 
   return (
     <AppLayout role="board">
@@ -108,20 +194,16 @@ export function VotingRoom() {
             ))}
 
             <div style={{ fontSize: 10, fontWeight: 700, color: "var(--mf-text-muted)", letterSpacing: "0.08em", padding: "14px 4px 8px" }}>PUBLISHED CATALOG</div>
-            {["One Piece Ch.1120", "Blue Lock Ch.290", "JJK Ch.265"].map(title => (
-              <div key={title} style={{ padding: "9px 14px", marginBottom: 5, background: "var(--mf-bg-surface)", borderRadius: 9, border: "1px solid var(--mf-border)", display: "flex", alignItems: "center", gap: 8 }}>
-                <CheckCircle size={12} color="var(--mf-green)" />
-                <span style={{ fontSize: 11, color: "var(--mf-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
-              </div>
-            ))}
+            <div style={{ padding: "9px 14px", marginBottom: 5, background: "var(--mf-bg-surface)", borderRadius: 9, border: "1px solid var(--mf-border)", display: "flex", alignItems: "center", gap: 8 }}>
+              <CheckCircle size={12} color="var(--mf-green)" />
+              <span style={{ fontSize: 11, color: "var(--mf-text-muted)" }}>Published catalog endpoint not available yet.</span>
+            </div>
 
             <div style={{ fontSize: 10, fontWeight: 700, color: "var(--mf-text-muted)", letterSpacing: "0.08em", padding: "14px 4px 8px" }}>ARCHIVED</div>
-            {["Neon Samurai Beta", "Ghost Meridian Pilot"].map(title => (
-              <div key={title} style={{ padding: "9px 14px", marginBottom: 5, background: "var(--mf-bg-surface)", borderRadius: 9, border: "1px solid var(--mf-border)", display: "flex", alignItems: "center", gap: 8 }}>
-                <Clock size={12} color="var(--mf-text-muted)" />
-                <span style={{ fontSize: 11, color: "var(--mf-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
-              </div>
-            ))}
+            <div style={{ padding: "9px 14px", marginBottom: 5, background: "var(--mf-bg-surface)", borderRadius: 9, border: "1px solid var(--mf-border)", display: "flex", alignItems: "center", gap: 8 }}>
+              <Clock size={12} color="var(--mf-text-muted)" />
+              <span style={{ fontSize: 11, color: "var(--mf-text-muted)" }}>No archived reviews endpoint is wired.</span>
+            </div>
           </div>
         </div>
 
@@ -130,7 +212,7 @@ export function VotingRoom() {
           {/* Reader header */}
           <div style={{ padding: "12px 20px", borderBottom: "1px solid var(--mf-border)", background: "var(--mf-bg-base)", display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
             <BookOpen size={15} color="var(--mf-magenta)" />
-            <span style={{ fontSize: 14, fontWeight: 800, color: "var(--mf-text)" }}>Neon Samurai — Ch.1 "The Null Blade"</span>
+            <span style={{ fontSize: 14, fontWeight: 800, color: "var(--mf-text)" }}>{selectedChapterData?.title || "No review selected"}</span>
             <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontSize: 12, color: "var(--mf-text-muted)" }}>{currentPage + 1} / {chapterPages.length}</span>
               <button onClick={() => setCurrentPage(Math.max(0, currentPage - 1))} disabled={currentPage === 0} style={{ width: 28, height: 28, borderRadius: 7, background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", display: "flex", alignItems: "center", justifyContent: "center", cursor: currentPage === 0 ? "not-allowed" : "pointer", color: "var(--mf-text-muted)", opacity: currentPage === 0 ? 0.4 : 1 }}>
@@ -255,9 +337,9 @@ export function VotingRoom() {
           {/* Chapter info */}
           <div style={{ padding: "18px 18px 14px", borderBottom: "1px solid var(--mf-border)" }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: "var(--mf-text-muted)", letterSpacing: "0.07em", marginBottom: 10 }}>CHAPTER UNDER REVIEW</div>
-            <div style={{ fontSize: 14, fontWeight: 800, color: "var(--mf-text)", marginBottom: 4 }}>Neon Samurai — Ch.1</div>
+            <div style={{ fontSize: 14, fontWeight: 800, color: "var(--mf-text)", marginBottom: 4 }}>{selectedChapterData?.title || "No review selected"}</div>
             <div style={{ display: "flex", gap: 8 }}>
-              {["Action", "Cyberpunk"].map(g => (
+              {["Database"].map(g => (
                 <span key={g} style={{ padding: "3px 10px", background: "var(--mf-magenta-dim)", border: "1px solid var(--mf-magenta)30", borderRadius: 100, fontSize: 10, color: "var(--mf-magenta)", fontWeight: 700 }}>{g}</span>
               ))}
             </div>

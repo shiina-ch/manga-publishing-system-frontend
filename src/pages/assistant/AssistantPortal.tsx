@@ -5,6 +5,7 @@ import {
   Plus, Eraser, Pipette, ZoomIn, ZoomOut,
   RotateCcw, Eye, EyeOff, Lock, Unlock,
 } from "lucide-react";
+import { getSketchTasks, getTasks, taskToAssistantTask, type AssistantTask } from "../../services/workflowApi";
 
 const allTasks = [
   { id: 1, page: 4, panel: "A", label: "Draw Background — Cyberpunk City", tags: ["Background Art"], mangaka: "Kishimoto-san", due: "Jun 20", priority: "high", status: "active" },
@@ -142,13 +143,16 @@ function drawCyberpunkBackground(ctx: CanvasRenderingContext2D, w: number, h: nu
 
 export function AssistantPortal() {
   const [activeNav, setActiveNav] = useState("My Assignments");
-  const [selectedTask, setSelectedTask] = useState(1);
+  const [selectedTask, setSelectedTask] = useState<number | null>(null);
+  const [allTasksFromApi, setAllTasksFromApi] = useState<AssistantTask[]>([]);
   const [layers, setLayers] = useState(canvasLayers);
   const [activeTool, setActiveTool] = useState("brush");
   const [brushSize, setBrushSize] = useState(12);
   const [submitted, setSubmitted] = useState<Set<number>>(new Set([5]));
   const [zoom, setZoom] = useState(100);
   const [activeColor, setActiveColor] = useState("#00F0FF");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const isDrawingRef = useRef(false);
@@ -164,6 +168,26 @@ export function AssistantPortal() {
     if (!ctx) return;
     drawCyberpunkBackground(ctx, canvas.width, canvas.height);
     bgDrawnRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    Promise.all([getTasks(), getSketchTasks()])
+      .then(([tasks, sketchTasks]) => {
+        if (cancelled) return;
+        const mapped = [...tasks.map(taskToAssistantTask), ...sketchTasks.map(taskToAssistantTask)];
+        setAllTasksFromApi(mapped);
+        setSelectedTask(mapped[0]?.id ?? null);
+      })
+      .catch((err: { message?: string }) => {
+        if (!cancelled) setError(err.message || "Failed to load assistant tasks.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
   }, []);
 
   const getPos = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -242,12 +266,12 @@ export function AssistantPortal() {
   };
 
   const tasks = activeNav === "In Progress"
-    ? allTasks.filter(t => t.status === "active")
+    ? allTasksFromApi.filter(t => t.status === "active" || t.status === "in_progress")
     : activeNav === "Submitted"
-    ? allTasks.filter(t => submitted.has(t.id) || t.status === "submitted")
-    : allTasks;
+    ? allTasksFromApi.filter(t => submitted.has(t.id) || t.status === "submitted")
+    : allTasksFromApi;
 
-  const activeTask = allTasks.find(t => t.id === selectedTask);
+  const activeTask = allTasksFromApi.find(t => t.id === selectedTask);
 
   const toggleLayerVisibility = (id: number) => {
     setLayers(prev => prev.map(l => l.id === id ? { ...l, visible: !l.visible } : l));
@@ -282,9 +306,17 @@ export function AssistantPortal() {
           </div>
 
           <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px" }}>
-            {tasks.length === 0 ? (
+            {loading ? (
               <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--mf-text-muted)", fontSize: 13 }}>
-                No tasks here yet.
+                Loading tasks...
+              </div>
+            ) : error ? (
+              <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--mf-magenta)", fontSize: 13 }}>
+                {error}
+              </div>
+            ) : tasks.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--mf-text-muted)", fontSize: 13 }}>
+                No tasks found in the database.
               </div>
             ) : tasks.map(task => {
               const isSubmitted = submitted.has(task.id);

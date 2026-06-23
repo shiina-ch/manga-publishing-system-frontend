@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppLayout } from "../../components/layout/AppLayout";
 import {
   Send, RefreshCw, ArrowUpRight, X, MessageSquare, BookOpen,
   Tag, Clock, Eye, MoreHorizontal, Sparkles, User, CheckCircle,
   AlertTriangle, Inbox,
 } from "lucide-react";
+import { getSubmissions, submissionToEditorProposal, type EditorProposal } from "../../services/workflowApi";
 
 const allProposals = [
   { id: 1, title: "Neon Samurai: The Last Blade", mangaka: "Ryu Akimoto", genre: ["Action", "Cyberpunk"], synopsis: "In 2187 Neo-Tokyo, disgraced ronin Kaito discovers his katana can cut digital constructs. When a corrupt AI enslaves humanity through AR, Kaito must master ancient and digital combat.", pages: 32, status: "new", time: "2h ago", concepts: 4 },
@@ -28,12 +29,12 @@ function StatusBadge({ status }: { status: string }) {
   return <span style={{ padding: "3px 10px", background: s.bg, color: s.color, fontSize: 10, fontWeight: 800, borderRadius: 100, letterSpacing: "0.06em", border: `1px solid ${s.color}35`, whiteSpace: "nowrap" }}>{s.label}</span>;
 }
 
-function ProposalFeed({ filter, escalated, onEscalate }: { filter: string; escalated: Set<number>; onEscalate: (id: number) => void }) {
+function ProposalFeed({ filter, escalated, onEscalate, proposals }: { filter: string; escalated: Set<number>; onEscalate: (id: number) => void; proposals: EditorProposal[] }) {
   const [selected, setSelected] = useState<number | null>(null);
   const [revisionMode, setRevisionMode] = useState<number | null>(null);
   const [revisionText, setRevisionText] = useState("");
 
-  const filtered = allProposals.filter(p => {
+  const filtered = proposals.filter(p => {
     if (filter === "New Proposals") return p.status === "new";
     if (filter === "In Revision") return p.status === "revision";
     if (filter === "Escalated to Board") return escalated.has(p.id) || p.status === "escalated";
@@ -174,7 +175,27 @@ function ProposalFeed({ filter, escalated, onEscalate }: { filter: string; escal
 
 export function EditorDashboard() {
   const [activeNav, setActiveNav] = useState("New Proposals");
-  const [escalated, setEscalated] = useState<Set<number>>(new Set([3]));
+  const [escalated, setEscalated] = useState<Set<number>>(new Set());
+  const [proposals, setProposals] = useState<EditorProposal[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    getSubmissions()
+      .then(rows => {
+        if (!cancelled) setProposals(rows.map(submissionToEditorProposal));
+      })
+      .catch((err: { message?: string }) => {
+        if (!cancelled) setError(err.message || "Failed to load editor submissions.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <AppLayout role="editor" activeNav={activeNav} onNavClick={setActiveNav}>
@@ -193,11 +214,22 @@ export function EditorDashboard() {
           </div>
         </div>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", marginTop: 53, overflow: "hidden" }}>
-          <ProposalFeed
-            filter={activeNav}
-            escalated={escalated}
-            onEscalate={(id) => setEscalated(prev => new Set([...prev, id]))}
-          />
+          {loading && (
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-text-muted)" }}>
+              Loading editor submissions...
+            </div>
+          )}
+          {!loading && error && (
+            <div style={{ padding: 24, color: "var(--mf-magenta)" }}>{error}</div>
+          )}
+          {!loading && !error && (
+            <ProposalFeed
+              filter={activeNav}
+              escalated={escalated}
+              proposals={proposals}
+              onEscalate={(id) => setEscalated(prev => new Set([...prev, id]))}
+            />
+          )}
         </div>
       </div>
     </AppLayout>

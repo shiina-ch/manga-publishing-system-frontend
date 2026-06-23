@@ -9,6 +9,7 @@ import {
   Info,
 } from "lucide-react";
 import { getAllAccounts, approveAccount, type AdminAccount } from "../../services/adminApi";
+import { getChapters, type ChapterApi } from "../../services/workflowApi";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1221,74 +1222,103 @@ function RegistrationRequestsTab({ registrations, onApprove, onReject }: {
 
 export function AdminDashboard() {
   const [activeNav, setActiveNav] = useState("System Overview");
-  const [onlineUsers, setOnlineUsers] = useState(initialOnlineUsers);
-  const [chapters, setChapters] = useState(initialChapters);
+  const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
+  const [chapters, setChapters] = useState<ChapterStatus[]>([]);
   const [registrations, setRegistrations] = useState<AdminAccount[]>([]);
-  const [activities] = useState(initialActivities);
-  const [managedUsers, setManagedUsers] = useState<ManagedUser[]>(() => {
-    // Build initial managed users from existing online users
-    const existing: ManagedUser[] = initialOnlineUsers.map(u => ({
-      id: u.id,
-      name: u.name,
-      email: u.email,
-      roles: [u.role],
-      avatar: u.avatar,
-      status: u.status,
-      lastActive: u.lastActive,
-      joinedAt: u.joinedAt,
-      source: "existing" as const,
-    }));
-    // Add approved registrations with no roles
-    const approved: ManagedUser[] = initialRegistrations
-      .filter(r => r.status === "approved")
-      .map(r => ({
-        id: 1000 + r.id,
-        name: `${r.firstName} ${r.lastName}`,
-        email: r.email,
-        roles: [],
-        avatar: `${r.firstName[0]}${r.lastName[0]}`,
-        status: "offline" as const,
-        lastActive: r.submittedAt,
-        joinedAt: "Just now",
-        source: "approved" as const,
-      }));
-    return [...existing, ...approved];
-  });
+  const [activities, setActivities] = useState<ActivityEvent[]>([]);
+  const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
 
-  // Fetch real registration data from API
-  useEffect(() => {
-    getAllAccounts()
-      .then(accounts => setRegistrations(accounts))
-      .catch(err => console.error("Failed to fetch accounts", err));
+  const mapAccountToOnlineUser = useCallback((account: AdminAccount): OnlineUser => {
+    const name = `${account.firstName || ""} ${account.lastName || ""}`.trim() || account.email || `Account #${account.id}`;
+    const role = account.requestedRole || (account.status === "ACTIVE" ? "Unassigned" : "Pending");
+    return {
+      id: account.id,
+      name,
+      email: account.email || "",
+      role,
+      avatar: name.split(" ").map(part => part[0]).join("").slice(0, 2).toUpperCase() || "??",
+      status: account.status === "ACTIVE" ? "online" : "offline",
+      lastActive: account.status || "Unknown",
+      currentPage: "Workspace",
+      joinedAt: "From API",
+    };
   }, []);
 
-  // Simulate real-time updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // Randomly toggle user status
-      setOnlineUsers(prev => prev.map(u => {
-        if (Math.random() > 0.85) {
-          const statuses: OnlineUser["status"][] = ["online", "idle", "busy"];
-          return { ...u, status: statuses[Math.floor(Math.random() * statuses.length)], lastActive: "Just now" };
-        }
-        return u;
-      }));
-
-      // Randomly update chapter progress
-      setChapters(prev => prev.map(ch => {
-        if (ch.progress < 100 && Math.random() > 0.7) {
-          const newProgress = Math.min(100, ch.progress + Math.floor(Math.random() * 5) + 1);
-          return { ...ch, progress: newProgress, updatedAt: "Just now" };
-        }
-        return ch;
-      }));
-
-      setLastRefreshed(new Date());
-    }, 5000);
-
-    return () => clearInterval(interval);
+  const mapChapter = useCallback((chapter: ChapterApi, index: number): ChapterStatus => {
+    const rawStatus = (chapter.status || "draft").toLowerCase();
+    const allowed = ["draft", "in_review", "approved", "published", "rejected"];
+    const status = (allowed.includes(rawStatus) ? rawStatus : "draft") as ChapterStatus["status"];
+    return {
+      id: chapter.id,
+      manga: "Database Project",
+      chapter: chapter.chapterNumber ?? index + 1,
+      title: chapter.title || `Chapter #${chapter.id}`,
+      status,
+      author: "Unassigned",
+      updatedAt: "From API",
+      progress: status === "published" ? 100 : 0,
+      pages: 0,
+      mangaColor: ["#FF2A7A", "#39FF8A", "#00F0FF", "#FF8C42"][index % 4],
+    };
   }, []);
+
+  const buildActivities = useCallback((accounts: AdminAccount[], chapterRows: ChapterStatus[]): ActivityEvent[] => {
+    const accountEvents = accounts.slice(0, 4).map((account, index) => ({
+      id: index + 1,
+      type: "registration" as const,
+      message: `${account.firstName || account.email || "Account"} is ${account.status || "UNKNOWN"}`,
+      timestamp: "From API",
+      color: "var(--mf-cyan)",
+    }));
+    const chapterEvents = chapterRows.slice(0, 4).map((chapter, index) => ({
+      id: 100 + index,
+      type: "chapter_submitted" as const,
+      message: `${chapter.title} status: ${chapter.status}`,
+      timestamp: "From API",
+      color: "var(--mf-orange)",
+    }));
+    return [...accountEvents, ...chapterEvents];
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    Promise.all([getAllAccounts(), getChapters()])
+      .then(([accounts, chapterRows]) => {
+        if (cancelled) return;
+        const users = accounts.map(mapAccountToOnlineUser);
+        const mappedChapters = chapterRows.map(mapChapter);
+        setRegistrations(accounts);
+        setOnlineUsers(users);
+        setChapters(mappedChapters);
+        setManagedUsers(users.map(user => ({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          roles: [user.role].filter(Boolean),
+          avatar: user.avatar,
+          status: user.status,
+          lastActive: user.lastActive,
+          joinedAt: user.joinedAt,
+          source: "existing" as const,
+        })));
+        setActivities(buildActivities(accounts, mappedChapters));
+        setLastRefreshed(new Date());
+      })
+      .catch((err: { message?: string }) => {
+        if (!cancelled) setError(err.message || "Failed to load admin dashboard data.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [buildActivities, mapAccountToOnlineUser, mapChapter]);
 
   const handleApprove = useCallback(async (id: number, roleName: string) => {
     try {
@@ -1382,16 +1412,31 @@ export function AdminDashboard() {
 
         {/* Content */}
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 22px" }}>
-          {currentTab === "overview" && (
+          {loading && (
+            <div style={{ minHeight: 360, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-text-muted)", fontSize: 14 }}>
+              Loading dashboard data...
+            </div>
+          )}
+          {!loading && error && (
+            <div style={{ padding: 18, background: "rgba(255,42,122,0.08)", border: "1px solid rgba(255,42,122,0.25)", borderRadius: 12, color: "var(--mf-magenta)", fontSize: 13, fontWeight: 700 }}>
+              {error}
+            </div>
+          )}
+          {!loading && !error && onlineUsers.length === 0 && chapters.length === 0 && registrations.length === 0 && (
+            <div style={{ minHeight: 360, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-text-muted)", fontSize: 14 }}>
+              No dashboard rows found in the database.
+            </div>
+          )}
+          {!loading && !error && currentTab === "overview" && (
             <OverviewTab onlineUsers={onlineUsers} chapters={chapters} registrations={registrations} activities={activities} />
           )}
-          {currentTab === "chapters" && (
+          {!loading && !error && currentTab === "chapters" && (
             <ChapterMonitorTab chapters={chapters} />
           )}
-          {currentTab === "users" && (
+          {!loading && !error && currentTab === "users" && (
             <UserManagementTab managedUsers={managedUsers} onAddRole={handleAddRole} onRemoveRole={handleRemoveRole} />
           )}
-          {currentTab === "requests" && (
+          {!loading && !error && currentTab === "requests" && (
             <RegistrationRequestsTab
               registrations={registrations}
               onApprove={handleApprove}

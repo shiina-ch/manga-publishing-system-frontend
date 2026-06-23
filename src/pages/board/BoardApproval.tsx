@@ -1,23 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppLayout } from "../../components/layout/AppLayout";
 import {
   DollarSign, Calendar, Rocket, FileText,
   User, Clock, CheckCircle, Edit3, Layers, TrendingUp, X,
-  BarChart3, AlertTriangle, Star, Package,
+  Star, Package, AlertCircle, Loader2,
 } from "lucide-react";
+import { getProjects, type ProjectUI } from "../../services/projectApi";
+import { getPlannings, getSubmissions, type SubmissionApi } from "../../services/workflowApi";
 
 const proposals = [
   { id: 1, title: "Neon Samurai: The Last Blade", mangaka: "Ryu Akimoto", editor: "Kenji Yamada", genre: ["Action", "Cyberpunk"], synopsis: "In 2187 Neo-Tokyo, disgraced ronin Kaito discovers his katana can cut digital constructs. When a corrupt AI enslaves humanity, Kaito must master ancient and digital combat.", editorNotes: "Exceptional world-building. Character design sheets are outstanding. Recommend priority Q3 scheduling. High streaming adaptation value.", escalatedAt: "2 hours ago", pages: 32, concepts: 4, priority: "high" },
   { id: 2, title: "Ghost Meridian", mangaka: "Sora Hayashi", editor: "Maya Oishi", genre: ["Thriller", "Supernatural"], synopsis: "A detective who can see 48 hours into the future must prevent crimes before they happen — but each vision costs a piece of her soul.", editorNotes: "Strong female protagonist with compelling supernatural hook. Script pacing is excellent. Significant streaming adaptation potential.", escalatedAt: "3 days ago", pages: 24, concepts: 6, priority: "medium" },
-];
-
-const activeProjects = [
-  { id: 1, title: "Neon Samurai", chapter: "Ch.1", mangaka: "Ryu Akimoto", progress: 78, budget: 35000, allocated: 45000, status: "Production", nextDeadline: "Jul 18", genre: "Action/Cyberpunk", color: "var(--mf-cyan)" },
-  { id: 2, title: "Ghost Meridian", chapter: "Ch.1", mangaka: "Sora Hayashi", progress: 45, budget: 13500, allocated: 30000, status: "Scripting", nextDeadline: "Aug 5", genre: "Thriller", color: "var(--mf-orange)" },
-  { id: 3, title: "Iron Lotus", chapter: "Ch.1", mangaka: "Hana Mori", progress: 22, budget: 9240, allocated: 42000, status: "Sketching", nextDeadline: "Aug 20", genre: "Sports/Drama", color: "var(--mf-magenta)" },
-  { id: 4, title: "Bloom Protocol", chapter: "Ch.3", mangaka: "Yuki Tanaka", progress: 90, budget: 25200, allocated: 28000, status: "Final Review", nextDeadline: "Jun 28", genre: "Romance/Sci-Fi", color: "var(--mf-green)" },
-  { id: 5, title: "Circuit Dancer", chapter: "Ch.1", mangaka: "Nao Kimura", progress: 55, budget: 18000, allocated: 32000, status: "Line Art", nextDeadline: "Sep 3", genre: "Music/Drama", color: "var(--mf-cyan)" },
-  { id: 6, title: "Summer Oni", chapter: "Ch.2", mangaka: "Rei Fujimoto", progress: 68, budget: 14000, allocated: 22000, status: "Coloring", nextDeadline: "Jul 30", genre: "Fantasy", color: "var(--mf-orange)" },
 ];
 
 const calendarEvents: Record<number, { title: string; color: string }[]> = {
@@ -38,21 +31,87 @@ const budgetItems = [
   { project: "Summer Oni", allocated: 22000, spent: 14000, color: "var(--mf-orange)" },
 ];
 
+interface BoardProposal {
+  id: number;
+  title: string;
+  mangaka: string;
+  editor: string;
+  genre: string[];
+  synopsis: string;
+  editorNotes: string;
+  escalatedAt: string;
+  pages: number;
+  concepts: number;
+  priority: "high" | "medium";
+}
+
+function submissionToProposal(submission: SubmissionApi): BoardProposal {
+  return {
+    id: submission.id,
+    title: submission.title || `Submission #${submission.id}`,
+    mangaka: "Submitted account",
+    editor: "Editorial review",
+    genre: ["Unspecified"],
+    synopsis: submission.contentUrl || "No synopsis or content URL was provided.",
+    editorNotes: submission.status || "No editorial recommendation has been stored yet.",
+    escalatedAt: submission.submittedAt ? new Date(submission.submittedAt).toLocaleDateString() : "From API",
+    pages: 0,
+    concepts: 0,
+    priority: (submission.status || "").toLowerCase().includes("urgent") ? "high" : "medium",
+  };
+}
+
 // --- Pending Approvals View ---
 function PendingApprovalsView() {
-  const [selected, setSelected] = useState(1);
+  const [proposalsFromApi, setProposalsFromApi] = useState<BoardProposal[]>([]);
+  const [selected, setSelected] = useState<number | null>(null);
   const [budget, setBudget] = useState(45000);
   const [months, setMonths] = useState(6);
   const [startDate, setStartDate] = useState("2026-07-01");
   const [approved, setApproved] = useState<Set<number>>(new Set());
   const [showSuccess, setShowSuccess] = useState(false);
-  const proposal = proposals.find(p => p.id === selected)!;
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const proposal = proposalsFromApi.find(p => p.id === selected) || proposalsFromApi[0];
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    getSubmissions()
+      .then(rows => {
+        if (cancelled) return;
+        const mapped = rows.map(submissionToProposal);
+        setProposalsFromApi(mapped);
+        setSelected(mapped[0]?.id ?? null);
+      })
+      .catch((err: { message?: string }) => {
+        if (!cancelled) setError(err.message || "Failed to load pending submissions.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleApprove = () => {
+    if (!selected) return;
     setApproved(prev => new Set([...prev, selected]));
     setShowSuccess(true);
     setTimeout(() => setShowSuccess(false), 3000);
   };
+
+  if (loading) {
+    return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-text-muted)" }}>Loading pending submissions...</div>;
+  }
+
+  if (error) {
+    return <div style={{ flex: 1, padding: 24, color: "var(--mf-magenta)" }}>{error}</div>;
+  }
+
+  if (!proposal) {
+    return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-text-muted)" }}>No pending submissions found in the database.</div>;
+  }
 
   return (
     <div style={{ display: "flex", height: "100%", overflow: "hidden", position: "relative" }}>
@@ -67,7 +126,7 @@ function PendingApprovalsView() {
           <p style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 3 }}>Escalated by Editorial Team</p>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "10px 10px" }}>
-          {proposals.map(p => (
+          {proposalsFromApi.map(p => (
             <button key={p.id} onClick={() => setSelected(p.id)}
               style={{ display: "block", width: "100%", padding: 12, marginBottom: 7, background: selected === p.id ? "var(--mf-bg-elevated)" : "var(--mf-bg-surface)", border: `1px solid ${selected === p.id ? "rgba(255,140,66,0.4)" : "var(--mf-border)"}`, borderRadius: 12, cursor: "pointer", textAlign: "left" }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
@@ -145,12 +204,37 @@ function PendingApprovalsView() {
 
 // --- Active Projects View ---
 function ActiveProjectsView() {
+  const [projects, setProjects] = useState<ProjectUI[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    getProjects()
+      .then((data) => {
+        if (!cancelled) setProjects(data);
+      })
+      .catch((err: { message?: string }) => {
+        if (!cancelled) setError(err.message ?? "Không thể tải danh sách project.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, []);
+
   return (
     <div style={{ padding: "24px 28px", overflowY: "auto", flex: 1 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
         <div>
           <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em" }}>Active Projects</h2>
-          <p style={{ fontSize: 13, color: "var(--mf-text-muted)", marginTop: 3 }}>{activeProjects.length} series in production</p>
+          <p style={{ fontSize: 13, color: "var(--mf-text-muted)", marginTop: 3 }}>
+            {loading ? "Loading…" : `${projects.length} series in production`}
+          </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {["All", "Production", "Review", "Scripting"].map((f, i) => (
@@ -158,46 +242,79 @@ function ActiveProjectsView() {
           ))}
         </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
-        {activeProjects.map(p => (
-          <div key={p.id} style={{ padding: 18, background: "var(--mf-bg-surface)", borderRadius: 16, border: "1px solid var(--mf-border)", transition: "border-color 0.15s" }}
-            onMouseEnter={e => (e.currentTarget.style.borderColor = `${p.color}50`)}
-            onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--mf-border)")}
-          >
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 900, color: "var(--mf-text)", marginBottom: 3 }}>{p.title}</div>
-                <div style={{ fontSize: 11, color: "var(--mf-text-muted)", display: "flex", gap: 8 }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}><User size={10} />{p.mangaka}</span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}><FileText size={10} />{p.chapter}</span>
+
+      {/* Loading state */}
+      {loading && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "60px 0", color: "var(--mf-text-muted)" }}>
+          <Loader2 size={20} style={{ animation: "spin 1s linear infinite" }} />
+          <span style={{ fontSize: 14 }}>Loading projects…</span>
+        </div>
+      )}
+
+      {/* Error state */}
+      {!loading && error && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "20px 24px", background: "rgba(255,42,122,0.08)", border: "1px solid rgba(255,42,122,0.25)", borderRadius: 12, color: "#ff4d6d" }}>
+          <AlertCircle size={16} />
+          <span style={{ fontSize: 13, fontWeight: 600 }}>{error}</span>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!loading && !error && projects.length === 0 && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: "60px 0", color: "var(--mf-text-muted)" }}>
+          <Package size={40} style={{ opacity: 0.35 }} />
+          <p style={{ fontSize: 14, fontWeight: 600 }}>No projects found. Please create a project first.</p>
+        </div>
+      )}
+
+      {/* Project cards */}
+      {!loading && !error && projects.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
+          {projects.map(p => (
+            <div key={p.id} style={{ padding: 18, background: "var(--mf-bg-surface)", borderRadius: 16, border: "1px solid var(--mf-border)", transition: "border-color 0.15s" }}
+              onMouseEnter={e => (e.currentTarget.style.borderColor = `${p.color}50`)}
+              onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--mf-border)")}
+            >
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: "var(--mf-text)", marginBottom: 3 }}>{p.title}</div>
+                  <div style={{ fontSize: 11, color: "var(--mf-text-muted)", display: "flex", gap: 8 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 4 }}><User size={10} />{p.mangaka}</span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 4 }}><FileText size={10} />{p.chapter}</span>
+                  </div>
+                </div>
+                <div style={{ padding: "4px 10px", background: `${p.color}18`, border: `1px solid ${p.color}40`, borderRadius: 7, fontSize: 10, color: p.color, fontWeight: 800 }}>{p.status}</div>
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                  <span style={{ fontSize: 11, color: "var(--mf-text-muted)" }}>Production Progress</span>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: p.color }}>{p.progress}%</span>
+                </div>
+                <div style={{ height: 6, background: "var(--mf-bg-elevated)", borderRadius: 100, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${p.progress}%`, background: `linear-gradient(90deg, ${p.color}, ${p.color}90)`, borderRadius: 100, transition: "width 0.6s" }} />
                 </div>
               </div>
-              <div style={{ padding: "4px 10px", background: `${p.color}18`, border: `1px solid ${p.color}40`, borderRadius: 7, fontSize: 10, color: p.color, fontWeight: 800 }}>{p.status}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <div style={{ padding: "9px 12px", background: "var(--mf-bg-elevated)", borderRadius: 9 }}>
+                  <div style={{ fontSize: 9, color: "var(--mf-text-muted)", marginBottom: 3 }}>BUDGET SPENT</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-green)" }}>${p.budget.toLocaleString()}</div>
+                  <div style={{ fontSize: 9, color: "var(--mf-text-muted)" }}>of ${p.allocated.toLocaleString()}</div>
+                </div>
+                <div style={{ padding: "9px 12px", background: "var(--mf-bg-elevated)", borderRadius: 9 }}>
+                  <div style={{ fontSize: 9, color: "var(--mf-text-muted)", marginBottom: 3 }}>NEXT DEADLINE</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-orange)" }}>{p.nextDeadline}</div>
+                  <div style={{ fontSize: 9, color: "var(--mf-text-muted)" }}>{p.genre}</div>
+                </div>
+              </div>
+              {p.description && (
+                <div style={{ marginTop: 10, padding: "8px 10px", background: "var(--mf-bg-elevated)", borderRadius: 8 }}>
+                  <div style={{ fontSize: 11, color: "var(--mf-text-muted)", lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{p.description}</div>
+                </div>
+              )}
             </div>
-            <div style={{ marginBottom: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                <span style={{ fontSize: 11, color: "var(--mf-text-muted)" }}>Production Progress</span>
-                <span style={{ fontSize: 12, fontWeight: 800, color: p.color }}>{p.progress}%</span>
-              </div>
-              <div style={{ height: 6, background: "var(--mf-bg-elevated)", borderRadius: 100, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${p.progress}%`, background: `linear-gradient(90deg, ${p.color}, ${p.color}90)`, borderRadius: 100, transition: "width 0.6s" }} />
-              </div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <div style={{ padding: "9px 12px", background: "var(--mf-bg-elevated)", borderRadius: 9 }}>
-                <div style={{ fontSize: 9, color: "var(--mf-text-muted)", marginBottom: 3 }}>BUDGET SPENT</div>
-                <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-green)" }}>${p.budget.toLocaleString()}</div>
-                <div style={{ fontSize: 9, color: "var(--mf-text-muted)" }}>of ${p.allocated.toLocaleString()}</div>
-              </div>
-              <div style={{ padding: "9px 12px", background: "var(--mf-bg-elevated)", borderRadius: 9 }}>
-                <div style={{ fontSize: 9, color: "var(--mf-text-muted)", marginBottom: 3 }}>NEXT DEADLINE</div>
-                <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-orange)" }}>{p.nextDeadline}</div>
-                <div style={{ fontSize: 9, color: "var(--mf-text-muted)" }}>{p.genre}</div>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -207,6 +324,43 @@ function PublishingCalendarView() {
   const daysInJuly = 31;
   const firstDay = 3; // July 1, 2026 is Wednesday
   const today = 2;
+  const [eventsByDay, setEventsByDay] = useState<Record<number, { title: string; color: string }[]>>({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    getPlannings()
+      .then(rows => {
+        if (cancelled) return;
+        const colors = ["var(--mf-green)", "var(--mf-cyan)", "var(--mf-orange)", "var(--mf-magenta)"];
+        const grouped = rows.reduce<Record<number, { title: string; color: string }[]>>((acc, row, index) => {
+          const date = row.startDate ? new Date(row.startDate) : null;
+          if (!date || Number.isNaN(date.getTime())) return acc;
+          const day = date.getDate();
+          acc[day] = [...(acc[day] || []), { title: row.title || `Planning #${row.id}`, color: colors[index % colors.length] }];
+          return acc;
+        }, {});
+        setEventsByDay(grouped);
+      })
+      .catch((err: { message?: string }) => {
+        if (!cancelled) setError(err.message || "Failed to load publishing calendar.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) {
+    return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-text-muted)" }}>Loading publishing calendar...</div>;
+  }
+
+  if (error) {
+    return <div style={{ flex: 1, padding: 24, color: "var(--mf-magenta)" }}>{error}</div>;
+  }
 
   return (
     <div style={{ padding: "24px 28px", overflowY: "auto", flex: 1 }}>
@@ -216,7 +370,7 @@ function PublishingCalendarView() {
           <p style={{ fontSize: 13, color: "var(--mf-text-muted)", marginTop: 3 }}>July 2026 — Scheduled Releases</p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {Object.values(calendarEvents).flat().map((e, i) => (
+          {Object.values(eventsByDay).flat().map((e, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: e.color }}>
               <div style={{ width: 8, height: 8, borderRadius: 2, background: e.color }} />
               <span style={{ color: "var(--mf-text-muted)" }}>{e.title}</span>
@@ -234,7 +388,7 @@ function PublishingCalendarView() {
           {[...Array(firstDay)].map((_, i) => <div key={`empty-${i}`} style={{ minHeight: 80, borderRight: "1px solid var(--mf-border)", borderBottom: "1px solid var(--mf-border)" }} />)}
           {[...Array(daysInJuly)].map((_, i) => {
             const day = i + 1;
-            const events = calendarEvents[day] || [];
+            const events = eventsByDay[day] || [];
             const isToday = day === today;
             return (
               <div key={day} style={{ minHeight: 80, padding: 8, borderRight: "1px solid var(--mf-border)", borderBottom: "1px solid var(--mf-border)", background: isToday ? "rgba(255,42,122,0.06)" : "transparent", position: "relative" }}>
@@ -253,9 +407,43 @@ function PublishingCalendarView() {
 
 // --- Budget Overview View ---
 function BudgetOverviewView() {
-  const totalAllocated = budgetItems.reduce((s, b) => s + b.allocated, 0);
-  const totalSpent = budgetItems.reduce((s, b) => s + b.spent, 0);
+  const [items, setItems] = useState<{ project: string; allocated: number; spent: number; color: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const totalAllocated = items.reduce((s, b) => s + b.allocated, 0);
+  const totalSpent = items.reduce((s, b) => s + b.spent, 0);
   const remaining = totalAllocated - totalSpent;
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    getProjects()
+      .then(projects => {
+        if (cancelled) return;
+        setItems(projects.map(project => ({
+          project: project.title,
+          allocated: project.allocated,
+          spent: project.budget,
+          color: project.color,
+        })));
+      })
+      .catch((err: { message?: string }) => {
+        if (!cancelled) setError(err.message || "Failed to load project budget data.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) {
+    return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-text-muted)" }}>Loading project budgets...</div>;
+  }
+
+  if (error) {
+    return <div style={{ flex: 1, padding: 24, color: "var(--mf-magenta)" }}>{error}</div>;
+  }
 
   return (
     <div style={{ padding: "24px 28px", overflowY: "auto", flex: 1 }}>
@@ -282,7 +470,12 @@ function BudgetOverviewView() {
         })}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {budgetItems.map(b => (
+        {items.length === 0 && (
+          <div style={{ padding: 24, background: "var(--mf-bg-surface)", borderRadius: 14, border: "1px solid var(--mf-border)", color: "var(--mf-text-muted)", textAlign: "center" }}>
+            No project budget rows found in the database.
+          </div>
+        )}
+        {items.map(b => (
           <div key={b.project} style={{ padding: "16px 20px", background: "var(--mf-bg-surface)", borderRadius: 14, border: "1px solid var(--mf-border)", display: "flex", alignItems: "center", gap: 20 }}>
             <div style={{ width: 10, height: 10, borderRadius: "50%", background: b.color, flexShrink: 0 }} />
             <div style={{ width: 160, flexShrink: 0 }}>
@@ -312,7 +505,7 @@ export function BoardApproval() {
         <div style={{ padding: "14px 22px", borderBottom: "1px solid var(--mf-border)", background: "var(--mf-bg-base)", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--mf-orange)" }} />
           <span style={{ fontSize: 15, fontWeight: 900 }}>{activeNav}</span>
-          {activeNav === "Active Projects" && <span style={{ fontSize: 11, color: "var(--mf-orange)", padding: "2px 8px", background: "rgba(255,140,66,0.14)", borderRadius: 6, fontWeight: 700 }}>{activeProjects.length} Series</span>}
+          {activeNav === "Active Projects" && <span style={{ fontSize: 11, color: "var(--mf-orange)", padding: "2px 8px", background: "rgba(255,140,66,0.14)", borderRadius: 6, fontWeight: 700 }}>Series</span>}
         </div>
         <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
           {activeNav === "Pending Approvals" && <PendingApprovalsView />}
