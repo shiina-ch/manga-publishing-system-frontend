@@ -1,39 +1,15 @@
-import { tokenStorage, type Account } from "../storage/tokenStorage";
-
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8386/api";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface LoginRequest {
-  email: string;
-  password: string;
-}
-
-export interface LoginResponse {
-  code: number;
-  message: string;
-  data: {
-    account: Account;
-    token: string;
-  };
-}
-
-export interface RegisterRequest {
-  firstName: string;
-  lastName: string;
-  phoneNumber: string;
-  email: string;
-  password: string;
-  requestedRole: string;
-}
-
-export interface RegisterResponse {
-  code: number;
-  message: string;
-  data: {
-    account: Account;
-  };
-}
+import { tokenStorage } from "../storage/tokenStorage";
+import type {
+  ApiErrorResponse,
+  LoginRequest,
+  LoginResponse,
+  LoginResponseData,
+  RegistrationRequest,
+  RegistrationResponse,
+  RegistrationResponseData,
+} from "../types/account";
+import { isAccountResponse } from "../types/account";
+import { API_BASE_URL } from "./api";
 
 export interface AdminAccount {
   id: number;
@@ -45,23 +21,97 @@ export interface AdminAccount {
   status: string;
 }
 
-export interface ApiError {
+interface AccountListResponse {
   code: number;
   message: string;
+  data: AdminAccount[];
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+export class ApiRequestError extends Error implements ApiErrorResponse {
+  status: number;
+  error: string;
+  timestamp: string;
+  path: string;
+  errorCode: string;
+  details: Record<string, unknown> | null;
 
-async function handleResponse<T>(res: Response): Promise<T> {
-  const json = await res.json();
-  if (!res.ok || (json.code !== 200 && json.code !== 201)) {
-    const err: ApiError = { code: json.code ?? res.status, message: json.message ?? "Đã xảy ra lỗi" };
-    throw err;
+  constructor(response: ApiErrorResponse) {
+    super(response.message);
+    this.name = "ApiRequestError";
+    this.status = response.status;
+    this.error = response.error;
+    this.timestamp = response.timestamp;
+    this.path = response.path;
+    this.errorCode = response.errorCode;
+    this.details = response.details;
   }
-  return json as T;
 }
 
-function authHeaders(): HeadersInit {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readString(record: Record<string, unknown> | null, key: string, fallback: string): string {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function readDetails(record: Record<string, unknown> | null): Record<string, unknown> | null {
+  const details = record?.details;
+  return isRecord(details) ? details : null;
+}
+
+async function parseResponseBody(res: Response): Promise<Record<string, unknown> | null> {
+  try {
+    const text = await res.text();
+    if (!text.trim()) return null;
+    const parsed: unknown = JSON.parse(text);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function createResponseError(res: Response, body: Record<string, unknown> | null): ApiRequestError {
+  return new ApiRequestError({
+    status: typeof body?.status === "number" ? body.status : res.status,
+    message: readString(body, "message", "Unable to process the request. Please try again."),
+    error: readString(body, "error", res.statusText || "Request failed"),
+    timestamp: readString(body, "timestamp", new Date().toISOString()),
+    path: readString(body, "path", res.url),
+    errorCode: readString(body, "errorCode", "UNKNOWN_ERROR"),
+    details: readDetails(body),
+  });
+}
+
+export function createInvalidResponseError(res: Response): ApiRequestError {
+  return new ApiRequestError({
+    status: res.status,
+    message: "The server returned an invalid response. Please try again.",
+    error: "Invalid response",
+    timestamp: new Date().toISOString(),
+    path: res.url,
+    errorCode: "INVALID_RESPONSE",
+    details: null,
+  });
+}
+
+export async function parseApiResponse<T>(res: Response, successCodes = [200, 201]): Promise<T> {
+  const body = await parseResponseBody(res);
+  const responseCode = typeof body?.code === "number" ? body.code : res.status;
+
+  if (!res.ok || !successCodes.includes(responseCode)) {
+    throw createResponseError(res, body);
+  }
+
+  if (!body) {
+    throw createInvalidResponseError(res);
+  }
+
+  return body as T;
+}
+
+export function getAuthHeaders(): HeadersInit {
   const token = tokenStorage.getToken();
   return {
     "Content-Type": "application/json",
@@ -69,85 +119,61 @@ function authHeaders(): HeadersInit {
   };
 }
 
-// ─── Auth API ─────────────────────────────────────────────────────────────────
+function isLoginResponse(value: unknown): value is LoginResponse {
+  if (!isRecord(value) || !isRecord(value.data)) return false;
+  return typeof value.data.token === "string" && value.data.token.length > 0 && isAccountResponse(value.data.account);
+}
 
-/**
- * POST /api/auth/login
- * Lưu token và thông tin account vào localStorage sau khi đăng nhập thành công.
- */
-export async function login(credentials: LoginRequest): Promise<LoginResponse["data"]> {
-  const res = await fetch(`${BASE_URL}/auth/login`, {
+function isRegistrationResponse(value: unknown): value is RegistrationResponse {
+  return isRecord(value) && isRecord(value.data) && isAccountResponse(value.data.account);
+}
+
+export async function login(credentials: LoginRequest): Promise<LoginResponseData> {
+  const res = await fetch(`${API_BASE_URL}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(credentials),
   });
 
-  const data = await handleResponse<LoginResponse>(res);
-
-  // Persist to localStorage
-  tokenStorage.setToken(data.data.token);
-  tokenStorage.setAccount(data.data.account);
-
-  return data.data;
+  const response = await parseApiResponse<unknown>(res, [200]);
+  if (!isLoginResponse(response)) throw createInvalidResponseError(res);
+  tokenStorage.setToken(response.data.token);
+  tokenStorage.setAccount(response.data.account);
+  return response.data;
 }
 
-/**
- * POST /api/auth/accounts
- * Đăng ký tài khoản mới.
- */
-export async function registerAccount(payload: RegisterRequest): Promise<RegisterResponse["data"]> {
-  const res = await fetch(`${BASE_URL}/auth/accounts`, {
+export async function registerAccount(payload: RegistrationRequest): Promise<RegistrationResponseData> {
+  const res = await fetch(`${API_BASE_URL}/auth/accounts`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 
-  const data = await handleResponse<RegisterResponse>(res);
-  return data.data;
+  const response = await parseApiResponse<unknown>(res, [201]);
+  if (!isRegistrationResponse(response)) throw createInvalidResponseError(res);
+  return response.data;
 }
 
-/**
- * Xóa token và account khỏi localStorage.
- */
 export function logout(): void {
   tokenStorage.clear();
 }
 
-// ─── Admin API ─────────────────────────────────────────────────────────────────
-
-/**
- * GET /api/admin/accounts — lấy danh sách tất cả tài khoản (cần token)
- */
 export async function getAllAccounts(): Promise<AdminAccount[]> {
-  const res = await fetch(`${BASE_URL}/admin/accounts`, {
+  const res = await fetch(`${API_BASE_URL}/admin/accounts`, {
     method: "GET",
-    headers: authHeaders(),
+    headers: getAuthHeaders(),
   });
-  const json = await handleResponse<{ code: number; message: string; data: any[] }>(res);
-  // Chỉ trả về các trường cần thiết
-  return (json as any).data.map((acc: any) => ({
-    id: acc.id,
-    firstName: acc.firstName,
-    lastName: acc.lastName,
-    phoneNumber: acc.phoneNumber,
-    email: acc.email,
-    requestedRole: acc.requestedRole,
-    status: acc.status,
-  }));
+  const response = await parseApiResponse<AccountListResponse>(res);
+  return response.data;
 }
 
-/**
- * POST /api/admin/accounts/{id}/approve?roleName=...
- * Duyệt tài khoản và gán quyền
- */
 export async function approveAccount(accountId: number, roleName: string): Promise<void> {
   const res = await fetch(
-    `${BASE_URL}/admin/accounts/${accountId}/approve?roleName=${roleName.toLowerCase()}`,
+    `${API_BASE_URL}/admin/accounts/${accountId}/approve?roleName=${roleName.toLowerCase()}`,
     {
       method: "POST",
-      headers: authHeaders(),
-    }
+      headers: getAuthHeaders(),
+    },
   );
-  await handleResponse(res);
+  await parseApiResponse<unknown>(res);
 }
-

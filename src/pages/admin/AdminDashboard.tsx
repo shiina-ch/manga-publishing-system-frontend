@@ -1,14 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "react-router";
 import { AppLayout } from "../../components/layout/AppLayout";
 import {
   Users, BookOpen, Clock, CheckCircle, AlertTriangle, XCircle,
-  Eye, RefreshCw, UserPlus, FileText, Mail, Phone, MapPin,
+  Eye, RefreshCw, UserPlus, FileText, MapPin,
   Shield, Activity, TrendingUp, Wifi, WifiOff, MoreHorizontal,
   ChevronRight, Search, Filter, Download, Inbox, ChevronDown,
   BarChart3, Zap, Globe, PenTool, Layers, Edit3, ArrowUpRight,
-  Info,
 } from "lucide-react";
-import { getAllAccounts, approveAccount, type AdminAccount } from "../../services/adminApi";
+import { getAllAccounts, type AdminAccount } from "../../services/adminApi";
 import { getChapters, type ChapterApi } from "../../services/workflowApi";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -173,16 +173,6 @@ function StatusBadge({ label, color, bg }: { label: string; color: string; bg: s
 
 function ChapterStatusBadge({ status }: { status: string }) {
   const s = statusChapterConfig[status] || statusChapterConfig.draft;
-  return <StatusBadge label={s.label} color={s.color} bg={s.bg} />;
-}
-
-function RegistrationStatusBadge({ status }: { status: string }) {
-  const config: Record<string, { label: string; color: string; bg: string }> = {
-    pending: { label: "Pending", color: "var(--mf-orange)", bg: "rgba(255,140,66,0.14)" },
-    approved: { label: "Approved", color: "var(--mf-green)", bg: "var(--mf-green-dim)" },
-    rejected: { label: "Rejected", color: "var(--mf-magenta)", bg: "var(--mf-magenta-dim)" },
-  };
-  const s = config[status] || config.pending;
   return <StatusBadge label={s.label} color={s.color} bg={s.bg} />;
 }
 
@@ -1033,195 +1023,10 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole }: {
   );
 }
 
-// ─── Tab 4: Registration Requests ─────────────────────────────────────────────
-
-function RegistrationRequestsTab({ registrations, onApprove, onReject }: {
-  registrations: AdminAccount[];
-  onApprove: (id: number, role: string) => void;
-  onReject: (id: number) => void;
-}) {
-  const [selected, setSelected] = useState<number | null>(null);
-  const [filterStatus, setFilterStatus] = useState<string>("all");
-
-  const pendingCount = registrations.filter(r => r.status === "PENDING").length;
-  const approvedCount = registrations.filter(r => r.status === "ACTIVE").length;
-  const rejectedCount = registrations.filter(r => r.status === "REJECTED").length;
-
-  const filtered = registrations.filter(r => {
-    if (filterStatus === "all") return true;
-    if (filterStatus === "pending") return r.status === "PENDING";
-    if (filterStatus === "approved") return r.status === "ACTIVE";
-    if (filterStatus === "rejected") return r.status === "REJECTED";
-    return true;
-  });
-  const selectedReq = filtered.find(r => r.id === selected) || filtered[0];
-
-  if (filtered.length === 0) {
-    return (
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12, color: "var(--mf-text-muted)", minHeight: 400 }}>
-        <Inbox size={40} style={{ opacity: 0.3 }} />
-        <p style={{ fontSize: 14 }}>No registration requests in this category</p>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ display: "flex", flex: 1, overflow: "hidden", borderRadius: 16, border: "1px solid var(--mf-border)", background: "var(--mf-bg-surface)" }}>
-      {/* Left: List */}
-      <div style={{ width: 360, flexShrink: 0, borderRight: "1px solid var(--mf-border)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid var(--mf-border)" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 900, margin: 0 }}>Registration Requests</h3>
-            <div style={{ padding: "3px 10px", background: "var(--mf-orange)", borderRadius: 100, fontSize: 10, fontWeight: 800, color: "#000" }}>{pendingCount} new</div>
-          </div>
-          {/* Filter chips */}
-          <div style={{ display: "flex", gap: 5 }}>
-            {[
-              { key: "all", label: "All", count: registrations.length },
-              { key: "pending", label: "Pending", count: pendingCount },
-              { key: "approved", label: "Approved", count: approvedCount },
-              { key: "rejected", label: "Rejected", count: rejectedCount },
-            ].map(f => (
-              <button
-                key={f.key}
-                onClick={() => setFilterStatus(f.key)}
-                style={{
-                  padding: "4px 9px", fontSize: 10, fontWeight: 700, borderRadius: 6, cursor: "pointer",
-                  background: filterStatus === f.key ? "var(--mf-bg-elevated)" : "transparent",
-                  border: `1px solid ${filterStatus === f.key ? "var(--mf-border-bright)" : "var(--mf-border)"}`,
-                  color: filterStatus === f.key ? "var(--mf-text)" : "var(--mf-text-muted)",
-                  transition: "all 0.12s",
-                }}
-              >
-                {f.label} ({f.count})
-              </button>
-            ))}
-          </div>
-        </div>
-        <div style={{ flex: 1, overflowY: "auto", padding: "8px 10px" }}>
-          {filtered.map(req => (
-            <button
-              key={req.id}
-              onClick={() => setSelected(req.id)}
-              style={{
-                display: "block", width: "100%", padding: "12px 13px", marginBottom: 6, textAlign: "left",
-                background: selectedReq?.id === req.id ? "var(--mf-bg-elevated)" : "transparent",
-                border: `1px solid ${selectedReq?.id === req.id ? "var(--mf-border-bright)" : "var(--mf-border)"}`,
-                borderRadius: 12, cursor: "pointer", transition: "all 0.12s",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: "var(--mf-text)" }}>{req.firstName} {req.lastName}</span>
-                <RegistrationStatusBadge status={(req.status || "pending").toLowerCase()} />
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--mf-text-muted)" }}>
-                <span style={{ color: roleColor[req.requestedRole || ""] || "var(--mf-text-muted)", fontWeight: 700 }}>{req.requestedRole || "N/A"}</span>
-                <span style={{ opacity: 0.4 }}>·</span>
-                <span>{req.email}</span>
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Right: Detail */}
-      {selectedReq && (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ padding: "18px 24px 14px", borderBottom: "1px solid var(--mf-border)", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em", margin: 0 }}>{selectedReq.firstName} {selectedReq.lastName}</h2>
-                <RegistrationStatusBadge status={(selectedReq.status || "pending").toLowerCase()} />
-              </div>
-              <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--mf-text-muted)" }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Shield size={10} />{selectedReq.requestedRole || "N/A"}</span>
-                <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Mail size={10} />{selectedReq.email}</span>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
-            {/* Info cards */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
-              {[
-                { icon: Mail, label: "EMAIL", value: selectedReq.email },
-                { icon: Phone, label: "PHONE", value: selectedReq.phoneNumber || "—" },
-                { icon: Shield, label: "REQUESTED ROLE", value: selectedReq.requestedRole || "N/A", valueColor: roleColor[selectedReq.requestedRole || ""] },
-                { icon: Activity, label: "STATUS", value: selectedReq.status },
-              ].map((info, i) => {
-                const InfoIcon = info.icon;
-                return (
-                  <div key={i} style={{ padding: "14px 16px", background: "var(--mf-bg-elevated)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                      <InfoIcon size={11} color="var(--mf-text-muted)" />
-                      <span style={{ fontSize: 9, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.08em" }}>{info.label}</span>
-                    </div>
-                    <div style={{ fontSize: 13, color: (info as any).valueColor || "var(--mf-text)", fontWeight: 600, lineHeight: 1.5 }}>{info.value}</div>
-                  </div>
-                );
-              })}
-            </div>
-
-
-
-            {/* Info note */}
-            {selectedReq.status === "PENDING" && (
-              <div style={{ padding: "12px 16px", background: "var(--mf-cyan-dim)", borderRadius: 10, border: "1px solid rgba(0,240,255,0.2)", display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 18 }}>
-                <Info size={14} color="var(--mf-cyan)" style={{ flexShrink: 0, marginTop: 1 }} />
-                <div style={{ fontSize: 11, color: "var(--mf-text-secondary)", lineHeight: 1.5 }}>
-                  <strong style={{ color: "var(--mf-cyan)" }}>Note:</strong> Approving will assign the requested role <strong style={{ color: roleColor[selectedReq.requestedRole || ""] }}>{selectedReq.requestedRole}</strong> to this account.
-                </div>
-              </div>
-            )}
-            {selectedReq.status === "ACTIVE" && (
-              <div style={{ padding: "12px 16px", background: "var(--mf-green-dim)", borderRadius: 10, border: "1px solid rgba(57,255,138,0.2)", display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 18 }}>
-                <CheckCircle size={14} color="var(--mf-green)" style={{ flexShrink: 0, marginTop: 1 }} />
-                <div style={{ fontSize: 11, color: "var(--mf-text-secondary)", lineHeight: 1.5 }}>
-                  <strong style={{ color: "var(--mf-green)" }}>Approved:</strong> This account is now active with role <strong>{selectedReq.requestedRole}</strong>.
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Action bar */}
-          {selectedReq.status === "PENDING" && (
-            <div style={{ padding: "14px 24px", borderTop: "1px solid var(--mf-border)", display: "flex", alignItems: "center", gap: 10 }}>
-              <button
-                onClick={() => onApprove(selectedReq.id, selectedReq.requestedRole || "")}
-                style={{
-                  display: "flex", alignItems: "center", gap: 7, padding: "10px 22px",
-                  background: "var(--mf-green)", border: "none", borderRadius: 10,
-                  color: "#000", fontSize: 13, fontWeight: 800, cursor: "pointer",
-                  boxShadow: "0 0 18px rgba(57,255,138,0.3)", transition: "box-shadow 0.2s",
-                }}
-                onMouseEnter={e => (e.currentTarget.style.boxShadow = "0 0 30px rgba(57,255,138,0.5)")}
-                onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 0 18px rgba(57,255,138,0.3)")}
-              >
-                <CheckCircle size={14} /> Approve
-              </button>
-              <button
-                onClick={() => onReject(selectedReq.id)}
-                style={{
-                  display: "flex", alignItems: "center", gap: 7, padding: "10px 22px",
-                  background: "var(--mf-magenta-dim)", border: "1px solid var(--mf-magenta)50",
-                  borderRadius: 10, color: "var(--mf-magenta)", fontSize: 13, fontWeight: 800,
-                  cursor: "pointer", transition: "all 0.2s",
-                }}
-              >
-                <XCircle size={14} /> Reject
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ─── Main Admin Dashboard ─────────────────────────────────────────────────────
 
 export function AdminDashboard() {
-  const [activeNav, setActiveNav] = useState("System Overview");
+  const [searchParams] = useSearchParams();
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
   const [chapters, setChapters] = useState<ChapterStatus[]>([]);
   const [registrations, setRegistrations] = useState<AdminAccount[]>([]);
@@ -1320,40 +1125,6 @@ export function AdminDashboard() {
     return () => { cancelled = true; };
   }, [buildActivities, mapAccountToOnlineUser, mapChapter]);
 
-  const handleApprove = useCallback(async (id: number, roleName: string) => {
-    try {
-      await approveAccount(id, roleName);
-      setRegistrations(prev => prev.map(r => r.id === id ? { ...r, status: "ACTIVE" } : r));
-    } catch (err: any) {
-      console.error("Failed to approve account", err);
-    }
-    // Add approved user to managed users
-    setRegistrations(prev => {
-      const reg = prev.find(r => r.id === id);
-      if (reg) {
-        setManagedUsers(mu => {
-          if (mu.some(u => u.id === 1000 + id)) return mu;
-          return [...mu, {
-            id: 1000 + id,
-            name: `${reg.firstName} ${reg.lastName}`,
-            email: reg.email,
-            roles: [reg.requestedRole || ""].filter(Boolean),
-            avatar: `${reg.firstName[0]}${reg.lastName[0]}`,
-            status: "offline" as const,
-            lastActive: "Just now",
-            joinedAt: "Just now",
-            source: "approved" as const,
-          }];
-        });
-      }
-      return prev;
-    });
-  }, []);
-
-  const handleReject = useCallback((id: number) => {
-    setRegistrations(prev => prev.map(r => r.id === id ? { ...r, status: "rejected" as const } : r));
-  }, []);
-
   const handleAddRole = useCallback((userId: number, newRole: string) => {
     setManagedUsers(prev => prev.map(u => {
       if (u.id !== userId) return u;
@@ -1369,35 +1140,27 @@ export function AdminDashboard() {
     }));
   }, []);
 
-  // Each nav maps to its own unique tab
-  const navToTab: Record<string, string> = {
-    "System Overview": "overview",
-    "Registration Requests": "requests",
-    "Chapter Monitor": "chapters",
-    "User Management": "users",
-  };
-
-  const currentTab = navToTab[activeNav] || "overview";
+  const requestedTab = searchParams.get("tab");
+  const currentTab = requestedTab === "chapters" || requestedTab === "users" ? requestedTab : "overview";
+  const activeNav = currentTab === "chapters"
+    ? "Chapter Monitor"
+    : currentTab === "users"
+      ? "User Management"
+      : "System Overview";
 
   return (
-    <AppLayout role="admin" activeNav={activeNav} onNavClick={setActiveNav}>
+    <AppLayout role="admin" activeNav={activeNav}>
       <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
         {/* Top bar */}
         <div style={{ padding: "14px 22px", borderBottom: "1px solid var(--mf-border)", background: "var(--mf-bg-base)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{
               width: 8, height: 8, borderRadius: "50%",
-              background: activeNav === "Registration Requests" ? "var(--mf-orange)"
-                : activeNav === "Chapter Monitor" ? "var(--mf-magenta)"
+              background: activeNav === "Chapter Monitor" ? "var(--mf-magenta)"
                 : activeNav === "User Management" ? "var(--mf-green)"
                 : "var(--mf-cyan)",
             }} />
             <span style={{ fontSize: 15, fontWeight: 900, letterSpacing: "-0.01em" }}>{activeNav}</span>
-            {activeNav === "Registration Requests" && (
-              <span style={{ fontSize: 11, color: "var(--mf-orange)", padding: "2px 8px", background: "rgba(255,140,66,0.14)", borderRadius: 6, fontWeight: 700 }}>
-                {registrations.filter(r => r.status === "pending").length} pending
-              </span>
-            )}
             {activeNav === "User Management" && managedUsers.filter(u => u.roles.length === 0).length > 0 && (
               <span style={{ fontSize: 11, color: "var(--mf-orange)", padding: "2px 8px", background: "rgba(255,140,66,0.14)", borderRadius: 6, fontWeight: 700 }}>
                 {managedUsers.filter(u => u.roles.length === 0).length} unassigned
@@ -1435,13 +1198,6 @@ export function AdminDashboard() {
           )}
           {!loading && !error && currentTab === "users" && (
             <UserManagementTab managedUsers={managedUsers} onAddRole={handleAddRole} onRemoveRole={handleRemoveRole} />
-          )}
-          {!loading && !error && currentTab === "requests" && (
-            <RegistrationRequestsTab
-              registrations={registrations}
-              onApprove={handleApprove}
-              onReject={handleReject}
-            />
           )}
         </div>
       </div>

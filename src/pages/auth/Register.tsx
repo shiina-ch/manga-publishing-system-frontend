@@ -1,8 +1,33 @@
-import { useState } from "react";
+import { useState, type ChangeEvent, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 import { BookOpen, Zap, ArrowLeft, ChevronDown, MailCheck, CheckCircle2, Eye, EyeOff } from "lucide-react";
-import { registerAccount } from "../../services/adminApi";
+import { ApiRequestError, registerAccount } from "../../services/adminApi";
 import { toast } from "react-toastify";
+import {
+  PUBLIC_REQUESTED_ROLE_OPTIONS,
+  isPublicRequestedRole,
+  type RegistrationRequest,
+} from "../../types/account";
+
+type RegistrationForm = Omit<RegistrationRequest, "requestedRole"> & {
+  requestedRole: RegistrationRequest["requestedRole"] | "";
+};
+
+type RegistrationField = keyof RegistrationForm;
+type FieldErrors = Partial<Record<RegistrationField, string>>;
+
+const GMAIL_PATTERN = /^[A-Z0-9._%+-]+@gmail\.com$/i;
+const PHONE_PATTERN = /^0\d{9}$/;
+const PASSWORD_PATTERN = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+
+const FIELD_LABELS: Record<RegistrationField, string> = {
+  firstName: "First name",
+  lastName: "Last name",
+  phoneNumber: "Phone number",
+  email: "Email",
+  password: "Password",
+  requestedRole: "Role",
+};
 
 function MangaArt() {
   return (
@@ -25,22 +50,59 @@ function MangaArt() {
   );
 }
 
-function Field({ label, type = "text", placeholder, value, onChange }: any) {
+interface FieldProps {
+  label: string;
+  type?: string;
+  placeholder: string;
+  value: string;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  error?: string;
+}
+
+function Field({ label, type = "text", placeholder, value, onChange, error }: FieldProps) {
   return (
     <div>
       <label style={{ display: "block", fontSize: 11, fontWeight: 800, color: "var(--mf-text-secondary)", marginBottom: 6, letterSpacing: "0.06em" }}>{label}</label>
       <input type={type} placeholder={placeholder} value={value} onChange={onChange}
-        style={{ width: "100%", padding: "11px 14px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border-bright)", borderRadius: 9, color: "var(--mf-text)", fontSize: 13, outline: "none", boxSizing: "border-box", transition: "border-color 0.15s" }}
-        onFocus={(e: any) => (e.target.style.borderColor = "var(--mf-cyan)")}
-        onBlur={(e: any) => (e.target.style.borderColor = "var(--mf-border-bright)")}
+        aria-invalid={Boolean(error)}
+        style={{ width: "100%", padding: "11px 14px", background: "var(--mf-bg-surface)", border: `1px solid ${error ? "var(--mf-magenta)" : "var(--mf-border-bright)"}`, borderRadius: 9, color: "var(--mf-text)", fontSize: 13, outline: "none", boxSizing: "border-box", transition: "border-color 0.15s" }}
+        onFocus={(event) => (event.currentTarget.style.borderColor = "var(--mf-cyan)")}
+        onBlur={(event) => (event.currentTarget.style.borderColor = error ? "var(--mf-magenta)" : "var(--mf-border-bright)")}
       />
+      {error && <div style={{ color: "var(--mf-magenta)", fontSize: 10, marginTop: 5, lineHeight: 1.35 }}>{error}</div>}
     </div>
   );
 }
 
+function validateRegistration(form: RegistrationForm): FieldErrors {
+  const errors: FieldErrors = {};
+  if (!form.firstName.trim()) errors.firstName = "First name is required.";
+  if (!form.lastName.trim()) errors.lastName = "Last name is required.";
+  if (!PHONE_PATTERN.test(form.phoneNumber.trim())) errors.phoneNumber = "Phone number must contain exactly 10 digits and start with 0.";
+  if (!GMAIL_PATTERN.test(form.email.trim())) errors.email = "Enter a valid @gmail.com address.";
+  if (!PASSWORD_PATTERN.test(form.password)) errors.password = "Password must be at least 8 characters and include uppercase, lowercase, number, and special characters.";
+  if (!form.requestedRole) errors.requestedRole = "Select a role.";
+  return errors;
+}
+
+function backendFieldErrors(details: Record<string, unknown> | null): FieldErrors {
+  if (!details) return {};
+  const source = typeof details.errors === "object" && details.errors !== null && !Array.isArray(details.errors)
+    ? details.errors as Record<string, unknown>
+    : details;
+
+  return Object.keys(FIELD_LABELS).reduce<FieldErrors>((errors, key) => {
+    const field = key as RegistrationField;
+    const value = source[field];
+    if (typeof value === "string") errors[field] = value;
+    if (Array.isArray(value) && value.every((item) => typeof item === "string")) errors[field] = value.join(" ");
+    return errors;
+  }, {});
+}
+
 export function Register() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<RegistrationForm>({
     firstName: "",
     lastName: "",
     phoneNumber: "",
@@ -52,28 +114,44 @@ export function Register() {
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [dropdownFocused, setDropdownFocused] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
-  const set = (k: string) => (e: any) => setForm(f => ({ ...f, [k]: e.target.value }));
+  const set = (field: RegistrationField) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const value = event.target.value;
+    setForm((current) => ({ ...current, [field]: value } as RegistrationForm));
+    setFieldErrors((current) => ({ ...current, [field]: undefined }));
+  };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.firstName || !form.lastName || !form.email || !form.password || !form.requestedRole) {
-      toast.warning("Vui lòng điền đầy đủ thông tin bắt buộc");
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    const validationErrors = validateRegistration(form);
+    setFieldErrors(validationErrors);
+    if (Object.keys(validationErrors).length > 0) {
+      toast.warning("Please review your registration details.");
       return;
     }
+
+    if (!isPublicRequestedRole(form.requestedRole)) return;
+
     setLoading(true);
     try {
       await registerAccount({
-        firstName: form.firstName,
-        lastName: form.lastName,
-        phoneNumber: form.phoneNumber,
-        email: form.email,
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        phoneNumber: form.phoneNumber.trim(),
+        email: form.email.trim(),
         password: form.password,
         requestedRole: form.requestedRole,
       });
       setSubmitted(true);
-    } catch (err: any) {
-      toast.error(err?.message || "Đăng ký thất bại. Vui lòng thử lại!");
+    } catch (error: unknown) {
+      if (error instanceof ApiRequestError) {
+        const backendErrors = backendFieldErrors(error.details);
+        setFieldErrors((current) => ({ ...current, ...backendErrors }));
+        toast.error(Object.keys(backendErrors).length > 0 ? "Please review the highlighted fields." : error.message);
+      } else {
+        toast.error("Registration failed. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -94,10 +172,10 @@ export function Register() {
               <CheckCircle2 size={12} style={{ color: "var(--mf-cyan)" }} />
               <span style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-cyan)", letterSpacing: "0.08em" }}>SUBMITTED SUCCESSFULLY</span>
             </div>
-            <h1 style={{ fontSize: 26, fontWeight: 900, letterSpacing: "-0.02em", color: "var(--mf-text)", marginBottom: 14 }}>Thank you for your information!</h1>
+            <h1 style={{ fontSize: 26, fontWeight: 900, letterSpacing: "-0.02em", color: "var(--mf-text)", marginBottom: 14 }}>Registration request submitted</h1>
             <p style={{ fontSize: 14, color: "var(--mf-text-secondary)", lineHeight: 1.75, marginBottom: 32 }}>
-              Your account is pending admin approval.<br />
-              Please check your email regularly for updates.
+              Your account is pending approval and cannot sign in yet.<br />
+              Please return after your request has been reviewed.
             </p>
             <button onClick={() => navigate("/")} style={{ padding: "12px 32px", background: "var(--mf-magenta)", border: "none", borderRadius: 10, color: "#fff", fontSize: 14, fontWeight: 900, cursor: "pointer", boxShadow: "0 0 24px var(--mf-magenta-glow)" }}>
               Back to Login
@@ -127,12 +205,12 @@ export function Register() {
 
           <form onSubmit={handleSubmit}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-              <Field label="FIRST NAME" placeholder="Hiroshi" value={form.firstName} onChange={set("firstName")} />
-              <Field label="LAST NAME" placeholder="Nakamura" value={form.lastName} onChange={set("lastName")} />
+              <Field label="FIRST NAME" placeholder="Hiroshi" value={form.firstName} onChange={set("firstName")} error={fieldErrors.firstName} />
+              <Field label="LAST NAME" placeholder="Nakamura" value={form.lastName} onChange={set("lastName")} error={fieldErrors.lastName} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-              <Field label="PHONE NUMBER" type="tel" placeholder="+81 90-0000-0000" value={form.phoneNumber} onChange={set("phoneNumber")} />
-              <Field label="EMAIL ADDRESS" type="email" placeholder="you@mangaflow.io" value={form.email} onChange={set("email")} />
+              <Field label="PHONE NUMBER" type="tel" placeholder="0912345678" value={form.phoneNumber} onChange={set("phoneNumber")} error={fieldErrors.phoneNumber} />
+              <Field label="EMAIL ADDRESS" type="email" placeholder="you@gmail.com" value={form.email} onChange={set("email")} error={fieldErrors.email} />
             </div>
 
             {/* Password */}
@@ -144,14 +222,16 @@ export function Register() {
                   placeholder="Min 8 chars, uppercase, number, special (@#$...)"
                   value={form.password}
                   onChange={set("password")}
-                  style={{ width: "100%", padding: "11px 42px 11px 14px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border-bright)", borderRadius: 9, color: "var(--mf-text)", fontSize: 13, outline: "none", boxSizing: "border-box", transition: "border-color 0.15s" }}
-                  onFocus={(e: any) => (e.target.style.borderColor = "var(--mf-cyan)")}
-                  onBlur={(e: any) => (e.target.style.borderColor = "var(--mf-border-bright)")}
+                  aria-invalid={Boolean(fieldErrors.password)}
+                  style={{ width: "100%", padding: "11px 42px 11px 14px", background: "var(--mf-bg-surface)", border: `1px solid ${fieldErrors.password ? "var(--mf-magenta)" : "var(--mf-border-bright)"}`, borderRadius: 9, color: "var(--mf-text)", fontSize: 13, outline: "none", boxSizing: "border-box", transition: "border-color 0.15s" }}
+                  onFocus={(event) => (event.currentTarget.style.borderColor = "var(--mf-cyan)")}
+                  onBlur={(event) => (event.currentTarget.style.borderColor = fieldErrors.password ? "var(--mf-magenta)" : "var(--mf-border-bright)")}
                 />
                 <button type="button" onClick={() => setShowPw(!showPw)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)", padding: 4 }}>
                   {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
+              {fieldErrors.password && <div style={{ color: "var(--mf-magenta)", fontSize: 10, marginTop: 5, lineHeight: 1.35 }}>{fieldErrors.password}</div>}
             </div>
 
             {/* Role dropdown */}
@@ -168,18 +248,22 @@ export function Register() {
                   style={{
                     width: "100%", padding: "11px 38px 11px 14px",
                     background: "var(--mf-bg-surface)",
-                    border: `1px solid ${dropdownFocused ? "var(--mf-cyan)" : "var(--mf-border-bright)"}`,
+                    border: `1px solid ${dropdownFocused ? "var(--mf-cyan)" : fieldErrors.requestedRole ? "var(--mf-magenta)" : "var(--mf-border-bright)"}`,
                     borderRadius: 9, color: form.requestedRole ? "var(--mf-text)" : "var(--mf-text-muted)",
                     fontSize: 13, outline: "none", boxSizing: "border-box",
                     appearance: "none", WebkitAppearance: "none", cursor: "pointer", transition: "border-color 0.15s",
                   }}
                 >
-                  <option value="" disabled style={{ color: "var(--mf-text-muted)", background: "var(--mf-bg-surface)" }}>Select your role…</option>
-                  <option value="ASSISTANT" style={{ background: "var(--mf-bg-surface)", color: "var(--mf-text)" }}>Assistant</option>
-                  <option value="MANGAKA" style={{ background: "var(--mf-bg-surface)", color: "var(--mf-text)" }}>Mangaka</option>
+                  <option value="" disabled style={{ color: "var(--mf-text-muted)", background: "var(--mf-bg-surface)" }}>Select a role…</option>
+                  {PUBLIC_REQUESTED_ROLE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value} style={{ background: "var(--mf-bg-surface)", color: "var(--mf-text)" }}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
                 <ChevronDown size={15} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", color: "var(--mf-text-muted)", pointerEvents: "none" }} />
               </div>
+              {fieldErrors.requestedRole && <div style={{ color: "var(--mf-magenta)", fontSize: 10, marginTop: 5 }}>{fieldErrors.requestedRole}</div>}
             </div>
 
             <button type="submit" disabled={loading}
@@ -187,7 +271,7 @@ export function Register() {
               onMouseEnter={e => !loading && (e.currentTarget.style.boxShadow = "0 0 40px var(--mf-magenta-glow)")}
               onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 0 24px var(--mf-magenta-glow)")}
             >
-              <Zap size={14} /> {loading ? "ĐANG GỬI..." : "SUBMIT"}
+              <Zap size={14} /> {loading ? "SUBMITTING..." : "SUBMIT"}
             </button>
           </form>
 

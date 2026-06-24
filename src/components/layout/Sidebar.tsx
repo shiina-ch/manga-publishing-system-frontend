@@ -2,18 +2,48 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "react-toastify";
 import {
-  BookOpen, Hash, Settings, Bell, ChevronDown, ChevronRight,
+  BookOpen, Hash, Bell, ChevronDown, ChevronRight,
   Plus, Edit3, Users, PenTool, Brush, Home, Search,
   FileText, Clock, AlertTriangle, CheckCircle, BarChart3, Layers, Star,
   Inbox, Shield, Activity, UserPlus, Eye, User, LogOut
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { logout } from "../../services/adminApi";
+import { tokenStorage } from "../../storage/tokenStorage";
+import { getPrimaryRole } from "../../auth/roleRouting";
+import type { ActiveRole } from "../../types/account";
 
-type Role = "editor" | "board" | "mangaka" | "assistant" | "admin";
+type LayoutRole = "editor" | "board" | "mangaka" | "assistant" | "admin" | "manager";
 
-const roleConfig = {
+interface NavItem {
+  icon: LucideIcon;
+  label: string;
+  badge?: number;
+  badgeColor?: string;
+  path?: string;
+}
+
+interface RoleConfig {
+  label: string;
+  color: string;
+  icon: LucideIcon;
+  nav: NavItem[];
+  channels: string[];
+  dms: string[];
+}
+
+const activeRoleToLayoutRole: Record<ActiveRole, LayoutRole> = {
+  ADMIN: "admin",
+  MANAGER: "manager",
+  TANTOU_EDITOR: "editor",
+  EDITORIAL_BOARD_MEMBER: "board",
+  MANGAKA: "mangaka",
+  ASSISTANT: "assistant",
+};
+
+const roleConfig: Record<LayoutRole, RoleConfig> = {
   editor: {
-    label: "Editor", color: "var(--mf-cyan)", icon: Edit3, user: "Kenji Yamada",
+    label: "Tantou Editor", color: "var(--mf-cyan)", icon: Edit3,
     nav: [
       { icon: Inbox, label: "New Proposals", badge: 8 },
       { icon: Clock, label: "In Revision", badge: 3 },
@@ -24,7 +54,7 @@ const roleConfig = {
     dms: ["Mangaka: Oda-san", "Board Chief Tanaka", "Art Team Lead"],
   },
   board: {
-    label: "Board Member", color: "var(--mf-orange)", icon: Users, user: "Director Tanaka",
+    label: "Editorial Board Member", color: "var(--mf-orange)", icon: Users,
     nav: [
       { icon: Inbox, label: "Pending Approvals", badge: 5 },
       { icon: Star, label: "Active Projects", badge: 12 },
@@ -35,7 +65,7 @@ const roleConfig = {
     dms: ["Chief Editor Yamamoto", "Legal: Sato-san", "Marketing Lead"],
   },
   mangaka: {
-    label: "Mangaka", color: "var(--mf-magenta)", icon: PenTool, user: "Masashi Kishimoto",
+    label: "Mangaka", color: "var(--mf-magenta)", icon: PenTool,
     nav: [
       { icon: Layers, label: "My Projects", badge: 3 },
       { icon: AlertTriangle, label: "Deadlines", badge: 2, badgeColor: "var(--mf-orange)" },
@@ -46,7 +76,7 @@ const roleConfig = {
     dms: ["Editor: Yamada-san", "Assistant Aiko", "Assistant Kenji"],
   },
   assistant: {
-    label: "Assistant", color: "var(--mf-green)", icon: Brush, user: "Kenji Mori",
+    label: "Assistant", color: "var(--mf-green)", icon: Brush,
     nav: [
       { icon: Inbox, label: "My Assignments", badge: 4 },
       { icon: Clock, label: "In Progress", badge: 2 },
@@ -56,36 +86,49 @@ const roleConfig = {
     dms: ["Mangaka: Kishimoto-san", "Lead Aiko"],
   },
   admin: {
-    label: "Admin", color: "var(--mf-cyan)", icon: Shield, user: "System Admin",
+    label: "Admin", color: "var(--mf-cyan)", icon: Shield,
     nav: [
-      { icon: Activity, label: "System Overview" },
-      { icon: UserPlus, label: "Registration Requests", badge: 4, badgeColor: "var(--mf-orange)" },
-      { icon: Eye, label: "Chapter Monitor" },
-      { icon: Users, label: "User Management" },
+      { icon: Activity, label: "System Overview", path: "/admin?tab=overview" },
+      { icon: UserPlus, label: "Account Requests", path: "/account-requests", badgeColor: "var(--mf-orange)" },
+      { icon: Eye, label: "Chapter Monitor", path: "/admin?tab=chapters" },
+      { icon: Users, label: "User Management", path: "/admin?tab=users" },
     ],
     channels: ["system-alerts", "admin-logs", "moderation", "announcements"],
     dms: ["Chief Editor Yamamoto", "Director Tanaka", "Support Team"],
   },
+  manager: {
+    label: "Manager", color: "var(--mf-orange)", icon: Shield,
+    nav: [
+      { icon: UserPlus, label: "Account Requests", path: "/account-requests" },
+    ],
+    channels: [],
+    dms: [],
+  },
 };
 
 interface SidebarProps {
-  role: Role;
   activeNav?: string;
   onNavClick?: (label: string) => void;
 }
 
-export function Sidebar({ role, activeNav, onNavClick }: SidebarProps) {
-  const config = roleConfig[role];
-  const RoleIcon = config.icon;
+export function Sidebar({ activeNav, onNavClick }: SidebarProps) {
+  const activeRole = getPrimaryRole(tokenStorage.getRoles());
+  const config = activeRole ? roleConfig[activeRoleToLayoutRole[activeRole]] : null;
+  const account = tokenStorage.getAccount();
+  const accountName = account ? (`${account.firstName} ${account.lastName}`.trim() || account.email) : "Current User";
   const navigate = useNavigate();
   const [channelsOpen, setChannelsOpen] = useState(true);
   const [dmsOpen, setDmsOpen] = useState(true);
+
+  if (!config) return null;
+
+  const RoleIcon = config.icon;
 
   const effectiveActive = activeNav ?? config.nav[0].label;
 
   function handleLogout() {
     logout();
-    toast.success("Đăng xuất thành công");
+    toast.success("Signed out successfully.");
     navigate("/", { replace: true });
   }
 
@@ -134,7 +177,7 @@ export function Sidebar({ role, activeNav, onNavClick }: SidebarProps) {
             return (
               <button
                 key={item.label}
-                onClick={() => onNavClick?.(item.label)}
+                onClick={() => item.path ? navigate(item.path) : onNavClick?.(item.label)}
                 style={{
                   display: "flex", alignItems: "center", gap: 9, width: "100%",
                   padding: "8px 10px",
@@ -154,12 +197,12 @@ export function Sidebar({ role, activeNav, onNavClick }: SidebarProps) {
               >
                 <Icon size={13} />
                 <span style={{ flex: 1 }}>{item.label}</span>
-                {(item as any).badge && (
+                {item.badge !== undefined && (
                   <span style={{
-                    background: isActive ? config.color : ((item as any).badgeColor || "var(--mf-bg-elevated)"),
-                    color: isActive ? "#fff" : ((item as any).badgeColor ? "#fff" : "var(--mf-text-muted)"),
+                    background: isActive ? config.color : (item.badgeColor || "var(--mf-bg-elevated)"),
+                    color: isActive ? "#fff" : (item.badgeColor ? "#fff" : "var(--mf-text-muted)"),
                     fontSize: 10, fontWeight: 800, padding: "1px 6px", borderRadius: 100, minWidth: 18, textAlign: "center",
-                  }}>{(item as any).badge}</span>
+                  }}>{item.badge}</span>
                 )}
               </button>
             );
@@ -211,14 +254,14 @@ export function Sidebar({ role, activeNav, onNavClick }: SidebarProps) {
           <RoleIcon size={15} color="#fff" />
         </div>
         <div style={{ flex: 1, overflow: "hidden", cursor: "pointer" }} onClick={() => navigate("/profile")}>
-          <div style={{ fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--mf-text)", transition: "color 0.2s" }} onMouseEnter={e => e.currentTarget.style.color = "var(--mf-cyan)"} onMouseLeave={e => e.currentTarget.style.color = "var(--mf-text)"}>{config.user}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--mf-text)", transition: "color 0.2s" }} onMouseEnter={e => e.currentTarget.style.color = "var(--mf-cyan)"} onMouseLeave={e => e.currentTarget.style.color = "var(--mf-text)"}>{accountName}</div>
           <div style={{ fontSize: 10, color: config.color, fontWeight: 700 }}>{config.label}</div>
         </div>
         <button style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)", padding: 4, transition: "color 0.2s" }} onMouseEnter={e => e.currentTarget.style.color = "var(--mf-cyan)"} onMouseLeave={e => e.currentTarget.style.color = "var(--mf-text-muted)"} onClick={() => navigate("/profile")}>
           <User size={14} />
         </button>
         <button
-          title="Đăng xuất"
+          title="Sign out"
           onClick={handleLogout}
           style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)", padding: 4, transition: "color 0.2s" }}
           onMouseEnter={e => (e.currentTarget.style.color = "#ff4d6d")}

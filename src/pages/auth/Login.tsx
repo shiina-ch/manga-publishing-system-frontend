@@ -2,7 +2,39 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { BookOpen, Eye, EyeOff, Zap } from "lucide-react";
 import { toast } from "react-toastify";
-import { login } from "../../services/adminApi";
+import { ApiRequestError, login } from "../../services/adminApi";
+import { tokenStorage } from "../../storage/tokenStorage";
+import { getDefaultRoute } from "../../auth/roleRouting";
+
+interface LoginErrorPresentation {
+  message: string;
+  rejectionReason?: string;
+}
+
+function loginErrorPresentation(error: unknown): LoginErrorPresentation {
+  if (!(error instanceof ApiRequestError)) {
+    return { message: "Unable to sign in right now. Please try again later." };
+  }
+
+  switch (error.errorCode) {
+    case "INVALID_CREDENTIALS":
+      return { message: "Invalid email or password. Please check your credentials." };
+    case "ACCOUNT_PENDING":
+      return { message: "Your account is awaiting approval. You can sign in after your request is approved." };
+    case "ACCOUNT_REJECTED": {
+      const reason = error.details?.rejectionReason;
+      return {
+        message: "Your account registration request was rejected.",
+        rejectionReason: typeof reason === "string" && reason.trim() ? reason : undefined,
+      };
+    }
+    case "ACCOUNT_INACTIVE":
+    case "ACCOUNT_UNAVAILABLE":
+      return { message: "This account is currently unavailable. Contact an administrator for assistance." };
+    default:
+      return { message: "Unable to sign in right now. Please try again later." };
+  }
+}
 
 function MangaArt() {
   return (
@@ -52,6 +84,7 @@ export function Login() {
   const [showPw, setShowPw] = useState(false);
   const [form, setForm] = useState({ email: "", password: "", remember: false });
   const [loading, setLoading] = useState(false);
+  const [loginError, setLoginError] = useState<LoginErrorPresentation | null>(null);
 
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
@@ -78,23 +111,21 @@ export function Login() {
 
             // Validate trống
             if (!form.email.trim() || !form.password.trim()) {
-              toast.warning("Vui lòng nhập email và password", { toastId: "empty-fields" });
+              toast.warning("Please enter your email and password.", { toastId: "empty-fields" });
               return;
             }
 
+            setLoginError(null);
             setLoading(true);
             try {
-              const data = await login({ email: form.email, password: form.password });
-              toast.success("Chào mừng bạn đến với hệ thống 🎉");
+              await login({ email: form.email, password: form.password });
+              toast.success("Welcome to MangaFlow 🎉");
               
-              const isAdmin = data.account.systemRole?.some(role => role.roleName.toLowerCase().includes("admin"));
-              if (isAdmin) {
-                navigate("/admin");
-              } else {
-                navigate("/board/voting");
-              }
-            } catch {
-              toast.error("Email hoặc mật khẩu không hợp lệ. Vui lòng kiểm tra lại!");
+              navigate(getDefaultRoute(tokenStorage.getRoles()));
+            } catch (error: unknown) {
+              const presentation = loginErrorPresentation(error);
+              setLoginError(presentation);
+              toast.error(presentation.message);
             } finally {
               setLoading(false);
             }
@@ -120,6 +151,28 @@ export function Login() {
                 </button>
               </div>
             </div>
+            {loginError && (
+              <div
+                role="alert"
+                style={{
+                  marginBottom: 16,
+                  padding: "12px 14px",
+                  background: "var(--mf-magenta-dim)",
+                  border: "1px solid rgba(255,42,122,0.35)",
+                  borderRadius: 10,
+                  color: "var(--mf-text-secondary)",
+                  fontSize: 12,
+                  lineHeight: 1.55,
+                }}
+              >
+                <div style={{ color: "var(--mf-magenta)", fontWeight: 800 }}>{loginError.message}</div>
+                {loginError.rejectionReason && (
+                  <div style={{ marginTop: 7 }}>
+                    <strong style={{ color: "var(--mf-text)" }}>Rejection reason:</strong> {loginError.rejectionReason}
+                  </div>
+                )}
+              </div>
+            )}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 26 }}>
               <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer" }}>
                 <input type="checkbox" checked={form.remember} onChange={e => setForm({ ...form, remember: e.target.checked })} style={{ accentColor: "var(--mf-magenta)", width: 14, height: 14 }} />
@@ -131,7 +184,7 @@ export function Login() {
               onMouseEnter={e => !loading && (e.currentTarget.style.boxShadow = "0 0 40px var(--mf-magenta-glow)")}
               onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 0 24px var(--mf-magenta-glow)")}
             >
-              <Zap size={15} /> {loading ? "ĐANG ĐĂNG NHẬP..." : "LOGIN TO WORKSPACE"}
+              <Zap size={15} /> {loading ? "SIGNING IN..." : "LOGIN TO WORKSPACE"}
             </button>
           </form>
 
