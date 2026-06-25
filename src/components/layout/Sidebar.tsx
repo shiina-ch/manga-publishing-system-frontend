@@ -45,13 +45,13 @@ const roleConfig: Record<LayoutRole, RoleConfig> = {
   editor: {
     label: "Tantou Editor", color: "var(--mf-cyan)", icon: Edit3,
     nav: [
-      { icon: Inbox, label: "New Proposals", badge: 8 },
-      { icon: Clock, label: "In Revision", badge: 3 },
-      { icon: AlertTriangle, label: "Escalated to Board", badge: 2, badgeColor: "var(--mf-orange)" },
+      { icon: Inbox, label: "New Proposals" },
+      { icon: Clock, label: "In Revision" },
+      { icon: AlertTriangle, label: "Escalated to Board", badgeColor: "var(--mf-orange)" },
       { icon: CheckCircle, label: "Approved" },
     ],
-    channels: ["one-piece-ch-1120", "blue-lock-ch-290", "spy-family-ch-97", "jjk-ch-265"],
-    dms: ["Mangaka: Oda-san", "Board Chief Tanaka", "Art Team Lead"],
+    channels: [],
+    dms: [],
   },
   board: {
     label: "Editorial Board Member", color: "var(--mf-orange)", icon: Users,
@@ -109,9 +109,11 @@ const roleConfig: Record<LayoutRole, RoleConfig> = {
 interface SidebarProps {
   activeNav?: string;
   onNavClick?: (label: string) => void;
+
+  navBadges?: Record<string, number>;
 }
 
-export function Sidebar({ activeNav, onNavClick }: SidebarProps) {
+export function Sidebar({ activeNav, onNavClick, navBadges }: SidebarProps) {
   const activeRole = getPrimaryRole(tokenStorage.getRoles());
   const config = activeRole ? roleConfig[activeRoleToLayoutRole[activeRole]] : null;
   const account = tokenStorage.getAccount();
@@ -172,6 +174,8 @@ export function Sidebar({ activeNav, onNavClick }: SidebarProps) {
           {config.nav.map((item) => {
             const Icon = item.icon;
             const isActive = effectiveActive === item.label;
+            const badge = navBadges?.[item.label] ?? item.badge;
+            const shouldShowBadge = typeof badge === "number" && badge > 0;
             return (
               <button
                 key={item.label}
@@ -195,12 +199,19 @@ export function Sidebar({ activeNav, onNavClick }: SidebarProps) {
               >
                 <Icon size={13} />
                 <span style={{ flex: 1 }}>{item.label}</span>
-                {item.badge !== undefined && (
+                {shouldShowBadge && (
                   <span style={{
                     background: isActive ? config.color : (item.badgeColor || "var(--mf-bg-elevated)"),
                     color: isActive ? "#fff" : (item.badgeColor ? "#fff" : "var(--mf-text-muted)"),
-                    fontSize: 10, fontWeight: 800, padding: "1px 6px", borderRadius: 100, minWidth: 18, textAlign: "center",
-                  }}>{item.badge}</span>
+                    fontSize: 10,
+                    fontWeight: 800,
+                    padding: "1px 6px",
+                    borderRadius: 100,
+                    minWidth: 18,
+                    textAlign: "center",
+                  }}>
+                    {badge}
+                  </span>
                 )}
               </button>
             );

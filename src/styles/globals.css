@@ -1,0 +1,90 @@
+/* Modern custom scrollbar styling */
+.mf-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.mf-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.mf-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 99px;
+  transition: background 0.2s ease;
+}
+
+.mf-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Glassmorphism glass card styling */
+.glass-panel {
+  background: rgba(30, 19, 38, 0.6) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Soft pulse keyframes for notification and glow borders */
+@keyframes neon-glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 8px rgba(0, 240, 255, 0.15);
+    border-color: rgba(0, 240, 255, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 16px rgba(0, 240, 255, 0.4);
+    border-color: rgba(0, 240, 255, 0.5);
+  }
+}
+
+.glow-active {
+  animation: neon-glow-pulse 3s infinite ease-in-out;
+}
+
+/* Interactive transitions for dashboard items */
+.interactive-card {
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.interactive-card:hover {
+  transform: translateY(-2px);
+  background: rgba(45, 30, 58, 0.8) !important;
+  border-color: rgba(0, 240, 255, 0.35) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 10px rgba(0, 240, 255, 0.1) !important;
+}
+
+/* Concept Art Card design hover */
+.concept-art-card {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.concept-art-card:hover {
+  transform: scale(1.04) rotate(1deg);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4), 0 0 15px rgba(255, 42, 122, 0.25);
+  border-color: rgba(255, 42, 122, 0.4) !important;
+}
+
+.concept-art-card::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: skewX(-25deg);
+  transition: none;
+}
+
+.concept-art-card:hover::after {
+  left: 150%;
+  transition: all 0.75s ease-in-out;
+}
