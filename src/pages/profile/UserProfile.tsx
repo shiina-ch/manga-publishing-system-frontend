@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router";
-import { ArrowLeft, User, Phone, Mail, Camera, Shield, Zap, Activity } from "lucide-react";
+import { ArrowLeft, User, Phone, Mail, Camera, Shield, Zap, Activity, Clock, BarChart3 } from "lucide-react";
 import { getAccountProfile } from "../../services/accountApi";
 import { tokenStorage } from "../../storage/tokenStorage";
+import "../../styles/UserProfile.css";
 
 export const UserProfile = () => {
   const navigate = useNavigate();
@@ -45,7 +46,6 @@ export const UserProfile = () => {
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulate save
     alert("Profile configurations synchronized.");
   };
 
@@ -53,205 +53,212 @@ export const UserProfile = () => {
     <div style={{
       minHeight: "100vh",
       background: "var(--mf-bg-deep, #0c0714)",
-      backgroundImage: "linear-gradient(rgba(255, 45, 115, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 45, 115, 0.05) 1px, transparent 1px)",
-      backgroundSize: "40px 40px",
-      backgroundPosition: "center center",
       color: "var(--mf-text, #ffffff)",
       fontFamily: "'Inter', sans-serif",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      padding: "32px 24px",
       position: "relative",
-      overflow: "hidden"
+      overflow: "hidden",
     }}>
-      {/* Background Glows */}
-      <div style={{ position: "absolute", top: "-10%", left: "-10%", width: "50%", height: "50%", background: "radial-gradient(circle, rgba(0, 229, 255, 0.15) 0%, transparent 70%)", filter: "blur(60px)", zIndex: 0 }} />
-      <div style={{ position: "absolute", bottom: "-10%", right: "-10%", width: "50%", height: "50%", background: "radial-gradient(circle, rgba(255, 45, 115, 0.1) 0%, transparent 70%)", filter: "blur(60px)", zIndex: 0 }} />
 
-      <div style={{ position: "relative", zIndex: 1, maxWidth: 800, margin: "0 auto", padding: "40px 20px" }}>
-        {/* Header */}
-        <button 
+
+
+      {/* Ambient glows */}
+      <div style={{ position: "absolute", top: "-15%", left: "-5%", width: "40%", height: "50%", background: "radial-gradient(circle, rgba(0,229,255,0.07) 0%, transparent 65%)", filter: "blur(80px)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", bottom: "-15%", right: "-5%", width: "35%", height: "45%", background: "radial-gradient(circle, rgba(255,45,115,0.05) 0%, transparent 65%)", filter: "blur(80px)", pointerEvents: "none" }} />
+
+      {/* ── BACK BUTTON (outside frame) ── */}
+      <div className="up-back" style={{ width: "100%", maxWidth: 1100, marginBottom: 20, zIndex: 1 }}>
+        <button
           onClick={() => navigate(-1)}
           style={{
-            display: "flex", alignItems: "center", gap: 8, background: "transparent", border: "none", color: "var(--mf-cyan, #00E5FF)", fontSize: 13, fontWeight: 700, letterSpacing: "0.05em", cursor: "pointer", marginBottom: 30, textTransform: "uppercase"
+            display: "flex", alignItems: "center", gap: 8,
+            background: "transparent", border: "none",
+            color: "var(--mf-text-muted, #8a849b)", fontSize: 13, fontWeight: 600,
+            cursor: "pointer", padding: 0,
+            transition: "color 0.2s", fontFamily: "'Inter', sans-serif",
           }}
+          onMouseEnter={e => e.currentTarget.style.color = "var(--mf-cyan, #00E5FF)"}
+          onMouseLeave={e => e.currentTarget.style.color = "var(--mf-text-muted, #8a849b)"}
         >
-          <ArrowLeft size={16} /> Return to Workspace
+          <ArrowLeft size={16} /> Back
         </button>
+      </div>
 
-        <div style={{ marginBottom: 40, textAlign: "center" }}>
-          <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 60, height: 60, borderRadius: 16, background: "linear-gradient(135deg, var(--mf-magenta, #FF2D73), var(--mf-cyan, #00E5FF))", marginBottom: 16, boxShadow: "0 0 20px rgba(0, 229, 255, 0.4)" }}>
-            <Shield size={30} color="#fff" />
-          </div>
-          <h1 style={{ fontSize: 36, fontWeight: 900, letterSpacing: "-0.03em", margin: 0, textShadow: "0 0 10px rgba(255,255,255,0.2)" }}>System Identity</h1>
-          <p style={{ color: "var(--mf-text-muted, #8a849b)", fontSize: 14, marginTop: 8 }}>Manage your core access parameters and communication channels.</p>
-        </div>
+      {/* ── MAIN LAYOUT: Left Info + Right Frame ── */}
+      <div style={{
+        position: "relative", zIndex: 1,
+        width: "100%", maxWidth: 1100,
+        display: "flex", gap: 28,
+        alignItems: "flex-start",
+        flex: 1,
+      }}>
 
-        {/* Glassmorphic Card */}
-        <div style={{
-          background: "rgba(20, 12, 28, 0.6)",
-          backdropFilter: "blur(24px)",
-          WebkitBackdropFilter: "blur(24px)",
-          border: "1px solid rgba(0, 229, 255, 0.15)",
-          borderRadius: 24,
-          padding: "40px",
-          boxShadow: "0 10px 40px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.05)"
+        {/* ── LEFT COLUMN: Profile Card + Stats ── */}
+        <div className="up-left" style={{
+          width: 280, flexShrink: 0,
+          display: "flex", flexDirection: "column", gap: 16,
+          alignSelf: "stretch",
         }}>
-          <form id="profile-form" onSubmit={handleSave}>
-            
-            <div style={{ display: "flex", gap: 40, alignItems: "flex-start", flexWrap: "wrap" }}>
-              
-              {/* Avatar Section */}
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, width: 140 }}>
-                <div style={{
-                  position: "relative", width: 120, height: 120, borderRadius: "50%", padding: 4,
-                  background: "linear-gradient(135deg, var(--mf-magenta, #FF2D73) 0%, var(--mf-cyan, #00E5FF) 100%)",
-                  boxShadow: "0 0 30px rgba(255, 45, 115, 0.3)"
-                }}>
-                  <div style={{ width: "100%", height: "100%", borderRadius: "50%", overflow: "hidden", background: "var(--mf-bg-deep, #0F0914)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <span style={{ fontSize: 36, fontWeight: 800, color: "var(--mf-text, #fff)" }}>
-                      {profileData.firstName[0]}{profileData.lastName[0]}
-                    </span>
-                  </div>
-                  <button type="button" style={{
-                    position: "absolute", bottom: 0, right: 0, width: 36, height: 36, borderRadius: "50%",
-                    background: "var(--mf-cyan, #00E5FF)", border: "3px solid var(--mf-bg-deep, #0F0914)",
-                    display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
-                    boxShadow: "0 0 10px rgba(0, 229, 255, 0.5)"
-                  }}>
-                    <Camera size={16} color="#000" />
-                  </button>
-                </div>
-                <div style={{ fontSize: 11, color: "var(--mf-text-muted, #8a849b)", textAlign: "center", fontWeight: 600, letterSpacing: "0.05em" }}>CLEARANCE: LEVEL 5</div>
+
+          {/* Profile Card */}
+          <div style={{
+            background: "rgba(255,255,255,0.02)",
+            border: "1px solid rgba(255,255,255,0.06)",
+            borderRadius: 16, padding: "28px 20px",
+            display: "flex", flexDirection: "column", alignItems: "center",
+          }}>
+            <div className="up-avatar" style={{
+              position: "relative", width: 88, height: 88, borderRadius: "50%", padding: 3,
+              background: "linear-gradient(135deg, var(--mf-cyan, #00E5FF), var(--mf-magenta, #FF2D73))",
+              marginBottom: 16,
+            }}>
+              <div style={{
+                width: "100%", height: "100%", borderRadius: "50%",
+                background: "var(--mf-bg-deep, #0c0714)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <span style={{ fontSize: 26, fontWeight: 800 }}>
+                  {profileData.firstName?.[0]}{profileData.lastName?.[0]}
+                </span>
               </div>
-
-              {/* Form Fields */}
-              <div style={{ flex: 1, minWidth: 280, display: "flex", flexDirection: "column", gap: 24 }}>
-                
-                <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-                  <div style={{ flex: 1, minWidth: 130 }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, color: "var(--mf-cyan, #00E5FF)", letterSpacing: "0.05em", marginBottom: 8 }}>
-                      <User size={12} /> FIRST NAME
-                    </label>
-                    <input
-                      name="firstName"
-                      value={profileData.firstName}
-                      onChange={handleChange}
-                      required
-                      style={{
-                        width: "100%", boxSizing: "border-box", padding: "14px 16px",
-                        background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.1)",
-                        borderRadius: 12, color: "white", fontSize: 15, outline: "none",
-                        transition: "all 0.2s"
-                      }}
-                      onFocus={e => { e.target.style.borderColor = "var(--mf-cyan, #00E5FF)"; e.target.style.boxShadow = "0 0 10px rgba(0, 229, 255, 0.2)"; }}
-                      onBlur={e => { e.target.style.borderColor = "rgba(255,255,255,0.1)"; e.target.style.boxShadow = "none"; }}
-                    />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 130 }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, color: "var(--mf-cyan, #00E5FF)", letterSpacing: "0.05em", marginBottom: 8 }}>
-                      <label style={{visibility: 'hidden'}}><User size={12} /></label> LAST NAME
-                    </label>
-                    <input
-                      name="lastName"
-                      value={profileData.lastName}
-                      onChange={handleChange}
-                      required
-                      style={{
-                        width: "100%", boxSizing: "border-box", padding: "14px 16px",
-                        background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.1)",
-                        borderRadius: 12, color: "white", fontSize: 15, outline: "none",
-                        transition: "all 0.2s"
-                      }}
-                      onFocus={e => { e.target.style.borderColor = "var(--mf-cyan, #00E5FF)"; e.target.style.boxShadow = "0 0 10px rgba(0, 229, 255, 0.2)"; }}
-                      onBlur={e => { e.target.style.borderColor = "rgba(255,255,255,0.1)"; e.target.style.boxShadow = "none"; }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, color: "var(--mf-magenta, #FF2D73)", letterSpacing: "0.05em", marginBottom: 8 }}>
-                    <Mail size={12} /> SECURE EMAIL
-                  </label>
-                  <input
-                    type="email"
-                    name="email"
-                    value={profileData.email}
-                    onChange={handleChange}
-                    required
-                    style={{
-                      width: "100%", boxSizing: "border-box", padding: "14px 16px",
-                      background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.1)",
-                      borderRadius: 12, color: "white", fontSize: 15, outline: "none",
-                      transition: "all 0.2s"
-                    }}
-                    onFocus={e => { e.target.style.borderColor = "var(--mf-magenta, #FF2D73)"; e.target.style.boxShadow = "0 0 10px rgba(255, 45, 115, 0.2)"; }}
-                    onBlur={e => { e.target.style.borderColor = "rgba(255,255,255,0.1)"; e.target.style.boxShadow = "none"; }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, color: "var(--mf-magenta, #FF2D73)", letterSpacing: "0.05em", marginBottom: 8 }}>
-                    <Phone size={12} /> COMM_LINK (PHONE)
-                  </label>
-                  <input
-                    type="tel"
-                    name="phoneNumber"
-                    value={profileData.phoneNumber}
-                    onChange={handleChange}
-                    style={{
-                      width: "100%", boxSizing: "border-box", padding: "14px 16px",
-                      background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.1)",
-                      borderRadius: 12, color: "white", fontSize: 15, outline: "none",
-                      transition: "all 0.2s"
-                    }}
-                    onFocus={e => { e.target.style.borderColor = "var(--mf-magenta, #FF2D73)"; e.target.style.boxShadow = "0 0 10px rgba(255, 45, 115, 0.2)"; }}
-                    onBlur={e => { e.target.style.borderColor = "rgba(255,255,255,0.1)"; e.target.style.boxShadow = "none"; }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 800, color: "var(--mf-cyan, #00E5FF)", letterSpacing: "0.05em", marginBottom: 8 }}>
-                    <Activity size={12} /> ACCOUNT STATUS
-                  </label>
-                  <div style={{
-                    width: "100%", padding: "14px 16px", background: "rgba(0, 229, 255, 0.05)", 
-                    border: "1px solid rgba(0, 229, 255, 0.2)", borderRadius: 12, 
-                    color: "var(--mf-cyan, #00E5FF)", fontSize: 15, fontWeight: 800,
-                    display: "flex", alignItems: "center", gap: 10, boxSizing: "border-box"
-                  }}>
-                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: profileData.status === "ACTIVE" ? "var(--mf-cyan, #00E5FF)" : "rgba(255, 255, 255, 0.5)", boxShadow: profileData.status === "ACTIVE" ? "0 0 10px var(--mf-cyan, #00E5FF)" : "none" }} />
-                    {profileData.status}
-                  </div>
-                </div>
-
-              </div>
-            </div>
-
-            <div style={{ marginTop: 40, paddingTop: 30, borderTop: "1px solid rgba(255,255,255,0.1)", display: "flex", justifyContent: "flex-end", gap: 16 }}>
-              <button type="button" onClick={() => setProfileData({
-                firstName: "Admin", lastName: "System", phoneNumber: "0123456789", email: "admin@gmail.com", status: "ACTIVE"
-              })} style={{
-                padding: "14px 24px", background: "transparent", border: "1px solid rgba(255,255,255,0.2)",
-                borderRadius: 12, color: "var(--mf-text-secondary, #b4acc6)", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "all 0.2s"
+              <button type="button" style={{
+                position: "absolute", bottom: 2, right: 0, width: 28, height: 28, borderRadius: "50%",
+                background: "var(--mf-cyan, #00E5FF)", border: "2px solid var(--mf-bg-deep, #0c0714)",
+                display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+                transition: "transform 0.2s",
               }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = "white"; e.currentTarget.style.color = "white"; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.2)"; e.currentTarget.style.color = "var(--mf-text-secondary, #b4acc6)"; }}
+                onMouseEnter={e => e.currentTarget.style.transform = "scale(1.15)"}
+                onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
               >
-                RESET OVERRIDE
-              </button>
-              <button type="submit" style={{
-                display: "flex", alignItems: "center", gap: 8,
-                padding: "14px 32px", background: "var(--mf-magenta, #FF2D73)", border: "none",
-                borderRadius: 12, color: "white", fontSize: 14, fontWeight: 800, letterSpacing: "0.05em",
-                cursor: "pointer", boxShadow: "0 0 20px rgba(255, 45, 115, 0.4)", transition: "all 0.2s"
-              }}
-              onMouseEnter={e => e.currentTarget.style.boxShadow = "0 0 30px rgba(255, 45, 115, 0.7)"}
-              onMouseLeave={e => e.currentTarget.style.boxShadow = "0 0 20px rgba(255, 45, 115, 0.4)"}
-              >
-                <Zap size={16} /> INITIALIZE UPDATE
+                <Camera size={12} color="#000" />
               </button>
             </div>
 
-          </form>
+            <h2 style={{ margin: "0 0 6px 0", fontSize: 16, fontWeight: 700, textAlign: "center" }}>
+              {profileData.firstName} {profileData.lastName}
+            </h2>
+            <span style={{ fontSize: 12, color: "var(--mf-text-muted, #8a849b)", marginBottom: 16 }}>
+              {profileData.email}
+            </span>
+
+            {/* Status badge */}
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8,
+              padding: "8px 14px", borderRadius: 10,
+              background: "rgba(0,229,255,0.05)",
+              border: "1px solid rgba(0,229,255,0.12)",
+              width: "100%", boxSizing: "border-box",
+            }}>
+              <div style={{
+                width: 8, height: 8, borderRadius: "50%",
+                background: profileData.status === "ACTIVE" ? "var(--mf-cyan, #00E5FF)" : "rgba(255,255,255,0.4)",
+                boxShadow: profileData.status === "ACTIVE" ? "0 0 8px var(--mf-cyan, #00E5FF)" : "none",
+                animation: profileData.status === "ACTIVE" ? "pulseDot 2s ease-in-out infinite" : "none",
+              }} />
+              <span style={{ fontSize: 12, fontWeight: 700 }}>{profileData.status}</span>
+            </div>
+          </div>
         </div>
+
+        {/* ── RIGHT: FORM FRAME ── */}
+        <div className="up-frame" style={{
+          flex: 1,
+          background: "rgba(12, 7, 20, 0.55)",
+          backdropFilter: "blur(10px)",
+          WebkitBackdropFilter: "blur(10px)",
+          border: "1px solid rgba(255,255,255,0.07)",
+          borderRadius: 20,
+          boxShadow: "0 24px 64px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.04)",
+          overflow: "hidden",
+        }}>
+          <div style={{
+            padding: "32px 36px",
+          }}>
+            {/* Title */}
+            <div className="up-s1" style={{ marginBottom: 20 }}>
+              <h1 className="up-title-gradient" style={{ fontSize: 22, fontWeight: 800, margin: "0 0 6px 0", letterSpacing: "-0.02em" }}>
+                Personal Information
+              </h1>
+            </div>
+
+            <form onSubmit={handleSave}>
+              {/* Basic Details */}
+              <div className="up-s1" style={{
+                background: "rgba(255,255,255,0.015)",
+                border: "1px solid rgba(255,255,255,0.05)",
+                borderRadius: 12, padding: "22px 24px", marginBottom: 16,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: 6, background: "rgba(0,229,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <User size={14} color="var(--mf-cyan, #00E5FF)" />
+                  </div>
+                  <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>Basic Details</h3>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "var(--mf-text-muted, #8a849b)", marginBottom: 6, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                      First Name
+                    </label>
+                    <input name="firstName" value={profileData.firstName} onChange={handleChange} required className="up-field c" />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "var(--mf-text-muted, #8a849b)", marginBottom: 6, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                      Last Name
+                    </label>
+                    <input name="lastName" value={profileData.lastName} onChange={handleChange} required className="up-field c" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Contact */}
+              <div className="up-s2" style={{
+                background: "rgba(255,255,255,0.015)",
+                border: "1px solid rgba(255,255,255,0.05)",
+                borderRadius: 12, padding: "22px 24px", marginBottom: 16,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18 }}>
+                  <div style={{ width: 28, height: 28, borderRadius: 6, background: "rgba(255,45,115,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Mail size={14} color="var(--mf-magenta, #FF2D73)" />
+                  </div>
+                  <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>Contact</h3>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "var(--mf-text-muted, #8a849b)", marginBottom: 6, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                      Email Address
+                    </label>
+                    <input type="email" name="email" value={profileData.email} onChange={handleChange} required className="up-field m" />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "var(--mf-text-muted, #8a849b)", marginBottom: 6, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+                      Phone Number
+                    </label>
+                    <input type="tel" name="phoneNumber" value={profileData.phoneNumber} onChange={handleChange} className="up-field m" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="up-s3" style={{
+                display: "flex", justifyContent: "flex-end", gap: 10,
+                paddingTop: 18, borderTop: "1px solid rgba(255,255,255,0.05)",
+              }}>
+                <button type="button" className="up-reset" onClick={() => setProfileData({
+                  firstName: "Admin", lastName: "System", phoneNumber: "0123456789", email: "admin@gmail.com", status: "ACTIVE"
+                })}>
+                  Reset
+                </button>
+                <button type="submit" className="up-save">
+                  <Zap size={14} /> Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
       </div>
     </div>
   );

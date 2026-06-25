@@ -146,15 +146,13 @@ export function Sidebar({ activeNav, onNavClick }: SidebarProps) {
           </div>
           <ChevronDown size={12} color="var(--mf-text-muted)" />
         </div>
-        <div style={{ fontSize: 11, color: "var(--mf-text-muted)", padding: "6px 10px", background: "var(--mf-bg-surface)", borderRadius: 8, display: "flex", alignItems: "center", gap: 6 }}>
-          <Search size={11} /><span>Search...</span>
-        </div>
       </div>
+
 
       <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
         {/* Quick nav */}
         <div style={{ padding: "0 10px 6px" }}>
-          {[{ icon: Home, label: "Home" }, { icon: Bell, label: "Notifications" }].map((item) => {
+          {[{ icon: Bell, label: "Notifications" }].map((item) => {
             const Icon = item.icon;
             return (
               <button key={item.label} style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "7px 10px", background: "transparent", border: "none", borderRadius: 7, cursor: "pointer", color: "var(--mf-text-secondary)", fontSize: 13, textAlign: "left" }}
@@ -209,43 +207,7 @@ export function Sidebar({ activeNav, onNavClick }: SidebarProps) {
           })}
         </div>
 
-        <div style={{ height: 1, background: "var(--mf-border)", margin: "4px 10px 8px" }} />
 
-        {/* Channels */}
-        <div style={{ padding: "0 10px" }}>
-          <button onClick={() => setChannelsOpen(!channelsOpen)} style={{ display: "flex", alignItems: "center", gap: 5, width: "100%", background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)", fontSize: 10, fontWeight: 800, letterSpacing: "0.07em", padding: "3px 6px", marginBottom: 3 }}>
-            {channelsOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-            CHANNELS
-            <div style={{ marginLeft: "auto", width: 16, height: 16, borderRadius: 4, background: "var(--mf-bg-elevated)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Plus size={9} color="var(--mf-text-muted)" />
-            </div>
-          </button>
-          {channelsOpen && config.channels.map((ch) => (
-            <button key={ch} style={{ display: "flex", alignItems: "center", gap: 7, width: "100%", padding: "5px 8px", background: "transparent", border: "none", borderRadius: 6, cursor: "pointer", color: "var(--mf-text-muted)", fontSize: 12, textAlign: "left" }}
-              onMouseEnter={e => { e.currentTarget.style.background = "var(--mf-sidebar-hover)"; e.currentTarget.style.color = "var(--mf-text)"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--mf-text-muted)"; }}
-            >
-              <Hash size={12} /><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ch}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* DMs */}
-        <div style={{ padding: "8px 10px 0" }}>
-          <button onClick={() => setDmsOpen(!dmsOpen)} style={{ display: "flex", alignItems: "center", gap: 5, width: "100%", background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)", fontSize: 10, fontWeight: 800, letterSpacing: "0.07em", padding: "3px 6px", marginBottom: 3 }}>
-            {dmsOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-            DIRECT MESSAGES
-          </button>
-          {dmsOpen && config.dms.map((dm) => (
-            <button key={dm} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "5px 8px", background: "transparent", border: "none", borderRadius: 6, cursor: "pointer", color: "var(--mf-text-muted)", fontSize: 12, textAlign: "left" }}
-              onMouseEnter={e => { e.currentTarget.style.background = "var(--mf-sidebar-hover)"; e.currentTarget.style.color = "var(--mf-text)"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--mf-text-muted)"; }}
-            >
-              <div style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--mf-green)", flexShrink: 0 }} />
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{dm}</span>
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* User footer */}

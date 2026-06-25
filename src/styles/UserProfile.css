@@ -1,0 +1,275 @@
+/* ══════════════════════════════════════════════════════════
+   UserProfile.css — Styles for the User Profile page
+   Uses MangaFlow design tokens (--mf-*) from theme.css
+   ══════════════════════════════════════════════════════════ */
+
+/* ── Keyframe Animations ── */
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulseRing {
+  0%, 100% { box-shadow: 0 0 18px rgba(0, 229, 255, 0.25); }
+  50%      { box-shadow: 0 0 32px rgba(0, 229, 255, 0.45); }
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+
+/* ── Entrance Animations ── */
+
+.up-back {
+  animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.up-left {
+  animation: slideInLeft 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards;
+  opacity: 0;
+}
+
+.up-frame {
+  animation: slideInRight 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.15s forwards;
+  opacity: 0;
+}
+
+.up-s1 {
+  animation: fadeIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.25s forwards;
+  opacity: 0;
+}
+
+.up-s2 {
+  animation: fadeIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.35s forwards;
+  opacity: 0;
+}
+
+.up-s3 {
+  animation: fadeIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.45s forwards;
+  opacity: 0;
+}
+
+/* ── Form Fields ── */
+
+.up-field {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 14px;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+
+.up-field:focus {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.up-field.c:focus {
+  border-color: var(--mf-cyan, #00E5FF);
+  box-shadow: 0 0 0 2px rgba(0, 229, 255, 0.12);
+}
+
+.up-field.m:focus {
+  border-color: var(--mf-magenta, #FF2D73);
+  box-shadow: 0 0 0 2px rgba(255, 45, 115, 0.12);
+}
+
+/* ── Buttons ── */
+
+.up-save {
+  padding: 11px 28px;
+  background: linear-gradient(135deg, var(--mf-magenta, #FF2D73), #ff5a8a);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: 'Inter', sans-serif;
+  transition: all 0.25s;
+}
+
+.up-save:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgba(255, 45, 115, 0.4);
+}
+
+.up-reset {
+  padding: 11px 20px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: var(--mf-text-muted, #8a849b);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  transition: all 0.2s;
+}
+
+.up-reset:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #fff;
+}
+
+/* ── Avatar Ring ── */
+
+.up-avatar {
+  animation: pulseRing 3s ease-in-out infinite;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.up-avatar:hover {
+  transform: scale(1.06);
+}
+
+/* ── Scrollbar ── */
+
+.hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Stat Card (right panel) ── */
+
+.stat-card {
+  transition: border-color 0.3s, transform 0.3s;
+}
+
+.stat-card:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+  transform: translateY(-2px);
+}
+
+/* ══════════════════════════════════════════════════════════
+   NEW STYLES — Gradient title, Account Stats, Quick Actions
+   ══════════════════════════════════════════════════════════ */
+
+/* ── Gradient Title ── */
+
+.up-title-gradient {
+  background: linear-gradient(135deg, var(--mf-cyan, #00F0FF), var(--mf-magenta, #FF2A7A));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent; /* fallback for older browsers */
+}
+
+/* ── Left Column — Stat Items ── */
+
+.up-stat-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  transition: border-color 0.3s, background 0.3s, transform 0.3s;
+}
+
+.up-stat-card:hover {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  transform: translateY(-1px);
+}
+
+.up-stat-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.up-stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--mf-text-muted, #8a849b);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.up-stat-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  margin: 2px 0 0 0;
+}
+
+/* ── Left Column — Quick Actions ── */
+
+.up-quick-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  color: var(--mf-text-muted, #8a849b);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  transition: all 0.25s;
+  width: 100%;
+  box-sizing: border-box;
+  text-decoration: none;
+}
+
+.up-quick-action:hover {
+  border-color: rgba(0, 240, 255, 0.2);
+  color: var(--mf-cyan, #00F0FF);
+  background: rgba(0, 240, 255, 0.04);
+  transform: translateX(3px);
+}
+
+.up-quick-action-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.up-quick-action-arrow {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.25s, transform 0.25s;
+  transform: translateX(-4px);
+}
+
+.up-quick-action:hover .up-quick-action-arrow {
+  opacity: 1;
+  transform: translateX(0);
+}
