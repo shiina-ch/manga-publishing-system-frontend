@@ -16,19 +16,19 @@ interface ProtectedRouteProps {
 export function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
   const location = useLocation();
 
-  if (!tokenStorage.isAuthenticated()) {
-    return <Navigate to="/" replace state={{ from: location }} />;
-  }
+  // if (!tokenStorage.isAuthenticated()) {
+  //   return <Navigate to="/" replace state={{ from: location }} />;
+  // }
 
-  if (allowedRoles) {
-    const roles = tokenStorage.getRoles();
-    const isAllowed = roles.some((role) => allowedRoles.includes(role));
-    if (!isAllowed) {
-      const destination = getDefaultRoute(roles);
-      if (destination === location.pathname) return <Navigate to="/" replace />;
-      return <Navigate to={destination} replace />;
-    }
-  }
+  // if (allowedRoles) {
+  //   const roles = tokenStorage.getRoles();
+  //   const isAllowed = roles.some((role) => allowedRoles.includes(role));
+  //   if (!isAllowed) {
+  //     const destination = getDefaultRoute(roles);
+  //     if (destination === location.pathname) return <Navigate to="/" replace />;
+  //     return <Navigate to={destination} replace />;
+  //   }
+  // }
 
   return <Outlet />;
 }

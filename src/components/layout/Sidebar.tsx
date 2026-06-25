@@ -45,13 +45,13 @@ const roleConfig: Record<LayoutRole, RoleConfig> = {
   editor: {
     label: "Tantou Editor", color: "var(--mf-cyan)", icon: Edit3,
     nav: [
-      { icon: Inbox, label: "New Proposals", badge: 8 },
-      { icon: Clock, label: "In Revision", badge: 3 },
-      { icon: AlertTriangle, label: "Escalated to Board", badge: 2, badgeColor: "var(--mf-orange)" },
+      { icon: Inbox, label: "New Proposals" },
+      { icon: Clock, label: "In Revision" },
+      { icon: AlertTriangle, label: "Escalated to Board", badgeColor: "var(--mf-orange)" },
       { icon: CheckCircle, label: "Approved" },
     ],
-    channels: ["one-piece-ch-1120", "blue-lock-ch-290", "spy-family-ch-97", "jjk-ch-265"],
-    dms: ["Mangaka: Oda-san", "Board Chief Tanaka", "Art Team Lead"],
+    channels: [],
+    dms: [],
   },
   board: {
     label: "Editorial Board Member", color: "var(--mf-orange)", icon: Users,
@@ -109,9 +109,11 @@ const roleConfig: Record<LayoutRole, RoleConfig> = {
 interface SidebarProps {
   activeNav?: string;
   onNavClick?: (label: string) => void;
+
+  navBadges?: Record<string, number>;
 }
 
-export function Sidebar({ activeNav, onNavClick }: SidebarProps) {
+export function Sidebar({ activeNav, onNavClick, navBadges }: SidebarProps) {
   const activeRole = getPrimaryRole(tokenStorage.getRoles());
   const config = activeRole ? roleConfig[activeRoleToLayoutRole[activeRole]] : null;
   const account = tokenStorage.getAccount();
@@ -154,7 +156,7 @@ export function Sidebar({ activeNav, onNavClick }: SidebarProps) {
       <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
         {/* Quick nav */}
         <div style={{ padding: "0 10px 6px" }}>
-          {[{ icon: Home, label: "Home" }, { icon: Bell, label: "Notifications" }].map((item) => {
+          {[{ icon: Bell, label: "Notifications" }].map((item) => {
             const Icon = item.icon;
             return (
               <button key={item.label} style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "7px 10px", background: "transparent", border: "none", borderRadius: 7, cursor: "pointer", color: "var(--mf-text-secondary)", fontSize: 13, textAlign: "left" }}
@@ -174,6 +176,8 @@ export function Sidebar({ activeNav, onNavClick }: SidebarProps) {
           {config.nav.map((item) => {
             const Icon = item.icon;
             const isActive = effectiveActive === item.label;
+            const badge = navBadges?.[item.label] ?? item.badge;
+            const shouldShowBadge = typeof badge === "number" && badge > 0;
             return (
               <button
                 key={item.label}
@@ -197,12 +201,19 @@ export function Sidebar({ activeNav, onNavClick }: SidebarProps) {
               >
                 <Icon size={13} />
                 <span style={{ flex: 1 }}>{item.label}</span>
-                {item.badge !== undefined && (
+                {shouldShowBadge && (
                   <span style={{
                     background: isActive ? config.color : (item.badgeColor || "var(--mf-bg-elevated)"),
                     color: isActive ? "#fff" : (item.badgeColor ? "#fff" : "var(--mf-text-muted)"),
-                    fontSize: 10, fontWeight: 800, padding: "1px 6px", borderRadius: 100, minWidth: 18, textAlign: "center",
-                  }}>{item.badge}</span>
+                    fontSize: 10,
+                    fontWeight: 800,
+                    padding: "1px 6px",
+                    borderRadius: 100,
+                    minWidth: 18,
+                    textAlign: "center",
+                  }}>
+                    {badge}
+                  </span>
                 )}
               </button>
             );
@@ -212,40 +223,44 @@ export function Sidebar({ activeNav, onNavClick }: SidebarProps) {
         <div style={{ height: 1, background: "var(--mf-border)", margin: "4px 10px 8px" }} />
 
         {/* Channels */}
-        <div style={{ padding: "0 10px" }}>
-          <button onClick={() => setChannelsOpen(!channelsOpen)} style={{ display: "flex", alignItems: "center", gap: 5, width: "100%", background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)", fontSize: 10, fontWeight: 800, letterSpacing: "0.07em", padding: "3px 6px", marginBottom: 3 }}>
-            {channelsOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-            CHANNELS
-            <div style={{ marginLeft: "auto", width: 16, height: 16, borderRadius: 4, background: "var(--mf-bg-elevated)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Plus size={9} color="var(--mf-text-muted)" />
-            </div>
-          </button>
-          {channelsOpen && config.channels.map((ch) => (
-            <button key={ch} style={{ display: "flex", alignItems: "center", gap: 7, width: "100%", padding: "5px 8px", background: "transparent", border: "none", borderRadius: 6, cursor: "pointer", color: "var(--mf-text-muted)", fontSize: 12, textAlign: "left" }}
-              onMouseEnter={e => { e.currentTarget.style.background = "var(--mf-sidebar-hover)"; e.currentTarget.style.color = "var(--mf-text)"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--mf-text-muted)"; }}
-            >
-              <Hash size={12} /><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ch}</span>
+        {config.channels && config.channels.length > 0 && (
+          <div style={{ padding: "0 10px", marginBottom: 12 }}>
+            <button onClick={() => setChannelsOpen(!channelsOpen)} style={{ display: "flex", alignItems: "center", gap: 5, width: "100%", background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)", fontSize: 10, fontWeight: 800, letterSpacing: "0.07em", padding: "3px 6px", marginBottom: 3 }}>
+              {channelsOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+              CHANNELS
+              <div style={{ marginLeft: "auto", width: 16, height: 16, borderRadius: 4, background: "var(--mf-bg-elevated)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Plus size={9} color="var(--mf-text-muted)" />
+              </div>
             </button>
-          ))}
-        </div>
+            {channelsOpen && config.channels.map((ch) => (
+              <button key={ch} style={{ display: "flex", alignItems: "center", gap: 7, width: "100%", padding: "5px 8px", background: "transparent", border: "none", borderRadius: 6, cursor: "pointer", color: "var(--mf-text-muted)", fontSize: 12, textAlign: "left" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "var(--mf-sidebar-hover)"; e.currentTarget.style.color = "var(--mf-text)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--mf-text-muted)"; }}
+              >
+                <Hash size={12} /><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ch}</span>
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* DMs */}
-        <div style={{ padding: "8px 10px 0" }}>
-          <button onClick={() => setDmsOpen(!dmsOpen)} style={{ display: "flex", alignItems: "center", gap: 5, width: "100%", background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)", fontSize: 10, fontWeight: 800, letterSpacing: "0.07em", padding: "3px 6px", marginBottom: 3 }}>
-            {dmsOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-            DIRECT MESSAGES
-          </button>
-          {dmsOpen && config.dms.map((dm) => (
-            <button key={dm} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "5px 8px", background: "transparent", border: "none", borderRadius: 6, cursor: "pointer", color: "var(--mf-text-muted)", fontSize: 12, textAlign: "left" }}
-              onMouseEnter={e => { e.currentTarget.style.background = "var(--mf-sidebar-hover)"; e.currentTarget.style.color = "var(--mf-text)"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--mf-text-muted)"; }}
-            >
-              <div style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--mf-green)", flexShrink: 0 }} />
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{dm}</span>
+        {config.dms && config.dms.length > 0 && (
+          <div style={{ padding: "8px 10px 0" }}>
+            <button onClick={() => setDmsOpen(!dmsOpen)} style={{ display: "flex", alignItems: "center", gap: 5, width: "100%", background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)", fontSize: 10, fontWeight: 800, letterSpacing: "0.07em", padding: "3px 6px", marginBottom: 3 }}>
+              {dmsOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+              DIRECT MESSAGES
             </button>
-          ))}
-        </div>
+            {dmsOpen && config.dms.map((dm) => (
+              <button key={dm} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "5px 8px", background: "transparent", border: "none", borderRadius: 6, cursor: "pointer", color: "var(--mf-text-muted)", fontSize: 12, textAlign: "left" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "var(--mf-sidebar-hover)"; e.currentTarget.style.color = "var(--mf-text)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--mf-text-muted)"; }}
+              >
+                <div style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--mf-green)", flexShrink: 0 }} />
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{dm}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* User footer */}
