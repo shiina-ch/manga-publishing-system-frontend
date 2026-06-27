@@ -13,6 +13,7 @@ export const UserProfile = () => {
     phoneNumber: "0123456789",
     email: "admin@gmail.com",
     status: "ACTIVE",
+    joinedAt: "Unknown",
   });
 
   useEffect(() => {
@@ -27,6 +28,7 @@ export const UserProfile = () => {
             phoneNumber: data.phoneNumber || "",
             email: data.email || "",
             status: data.status || "ACTIVE",
+            joinedAt: data.approvedAt ? new Date(data.approvedAt).toLocaleDateString() : "Unknown",
           });
         }
       } catch (err) {
@@ -160,6 +162,19 @@ export const UserProfile = () => {
               }} />
               <span style={{ fontSize: 12, fontWeight: 700 }}>{profileData.status}</span>
             </div>
+
+            {/* Joined info */}
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8,
+              padding: "8px 14px", borderRadius: 10,
+              background: "rgba(255,255,255,0.02)",
+              border: "1px solid rgba(255,255,255,0.06)",
+              width: "100%", boxSizing: "border-box",
+              marginTop: 10,
+            }}>
+              <Clock size={14} color="var(--mf-text-muted, #8a849b)" />
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--mf-text-muted, #8a849b)" }}>Joined: {profileData.joinedAt}</span>
+            </div>
           </div>
         </div>
 
@@ -247,7 +262,7 @@ export const UserProfile = () => {
                 paddingTop: 18, borderTop: "1px solid rgba(255,255,255,0.05)",
               }}>
                 <button type="button" className="up-reset" onClick={() => setProfileData({
-                  firstName: "Admin", lastName: "System", phoneNumber: "0123456789", email: "admin@gmail.com", status: "ACTIVE"
+                  firstName: "Admin", lastName: "System", phoneNumber: "0123456789", email: "admin@gmail.com", status: "ACTIVE, joinedAt: "Unknown""
                 })}>
                   Reset
                 </button>

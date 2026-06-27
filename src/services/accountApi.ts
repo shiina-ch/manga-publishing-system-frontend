@@ -17,6 +17,7 @@ export interface AccountProfile {
   phoneNumber: string;
   email: string;
   status: string;
+  approvedAt?: string;
 }
 
 export interface AccountResponse {

@@ -8,7 +8,7 @@ import {
   ChevronRight, Search, Filter, Download, Inbox, ChevronDown,
   BarChart3, Zap, Globe, PenTool, Layers, Edit3, ArrowUpRight,
 } from "lucide-react";
-import { getAllAccounts, type AdminAccount } from "../../services/adminApi";
+import { getAllAccounts, activateAccount, deactivateAccount, type AdminAccount } from "../../services/adminApi";
 import { getChapters, type ChapterApi } from "../../services/workflowApi";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -19,7 +19,7 @@ interface OnlineUser {
   email: string;
   role: string;
   avatar: string;
-  status: "online" | "idle" | "busy" | "offline";
+  status: "online" | "idle" | "busy" | "offline" | "active" | "deactive";
   lastActive: string;
   currentPage: string;
   joinedAt: string;
@@ -58,7 +58,7 @@ interface ManagedUser {
   email: string;
   roles: string[];
   avatar: string;
-  status: "online" | "idle" | "busy" | "offline";
+  status: "online" | "idle" | "busy" | "offline" | "active" | "deactive";
   lastActive: string;
   joinedAt: string;
   source: "existing" | "approved";
@@ -72,62 +72,6 @@ interface ActivityEvent {
   color: string;
 }
 
-// ─── Demo Data ────────────────────────────────────────────────────────────────
-
-const initialOnlineUsers: OnlineUser[] = [
-  { id: 1, name: "Kenji Yamada", email: "kenji.y@mangaflow.io", role: "Editor", avatar: "KY", status: "online", lastActive: "Now", currentPage: "Editor Dashboard", joinedAt: "Jan 2024" },
-  { id: 2, name: "Director Tanaka", email: "d.tanaka@mangaflow.io", role: "Board Member", avatar: "DT", status: "online", lastActive: "Now", currentPage: "Board Approval", joinedAt: "Dec 2023" },
-  { id: 3, name: "Masashi Kishimoto", email: "m.kishi@mangaflow.io", role: "Mangaka", avatar: "MK", status: "busy", lastActive: "2m ago", currentPage: "Mangaka Studio", joinedAt: "Feb 2024" },
-  { id: 4, name: "Kenji Mori", email: "k.mori@mangaflow.io", role: "Assistant", avatar: "KM", status: "online", lastActive: "Now", currentPage: "Assistant Portal", joinedAt: "Mar 2024" },
-  { id: 5, name: "Yuki Tanaka", email: "y.tanaka@mangaflow.io", role: "Mangaka", avatar: "YT", status: "idle", lastActive: "8m ago", currentPage: "Script Drafts", joinedAt: "Jan 2024" },
-  { id: 6, name: "Aiko Suzuki", email: "a.suzuki@mangaflow.io", role: "Assistant", avatar: "AS", status: "online", lastActive: "Now", currentPage: "Coloring Tasks", joinedAt: "Apr 2024" },
-  { id: 7, name: "Ryu Akimoto", email: "r.akimoto@mangaflow.io", role: "Mangaka", avatar: "RA", status: "online", lastActive: "1m ago", currentPage: "Chapter Upload", joinedAt: "Feb 2024" },
-  { id: 8, name: "Sato Hiroshi", email: "s.hiroshi@mangaflow.io", role: "Board Member", avatar: "SH", status: "idle", lastActive: "15m ago", currentPage: "Voting Room", joinedAt: "Dec 2023" },
-  { id: 9, name: "Hana Mori", email: "h.mori@mangaflow.io", role: "Mangaka", avatar: "HM", status: "online", lastActive: "Now", currentPage: "Concept Upload", joinedAt: "Mar 2024" },
-  { id: 10, name: "Rei Fujimoto", email: "r.fuji@mangaflow.io", role: "Editor", avatar: "RF", status: "busy", lastActive: "3m ago", currentPage: "Review Queue", joinedAt: "Jan 2024" },
-  { id: 11, name: "Nao Kimura", email: "n.kimura@mangaflow.io", role: "Mangaka", avatar: "NK", status: "online", lastActive: "Now", currentPage: "Deadlines", joinedAt: "May 2024" },
-  { id: 12, name: "Daichi Ito", email: "d.ito@mangaflow.io", role: "Assistant", avatar: "DI", status: "online", lastActive: "Now", currentPage: "Background Art", joinedAt: "Apr 2024" },
-];
-
-const initialChapters: ChapterStatus[] = [
-  { id: 1, manga: "Neon Samurai", chapter: 1, title: "The Last Blade Awakens", status: "published", author: "Ryu Akimoto", updatedAt: "2m ago", progress: 100, pages: 24, mangaColor: "#FF2A7A" },
-  { id: 2, manga: "Neon Samurai", chapter: 2, title: "Digital Ronin", status: "approved", author: "Ryu Akimoto", updatedAt: "15m ago", progress: 100, pages: 22, mangaColor: "#FF2A7A" },
-  { id: 3, manga: "Neon Samurai", chapter: 3, title: "Code of the Katana", status: "in_review", author: "Ryu Akimoto", updatedAt: "1h ago", progress: 78, pages: 20, mangaColor: "#FF2A7A" },
-  { id: 4, manga: "Bloom Protocol", chapter: 1, title: "First Bloom", status: "published", author: "Yuki Tanaka", updatedAt: "3d ago", progress: 100, pages: 26, mangaColor: "#39FF8A" },
-  { id: 5, manga: "Bloom Protocol", chapter: 2, title: "Synthetic Heart", status: "in_review", author: "Yuki Tanaka", updatedAt: "30m ago", progress: 65, pages: 18, mangaColor: "#39FF8A" },
-  { id: 6, manga: "Ghost Meridian", chapter: 1, title: "48 Hours", status: "approved", author: "Sora Hayashi", updatedAt: "2h ago", progress: 100, pages: 28, mangaColor: "#00F0FF" },
-  { id: 7, manga: "Ghost Meridian", chapter: 2, title: "Soul Fragments", status: "draft", author: "Sora Hayashi", updatedAt: "5m ago", progress: 42, pages: 16, mangaColor: "#00F0FF" },
-  { id: 8, manga: "Iron Lotus", chapter: 1, title: "Silent Rhythm", status: "in_review", author: "Hana Mori", updatedAt: "45m ago", progress: 88, pages: 22, mangaColor: "#FF8C42" },
-  { id: 9, manga: "Iron Lotus", chapter: 2, title: "The Floor Speaks", status: "draft", author: "Hana Mori", updatedAt: "10m ago", progress: 30, pages: 14, mangaColor: "#FF8C42" },
-  { id: 10, manga: "Void Chronicle", chapter: 1, title: "The Last Astronaut", status: "published", author: "Daichi Ito", updatedAt: "1w ago", progress: 100, pages: 30, mangaColor: "#A855F7" },
-  { id: 11, manga: "Void Chronicle", chapter: 2, title: "Thinking Stars", status: "rejected", author: "Daichi Ito", updatedAt: "3h ago", progress: 100, pages: 24, mangaColor: "#A855F7" },
-  { id: 12, manga: "Summer Oni", chapter: 1, title: "Grandma's Secret", status: "published", author: "Rei Fujimoto", updatedAt: "5d ago", progress: 100, pages: 20, mangaColor: "#F472B6" },
-  { id: 13, manga: "Summer Oni", chapter: 2, title: "Modern Spirits", status: "approved", author: "Rei Fujimoto", updatedAt: "1d ago", progress: 100, pages: 22, mangaColor: "#F472B6" },
-  { id: 14, manga: "Circuit Dancer", chapter: 1, title: "Underground Frequency", status: "draft", author: "Nao Kimura", updatedAt: "20m ago", progress: 55, pages: 18, mangaColor: "#FACC15" },
-  { id: 15, manga: "Circuit Dancer", chapter: 2, title: "Reality Remix", status: "draft", author: "Nao Kimura", updatedAt: "Just now", progress: 12, pages: 8, mangaColor: "#FACC15" },
-];
-
-const initialRegistrations: RegistrationRequest[] = [
-  { id: 1, firstName: "Takeshi", lastName: "Obata", email: "t.obata@mangaflow.io", phone: "+81 90-1234-5678", role: "mangaka", address: "567 Art Lane, Shibuya, Tokyo 150-0002", cvFileName: "obata_portfolio.pdf", cvSize: "2.4 MB", submittedAt: "10 minutes ago", status: "pending" },
-  { id: 2, firstName: "Misa", lastName: "Hayakawa", email: "misa.h@mangaflow.io", phone: "+81 80-9876-5432", role: "assistant", address: "12-5 Manga District, Nakano, Tokyo 164-0001", cvFileName: "hayakawa_cv.pdf", cvSize: "1.1 MB", submittedAt: "32 minutes ago", status: "pending" },
-  { id: 3, firstName: "Ryota", lastName: "Ishikawa", email: "r.ishikawa@mangaflow.io", phone: "+81 70-5555-1234", role: "tantor_editor", address: "888 Publishing Blvd, Chiyoda, Tokyo 100-0001", cvFileName: "ishikawa_resume.docx", cvSize: "890 KB", submittedAt: "1 hour ago", status: "pending" },
-  { id: 4, firstName: "Yuna", lastName: "Watanabe", email: "yuna.w@mangaflow.io", phone: "+81 90-6789-0123", role: "mangaka", address: "34 Creative St, Nerima, Tokyo 176-0001", cvFileName: "watanabe_portfolio.pdf", cvSize: "4.7 MB", submittedAt: "2 hours ago", status: "pending" },
-  { id: 5, firstName: "Kaito", lastName: "Morimoto", email: "k.morimoto@mangaflow.io", phone: "+81 80-1111-2222", role: "assistant", address: "55-3 Color Ave, Toshima, Tokyo 171-0022", cvFileName: "morimoto_cv.pdf", cvSize: "1.5 MB", submittedAt: "3 hours ago", status: "pending" },
-  { id: 6, firstName: "Sakura", lastName: "Nakajima", email: "s.nakajima@mangaflow.io", phone: "+81 70-3333-4444", role: "mangaka", address: "78 Ink Road, Bunkyo, Tokyo 112-0001", cvFileName: "nakajima_work.pdf", cvSize: "3.2 MB", submittedAt: "5 hours ago", status: "approved" },
-  { id: 7, firstName: "Hiroto", lastName: "Kato", email: "h.kato@mangaflow.io", phone: "+81 90-7777-8888", role: "tantor_editor", address: "22 Editor Plaza, Minato, Tokyo 105-0001", cvFileName: "kato_resume.pdf", cvSize: "720 KB", submittedAt: "1 day ago", status: "rejected" },
-];
-
-const initialActivities: ActivityEvent[] = [
-  { id: 1, type: "chapter_published", message: "Neon Samurai Ch.1 was published", timestamp: "2 min ago", color: "var(--mf-green)" },
-  { id: 2, type: "user_approved", message: "Sakura Nakajima registration approved", timestamp: "15 min ago", color: "var(--mf-cyan)" },
-  { id: 3, type: "chapter_submitted", message: "Iron Lotus Ch.1 submitted for review", timestamp: "45 min ago", color: "var(--mf-orange)" },
-  { id: 4, type: "registration", message: "New registration: Takeshi Obata", timestamp: "1h ago", color: "var(--mf-magenta)" },
-  { id: 5, type: "chapter_rejected", message: "Void Chronicle Ch.2 was rejected", timestamp: "3h ago", color: "var(--mf-magenta)" },
-  { id: 6, type: "role_assigned", message: "Kenji Mori assigned role: Assistant", timestamp: "5h ago", color: "var(--mf-cyan)" },
-  { id: 7, type: "chapter_published", message: "Bloom Protocol Ch.1 was published", timestamp: "3d ago", color: "var(--mf-green)" },
-  { id: 8, type: "user_approved", message: "Daichi Ito registration approved", timestamp: "4d ago", color: "var(--mf-cyan)" },
-];
-
 // ─── Shared Sub-Components ────────────────────────────────────────────────────
 
 const statusChapterConfig: Record<string, { label: string; color: string; bg: string }> = {
@@ -139,25 +83,19 @@ const statusChapterConfig: Record<string, { label: string; color: string; bg: st
 };
 
 const roleLabel: Record<string, string> = {
-  assistant: "Assistant",
-  mangaka: "Mangaka",
-  tantor_editor: "Tantor Editor",
-  Editor: "Editor",
-  "Board Member": "Board Member",
-  Mangaka: "Mangaka",
-  Assistant: "Assistant",
-  Unassigned: "Unassigned",
+  TANTOU_EDITOR: "TANTOU_EDITOR",
+  EDITORIAL_BOARD_MEMBER: "EDITORIAL_BOARD_MEMBER",
+  MANGAKA: "MANGAKA",
+  ASSISTANT: "ASSISTANT",
+  UNASSIGNED: "UNASSIGNED",
 };
 
 const roleColor: Record<string, string> = {
-  Editor: "var(--mf-cyan)",
-  "Board Member": "var(--mf-orange)",
-  Mangaka: "var(--mf-magenta)",
-  Assistant: "var(--mf-green)",
-  Unassigned: "var(--mf-text-muted)",
-  assistant: "var(--mf-green)",
-  mangaka: "var(--mf-magenta)",
-  tantor_editor: "var(--mf-cyan)",
+  TANTOU_EDITOR: "var(--mf-cyan)",
+  EDITORIAL_BOARD_MEMBER: "var(--mf-orange)",
+  MANGAKA: "var(--mf-magenta)",
+  ASSISTANT: "var(--mf-green)",
+  EDITOR: "var(--mf-cyan)",
 };
 
 function StatusBadge({ label, color, bg }: { label: string; color: string; bg: string }) {
@@ -285,10 +223,10 @@ function OverviewTab({ onlineUsers, chapters, registrations, activities }: {
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {/* Stat cards row */}
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-        <StatCard icon={Users} label="Total Users" value={onlineUsers.length} color="var(--mf-cyan)" trend="+3 this week" />
-        <StatCard icon={BookOpen} label="Total Chapters" value={chapters.length} color="var(--mf-magenta)" trend="+5" />
+        <StatCard icon={Users} label="Total Users" value={onlineUsers.length} color="var(--mf-cyan)" />
+        <StatCard icon={BookOpen} label="Total Chapters" value={chapters.length} color="var(--mf-magenta)" />
         <StatCard icon={UserPlus} label="Pending Registrations" value={pendingRegs} color="var(--mf-orange)" />
-        <StatCard icon={CheckCircle} label="Published Chapters" value={publishedCount} color="var(--mf-green)" trend="+2" />
+        <StatCard icon={CheckCircle} label="Published Chapters" value={publishedCount} color="var(--mf-green)" />
       </div>
 
       {/* Two-column: Activity Timeline + Chapter Pipeline */}
@@ -676,24 +614,25 @@ function ChapterMonitorTab({ chapters }: { chapters: ChapterStatus[] }) {
 
 // ─── Tab 3: User Management ──────────────────────────────────────────────────
 
-function UserManagementTab({ managedUsers, onAddRole, onRemoveRole }: {
+function UserManagementTab({ managedUsers, onAddRole, onRemoveRole, onToggleStatus }: {
   managedUsers: ManagedUser[];
   onAddRole: (userId: number, newRole: string) => void;
   onRemoveRole: (userId: number, role: string) => void;
+  onToggleStatus: (userId: number, currentStatus: string) => void;
 }) {
   const [search, setSearch] = useState("");
-  const [roleFilter, setRoleFilter] = useState("all");
+  const [roleFilter, setRoleFilter] = useState("ALL");
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const unassignedCount = managedUsers.filter(u => u.roles.length === 0).length;
   const activeCount = managedUsers.filter(u => u.status === "online").length;
 
-  const allRoles = ["all", "Editor", "Board Member", "Mangaka", "Assistant", "Unassigned"];
-  const assignableRoles = ["Mangaka", "Assistant", "Editor", "Board Member"];
+  const allRoles = ["ALL", "TANTOU_EDITOR", "EDITORIAL_BOARD_MEMBER", "MANGAKA", "ASSISTANT", "UNASSIGNED"];
+  const assignableRoles = ["MANGAKA", "ASSISTANT", "TANTOU_EDITOR", "EDITORIAL_BOARD_MEMBER"];
 
   const filtered = managedUsers.filter(u => {
-    const matchRole = roleFilter === "all"
-      || (roleFilter === "Unassigned" && u.roles.length === 0)
+    const matchRole = roleFilter === "ALL"
+      || (roleFilter === "UNASSIGNED" && u.roles.length === 0)
       || u.roles.includes(roleFilter);
     const matchSearch = search === "" ||
       u.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -704,6 +643,8 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole }: {
   const selected = filtered.find(u => u.id === selectedId);
 
   const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
+    active: { label: "Active", color: "var(--mf-green)", bg: "var(--mf-green-dim)" },
+    deactive: { label: "Deactive", color: "var(--mf-text-muted)", bg: "var(--mf-bg-elevated)" },
     online: { label: "Online", color: "var(--mf-green)", bg: "var(--mf-green-dim)" },
     idle: { label: "Idle", color: "var(--mf-orange)", bg: "rgba(255,140,66,0.14)" },
     busy: { label: "Busy", color: "var(--mf-magenta)", bg: "var(--mf-magenta-dim)" },
@@ -761,11 +702,10 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole }: {
 
           {/* Table header */}
           <TableHeader columns={[
-            { label: "User", width: "32%" },
+            { label: "User", width: "40%" },
             { label: "Role", width: "20%" },
-            { label: "Status", width: "14%" },
-            { label: "Last Active", width: "14%" },
-            { label: "Joined", width: "12%" },
+            { label: "Status", width: "16%" },
+            { label: "Joined", width: "16%" },
             { label: "", width: "8%", align: "center" },
           ]} />
 
@@ -793,7 +733,7 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole }: {
                     onMouseLeave={e => { if (selectedId !== user.id) e.currentTarget.style.background = "transparent"; }}
                   >
                     {/* User */}
-                    <div style={{ flex: "0 0 32%", display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{ flex: "0 0 40%", display: "flex", alignItems: "center", gap: 10 }}>
                       <div style={{ position: "relative", flexShrink: 0 }}>
                         <div style={{
                           width: 34, height: 34, borderRadius: 9,
@@ -824,7 +764,7 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole }: {
                           padding: "3px 8px", fontSize: 10, fontWeight: 700, borderRadius: 6,
                           background: "rgba(255,140,66,0.14)", color: "var(--mf-orange)",
                           border: "1px solid rgba(255,140,66,0.3)",
-                        }}>Unassigned</span>
+                        }}>UNASSIGNED</span>
                       ) : (
                         user.roles.map(r => (
                           <span key={r} style={{
@@ -838,13 +778,11 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole }: {
                       )}
                     </div>
                     {/* Status */}
-                    <div style={{ flex: "0 0 14%" }}>
+                    <div style={{ flex: "0 0 16%" }}>
                       <StatusBadge label={st.label} color={st.color} bg={st.bg} />
                     </div>
-                    {/* Last Active */}
-                    <div style={{ flex: "0 0 14%", fontSize: 11, color: "var(--mf-text-muted)" }}>{user.lastActive}</div>
                     {/* Joined */}
-                    <div style={{ flex: "0 0 12%", fontSize: 11, color: "var(--mf-text-muted)" }}>{user.joinedAt}</div>
+                    <div style={{ flex: "0 0 16%", fontSize: 11, color: "var(--mf-text-muted)" }}>{user.joinedAt}</div>
                     {/* Action */}
                     <div style={{ flex: "0 0 8%", textAlign: "center" }}>
                       <Eye size={14} color="var(--mf-text-muted)" />
@@ -861,7 +799,7 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole }: {
           <div style={{
             flex: "0 0 40%", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
             borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column",
-            animation: "slideIn 0.2s ease",
+            animation: "smoothZoomIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
           }}>
             {/* Header */}
             <div style={{ padding: "22px 20px 16px", borderBottom: "1px solid var(--mf-border)", textAlign: "center", position: "relative" }}>
@@ -888,28 +826,27 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole }: {
                     padding: "3px 10px", fontSize: 10, fontWeight: 700, borderRadius: 6,
                     background: "rgba(255,140,66,0.14)", color: "var(--mf-orange)",
                     border: "1px solid rgba(255,140,66,0.3)",
-                  }}>Unassigned</span>
+                  }}>UNASSIGNED</span>
                 ) : (
                   selected.roles.map(r => (
                     <span key={r} style={{
-                      padding: "3px 10px", fontSize: 10, fontWeight: 800, borderRadius: 6,
-                      background: `${roleColor[r] || "var(--mf-text-muted)"}15`,
-                      color: roleColor[r] || "var(--mf-text-muted)",
-                      border: `1px solid ${roleColor[r] || "var(--mf-text-muted)"}35`,
+                      padding: "4px 12px", fontSize: 10, fontWeight: 900, borderRadius: 6,
+                      background: roleColor[r] || "var(--mf-text-muted)",
+                      color: "#1e1326", // dark background for high contrast with neon colors
+                      border: "none",
                       letterSpacing: "0.06em",
+                      boxShadow: `0 0 10px ${roleColor[r] || "var(--mf-text-muted)"}40`
                     }}>{r}</span>
                   ))
                 )}
               </div>
             </div>
 
-            <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
+            <div className="no-scrollbar" style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 {[
                   { icon: Activity, label: "STATUS", value: (statusConfig[selected.status] || statusConfig.offline).label },
-                  { icon: Clock, label: "LAST ACTIVE", value: selected.lastActive },
                   { icon: Globe, label: "JOINED", value: selected.joinedAt },
-                  { icon: Layers, label: "SOURCE", value: selected.source === "approved" ? "Registration" : "Existing" },
                 ].map((info, i) => {
                   const InfoIcon = info.icon;
                   return (
@@ -927,6 +864,45 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole }: {
                 })}
               </div>
 
+              {/* Account Controls */}
+              <div style={{
+                marginTop: 16, padding: "16px", background: "var(--mf-bg-elevated)",
+                borderRadius: 12, border: "1px solid var(--mf-border)",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
+                  <Shield size={12} color="var(--mf-cyan)" />
+                  <span style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-secondary)", letterSpacing: "0.06em" }}>ACCOUNT CONTROLS</span>
+                </div>
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button
+                    onClick={() => onToggleStatus(selected.id, selected.status)}
+                    style={{
+                      flex: 1, padding: "8px 0", borderRadius: 8, fontWeight: 800, fontSize: 11,
+                      cursor: "pointer", transition: "all 0.2s",
+                      background: selected.status === "active" || selected.status === "online" ? "var(--mf-bg-surface)" : "var(--mf-green-dim)",
+                      color: selected.status === "active" || selected.status === "online" ? "var(--mf-magenta)" : "var(--mf-green)",
+                      border: `1px solid ${selected.status === "active" || selected.status === "online" ? "var(--mf-magenta)40" : "var(--mf-green)40"}`,
+                    }}
+                    onMouseEnter={e => {
+                      if (selected.status === "active" || selected.status === "online") {
+                        e.currentTarget.style.background = "var(--mf-magenta-dim)";
+                      } else {
+                        e.currentTarget.style.background = "var(--mf-green)20";
+                      }
+                    }}
+                    onMouseLeave={e => {
+                      if (selected.status === "active" || selected.status === "online") {
+                        e.currentTarget.style.background = "var(--mf-bg-surface)";
+                      } else {
+                        e.currentTarget.style.background = "var(--mf-green-dim)";
+                      }
+                    }}
+                  >
+                    {selected.status === "active" || selected.status === "online" ? "Deactivate Account" : "Activate Account"}
+                  </button>
+                </div>
+              </div>
+
               {/* Current roles section - always visible */}
               {selected.roles.length > 0 && (
                 <div style={{
@@ -941,15 +917,15 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole }: {
                     {selected.roles.map(r => (
                       <div key={r} style={{
                         display: "flex", alignItems: "center", gap: 6, padding: "5px 10px 5px 12px",
-                        background: `${roleColor[r]}12`, border: `1px solid ${roleColor[r]}35`,
-                        borderRadius: 8, fontSize: 11, fontWeight: 700, color: roleColor[r],
+                        background: `${roleColor[r] || "var(--mf-text-muted)"}12`, border: `1px solid ${roleColor[r] || "var(--mf-text-muted)"}35`,
+                        borderRadius: 8, fontSize: 11, fontWeight: 700, color: roleColor[r] || "var(--mf-text-muted)",
                       }}>
                         {r}
                         <button
                           onClick={(e) => { e.stopPropagation(); onRemoveRole(selected.id, r); }}
                           style={{
                             background: "none", border: "none", cursor: "pointer",
-                            color: roleColor[r], opacity: 0.6, padding: "0 2px",
+                            color: roleColor[r] || "var(--mf-text-muted)", opacity: 0.6, padding: "0 2px",
                             fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center",
                           }}
                           onMouseEnter={e => { e.currentTarget.style.opacity = "1"; }}
@@ -1038,17 +1014,28 @@ export function AdminDashboard() {
 
   const mapAccountToOnlineUser = useCallback((account: AdminAccount): OnlineUser => {
     const name = `${account.firstName || ""} ${account.lastName || ""}`.trim() || account.email || `Account #${account.id}`;
-    const role = account.requestedRole || (account.status === "ACTIVE" ? "Unassigned" : "Pending");
+    const role = (account.requestedRole || (account.status === "ACTIVE" ? "UNASSIGNED" : "PENDING")).toUpperCase();
+
+    // Format the date if available
+    let joinedAtStr = "Unknown";
+    if (account.approvedAt) {
+      try {
+        joinedAtStr = new Date(account.approvedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+      } catch (e) {
+        // keep as Unknown
+      }
+    }
+
     return {
       id: account.id,
       name,
       email: account.email || "",
       role,
       avatar: name.split(" ").map(part => part[0]).join("").slice(0, 2).toUpperCase() || "??",
-      status: account.status === "ACTIVE" ? "online" : "offline",
+      status: account.status === "ACTIVE" ? "active" : "deactive",
       lastActive: account.status || "Unknown",
       currentPage: "Workspace",
-      joinedAt: "From API",
+      joinedAt: joinedAtStr,
     };
   }, []);
 
@@ -1096,9 +1083,14 @@ export function AdminDashboard() {
     Promise.all([getAllAccounts(), getChapters()])
       .then(([accounts, chapterRows]) => {
         if (cancelled) return;
-        const users = accounts.map(mapAccountToOnlineUser);
+        const nonAdminAccounts = accounts.filter(a => {
+          const hasAdminSystem = a.systemRole?.some(r => r.roleName === "ADMIN" || r.roleName === "MANAGER");
+          const hasAdminReq = a.requestedRole?.toUpperCase() === "ADMIN";
+          return !hasAdminSystem && !hasAdminReq;
+        });
+        const users = nonAdminAccounts.map(mapAccountToOnlineUser);
         const mappedChapters = chapterRows.map(mapChapter);
-        setRegistrations(accounts);
+        setRegistrations(nonAdminAccounts);
         setOnlineUsers(users);
         setChapters(mappedChapters);
         setManagedUsers(users.map(user => ({
@@ -1140,6 +1132,26 @@ export function AdminDashboard() {
     }));
   }, []);
 
+  const handleToggleStatus = useCallback(async (userId: number, currentStatus: string) => {
+    try {
+      if (currentStatus === "active" || currentStatus === "online") {
+        await deactivateAccount(userId);
+      } else {
+        await activateAccount(userId);
+      }
+
+      setManagedUsers(prev => prev.map(u => {
+        if (u.id !== userId) return u;
+        return {
+          ...u,
+          status: (currentStatus === "active" || currentStatus === "online") ? "deactive" : "active"
+        };
+      }));
+    } catch (err: any) {
+      console.error("Failed to toggle status:", err);
+    }
+  }, []);
+
   const requestedTab = searchParams.get("tab");
   const currentTab = requestedTab === "chapters" || requestedTab === "users" ? requestedTab : "overview";
   const activeNav = currentTab === "chapters"
@@ -1158,7 +1170,7 @@ export function AdminDashboard() {
               width: 8, height: 8, borderRadius: "50%",
               background: activeNav === "Chapter Monitor" ? "var(--mf-magenta)"
                 : activeNav === "User Management" ? "var(--mf-green)"
-                : "var(--mf-cyan)",
+                  : "var(--mf-cyan)",
             }} />
             <span style={{ fontSize: 15, fontWeight: 900, letterSpacing: "-0.01em" }}>{activeNav}</span>
             {activeNav === "User Management" && managedUsers.filter(u => u.roles.length === 0).length > 0 && (
@@ -1197,26 +1209,11 @@ export function AdminDashboard() {
             <ChapterMonitorTab chapters={chapters} />
           )}
           {!loading && !error && currentTab === "users" && (
-            <UserManagementTab managedUsers={managedUsers} onAddRole={handleAddRole} onRemoveRole={handleRemoveRole} />
+            <UserManagementTab managedUsers={managedUsers} onAddRole={handleAddRole} onRemoveRole={handleRemoveRole} onToggleStatus={handleToggleStatus} />
           )}
         </div>
       </div>
 
-      {/* CSS Animations */}
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        @keyframes slideIn {
-          from { opacity: 0; transform: translateX(12px); }
-          to { opacity: 1; transform: translateX(0); }
-        }
-      `}</style>
     </AppLayout>
   );
 }

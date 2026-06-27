@@ -19,6 +19,8 @@ export interface AdminAccount {
   email: string;
   requestedRole: string | null;
   status: string;
+  approvedAt?: string | null;
+  systemRole?: Array<{ roleName: string }>;
 }
 
 interface AccountListResponse {
@@ -170,6 +172,28 @@ export async function getAllAccounts(): Promise<AdminAccount[]> {
 export async function approveAccount(accountId: number, roleName: string): Promise<void> {
   const res = await fetch(
     `${API_BASE_URL}/admin/accounts/${accountId}/approve?roleName=${roleName.toLowerCase()}`,
+    {
+      method: "POST",
+      headers: getAuthHeaders(),
+    },
+  );
+  await parseApiResponse<unknown>(res);
+}
+
+export async function activateAccount(accountId: number): Promise<void> {
+  const res = await fetch(
+    `${API_BASE_URL}/admin/accounts/${accountId}/activate`,
+    {
+      method: "POST",
+      headers: getAuthHeaders(),
+    },
+  );
+  await parseApiResponse<unknown>(res);
+}
+
+export async function deactivateAccount(accountId: number): Promise<void> {
+  const res = await fetch(
+    `${API_BASE_URL}/admin/accounts/${accountId}/deactivate`,
     {
       method: "POST",
       headers: getAuthHeaders(),
