@@ -156,6 +156,13 @@ export function castSubmissionReviewVote(payload: {
   }, [200, 201]);
 }
 
+export function submitIdea(userId: number, formData: FormData): Promise<SubmissionApi> {
+  return apiRequest<SubmissionApi>(`/submissions/${userId}`, {
+    method: "POST",
+    body: formData,
+  }, [200, 201]);
+}
+
 export function submissionToEditorProposal(submission: SubmissionApi): EditorProposal {
   const status = normalizeStatus(submission.status);
   return {

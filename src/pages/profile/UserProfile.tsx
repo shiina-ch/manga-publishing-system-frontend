@@ -262,7 +262,7 @@ export const UserProfile = () => {
                 paddingTop: 18, borderTop: "1px solid rgba(255,255,255,0.05)",
               }}>
                 <button type="button" className="up-reset" onClick={() => setProfileData({
-                  firstName: "Admin", lastName: "System", phoneNumber: "0123456789", email: "admin@gmail.com", status: "ACTIVE, joinedAt: "Unknown""
+                  firstName: "Admin", lastName: "System", phoneNumber: "0123456789", email: "admin@gmail.com", status: "ACTIVE", joinedAt: "Unknown",
                 })}>
                   Reset
                 </button>

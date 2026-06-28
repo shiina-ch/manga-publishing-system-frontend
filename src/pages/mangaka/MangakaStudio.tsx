@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 import { AppLayout } from "../../components/layout/AppLayout";
 import {
-  Calendar, FileText, Users, Layers, Send, Plus, Check,
-  ChevronRight, Clock, AlertTriangle, CheckCircle, Circle,
-  Brush, Palette, Image, GripVertical, Tag, X, User,
-  ArrowRight, Sparkles, Upload,
+  FileText, Plus, ChevronRight, Inbox, Clock, CheckCircle, Search, User, Filter, Share2, Layers, AlertTriangle, MessageSquare, Briefcase, Zap, HelpCircle, LogOut, CheckSquare, ListTodo, RefreshCw, PenTool, Edit3, Image, Send, Activity, Settings, Bell, Calendar, ChevronDown, Check, Brush, Layout, Type, Palette, Scissors, Move, Save, Link2, Search as SearchIcon, Maximize2, Minimize2, ZoomIn, ZoomOut, Upload, X, Sparkles, Circle, Users, GripVertical, Tag, ArrowRight
 } from "lucide-react";
-import { getChapters, type ChapterApi } from "../../services/workflowApi";
+import { toast } from "react-toastify";
+import { getSubmissions, type SubmissionApi, submitIdea } from "../../services/workflowApi";
+import { tokenStorage } from "../../storage/tokenStorage";
 
 // --- Production Schedule Tab ---
 const milestones = [
@@ -194,12 +193,12 @@ type DrawnPanel = {
 function DelegationPanel() {
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [panels, setPanels] = useState<DrawnPanel[]>([]);
-  
+
   // Drawing state
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [currentBox, setCurrentBox] = useState<{ x: number, y: number, width: number, height: number } | null>(null);
-  
+
   // Assignment state
   const [selectedPanelId, setSelectedPanelId] = useState<string | null>(null);
   const [pendingAssistant, setPendingAssistant] = useState("");
@@ -217,17 +216,17 @@ function DelegationPanel() {
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (selectedPanelId) {
-       setSelectedPanelId(null);
+      setSelectedPanelId(null);
     }
-    
+
     // To prevent drawing when clicking on existing boxes, check if e.target is the container
     if ((e.target as HTMLElement).id === "image-draw-container" || (e.target as HTMLElement).tagName === "IMG") {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        setIsDrawing(true);
-        setStartPos({ x, y });
-        setCurrentBox({ x, y, width: 0, height: 0 });
+      const rect = e.currentTarget.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      setIsDrawing(true);
+      setStartPos({ x, y });
+      setCurrentBox({ x, y, width: 0, height: 0 });
     }
   };
 
@@ -236,7 +235,7 @@ function DelegationPanel() {
     const rect = e.currentTarget.getBoundingClientRect();
     const currentX = e.clientX - rect.left;
     const currentY = e.clientY - rect.top;
-    
+
     setCurrentBox({
       x: Math.min(startPos.x, currentX),
       y: Math.min(startPos.y, currentY),
@@ -271,8 +270,8 @@ function DelegationPanel() {
 
   const saveAssignment = () => {
     if (!selectedPanelId || !pendingAssistant) return;
-    setPanels(panels.map(p => 
-      p.id === selectedPanelId 
+    setPanels(panels.map(p =>
+      p.id === selectedPanelId
         ? { ...p, assignedTo: pendingAssistant, tags: pendingTags }
         : p
     ));
@@ -295,14 +294,14 @@ function DelegationPanel() {
             </p>
           </div>
           <div>
-            <input 
-              type="file" 
-              accept="image/*" 
-              id="upload-page" 
-              style={{ display: "none" }} 
-              onChange={handleImageUpload} 
+            <input
+              type="file"
+              accept="image/*"
+              id="upload-page"
+              style={{ display: "none" }}
+              onChange={handleImageUpload}
             />
-            <label 
+            <label
               htmlFor="upload-page"
               style={{
                 padding: "9px 18px",
@@ -325,12 +324,12 @@ function DelegationPanel() {
         </div>
 
         {uploadedImage ? (
-          <div 
-            style={{ 
-              flex: 1, 
-              background: "var(--mf-bg-deep)", 
-              borderRadius: 14, 
-              border: "1px solid var(--mf-border)", 
+          <div
+            style={{
+              flex: 1,
+              background: "var(--mf-bg-deep)",
+              borderRadius: 14,
+              border: "1px solid var(--mf-border)",
               overflow: "auto",
               display: "flex",
               justifyContent: "center",
@@ -339,10 +338,10 @@ function DelegationPanel() {
             }}
           >
             {/* The Drawing Container */}
-            <div 
+            <div
               id="image-draw-container"
-              style={{ 
-                position: "relative", 
+              style={{
+                position: "relative",
                 cursor: "crosshair",
                 boxShadow: "0 10px 40px rgba(0,0,0,0.5)",
                 display: "inline-block" // Ensure it fits image exactly
@@ -352,25 +351,25 @@ function DelegationPanel() {
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseUp}
             >
-              <img 
-                src={uploadedImage} 
-                alt="Page Layout" 
+              <img
+                src={uploadedImage}
+                alt="Page Layout"
                 draggable="false"
-                style={{ 
-                  display: "block", 
-                  maxWidth: "100%", 
+                style={{
+                  display: "block",
+                  maxWidth: "100%",
                   height: "auto",
                   userSelect: "none",
                   pointerEvents: "none" // Let container handle events
-                }} 
+                }}
               />
-              
+
               {/* Render drawn panels */}
               {panels.map((panel, i) => {
                 const asgn = assistants.find(a => a.name === panel.assignedTo);
                 const isSelected = selectedPanelId === panel.id;
                 return (
-                  <div 
+                  <div
                     key={panel.id}
                     onClick={(e) => {
                       e.stopPropagation();
@@ -435,14 +434,14 @@ function DelegationPanel() {
             </div>
           </div>
         ) : (
-          <div style={{ 
-            flex: 1, 
-            background: "var(--mf-bg-surface)", 
-            borderRadius: 14, 
-            border: "1px dashed var(--mf-border-bright)", 
-            display: "flex", 
-            flexDirection: "column", 
-            alignItems: "center", 
+          <div style={{
+            flex: 1,
+            background: "var(--mf-bg-surface)",
+            borderRadius: 14,
+            border: "1px dashed var(--mf-border-bright)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
             justifyContent: "center",
             gap: 16
           }}>
@@ -453,7 +452,7 @@ function DelegationPanel() {
               <div style={{ fontSize: 15, fontWeight: 700, color: "var(--mf-text)", marginBottom: 4 }}>No Page Uploaded</div>
               <div style={{ fontSize: 13, color: "var(--mf-text-muted)" }}>Upload a raw sketch or layout to start delegating</div>
             </div>
-            <label 
+            <label
               htmlFor="upload-page-center"
               style={{
                 padding: "10px 20px",
@@ -472,12 +471,12 @@ function DelegationPanel() {
             >
               <Upload size={14} /> Upload Page
             </label>
-            <input 
-              type="file" 
-              accept="image/*" 
-              id="upload-page-center" 
-              style={{ display: "none" }} 
-              onChange={handleImageUpload} 
+            <input
+              type="file"
+              accept="image/*"
+              id="upload-page-center"
+              style={{ display: "none" }}
+              onChange={handleImageUpload}
             />
           </div>
         )}
@@ -490,7 +489,7 @@ function DelegationPanel() {
             <div style={{ fontSize: 14, fontWeight: 800, color: "var(--mf-text)" }}>Assign Panel</div>
             <button onClick={() => setSelectedPanelId(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)" }}><X size={14} /></button>
           </div>
-          
+
           <div style={{ padding: "10px 12px", background: "var(--mf-bg-elevated)", borderRadius: 9, fontSize: 12, color: "var(--mf-text-secondary)" }}>
             Panel #{panels.findIndex(p => p.id === selectedPanelId) + 1}
           </div>
@@ -640,6 +639,9 @@ const chapterStatusMap: Record<string, { label: string; color: string }> = {
   approved: { label: "Approved", color: "var(--mf-green)" },
   "in-revision": { label: "In Revision", color: "var(--mf-orange)" },
   "under-review": { label: "Under Review", color: "var(--mf-cyan)" },
+  "pending_board_review": { label: "Under Preview", color: "var(--mf-cyan)" },
+  "pending": { label: "Pending", color: "var(--mf-orange)" },
+  "rejected": { label: "Rejected", color: "var(--mf-red)" },
 };
 
 function SubmittedChapters() {
@@ -677,7 +679,7 @@ function SubmittedChapters() {
 }
 
 function SubmittedChaptersApi() {
-  const [chapters, setChapters] = useState<ChapterApi[]>([]);
+  const [submissions, setSubmissions] = useState<SubmissionApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -685,12 +687,12 @@ function SubmittedChaptersApi() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    getChapters()
+    getSubmissions()
       .then(rows => {
-        if (!cancelled) setChapters(rows);
+        if (!cancelled) setSubmissions(rows);
       })
       .catch((err: { message?: string }) => {
-        if (!cancelled) setError(err.message || "Failed to load submitted chapters.");
+        if (!cancelled) setError(err.message || "Failed to load submissions.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -699,38 +701,209 @@ function SubmittedChaptersApi() {
   }, []);
 
   return (
-    <div style={{ padding: "24px 28px" }}>
-      <div style={{ marginBottom: 22 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em" }}>Submitted Chapters</h2>
-        <p style={{ fontSize: 13, color: "var(--mf-text-muted)", marginTop: 3 }}>Database chapter rows</p>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {loading && <div style={{ color: "var(--mf-text-muted)", textAlign: "center", padding: 36 }}>Loading submitted chapters...</div>}
-        {!loading && error && <div style={{ color: "var(--mf-magenta)", padding: 18 }}>{error}</div>}
-        {!loading && !error && chapters.length === 0 && <div style={{ color: "var(--mf-text-muted)", textAlign: "center", padding: 36 }}>No chapter rows found in the database.</div>}
-        {!loading && !error && chapters.map(ch => {
-          const status = (ch.status || "under-review").toLowerCase();
-          const st = chapterStatusMap[status] || chapterStatusMap["under-review"];
-          return (
-            <div key={ch.id} style={{ padding: "18px 20px", background: "var(--mf-bg-surface)", borderRadius: 14, border: "1px solid var(--mf-border)", display: "flex", alignItems: "center", gap: 20 }}>
-              <div style={{ width: 56, height: 70, borderRadius: 8, background: "linear-gradient(160deg, var(--mf-magenta-dim), var(--mf-bg-deep))", border: "1px solid var(--mf-magenta)30", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <FileText size={22} color="var(--mf-magenta)" style={{ opacity: 0.7 }} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 15, fontWeight: 800, color: "var(--mf-text)", marginBottom: 4 }}>{ch.title || `Chapter #${ch.id}`}</div>
-                <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--mf-text-muted)" }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Clock size={11} /> From API</span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}><FileText size={11} /> Ch. {ch.chapterNumber ?? "N/A"}</span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}><User size={11} /> Backend</span>
-                </div>
-              </div>
-              <div style={{ padding: "6px 14px", background: `${st.color}18`, border: `1px solid ${st.color}40`, borderRadius: 8, fontSize: 12, fontWeight: 700, color: st.color, flexShrink: 0 }}>
-                {st.label}
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {loading && <div style={{ color: "var(--mf-text-muted)", textAlign: "center", padding: 36 }}>Loading submissions...</div>}
+      {!loading && error && <div style={{ color: "var(--mf-magenta)", padding: 18 }}>{error}</div>}
+      {!loading && !error && submissions.length === 0 && <div style={{ color: "var(--mf-text-muted)", textAlign: "center", padding: 36 }}>No submissions found.</div>}
+      {!loading && !error && submissions.map(sub => {
+        const rawStatus = sub.status || "PENDING";
+        const statusKey = rawStatus.toLowerCase();
+        const stColor = chapterStatusMap[statusKey]?.color || "var(--mf-cyan)";
+        return (
+          <div key={sub.id} style={{ padding: "18px 20px", background: "var(--mf-bg-surface)", borderRadius: 14, border: "1px solid var(--mf-border)", display: "flex", alignItems: "center", gap: 20 }}>
+            <div style={{ width: 56, height: 70, borderRadius: 8, background: "linear-gradient(160deg, var(--mf-magenta-dim), var(--mf-bg-deep))", border: "1px solid var(--mf-magenta)30", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <FileText size={22} color="var(--mf-magenta)" style={{ opacity: 0.7 }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "var(--mf-text)", marginBottom: 4 }}>{sub.title || `Submission #${sub.id}`}</div>
+              <div style={{ display: "flex", gap: 16, fontSize: 12, color: "var(--mf-text-muted)" }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Clock size={11} /> {new Date(sub.submittedAt || Date.now()).toLocaleDateString()}</span>
+                <span style={{ display: "flex", alignItems: "center", gap: 4 }}><FileText size={11} /> ID: {sub.id}</span>
+                <span style={{ display: "flex", alignItems: "center", gap: 4 }}><User size={11} /> Me</span>
               </div>
             </div>
-          );
-        })}
+            <div style={{ padding: "6px 14px", background: `${stColor}18`, border: `1px solid ${stColor}40`, borderRadius: 8, fontSize: 12, fontWeight: 700, color: stColor, flexShrink: 0 }}>
+              {rawStatus}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// --- Submit Idea Modal ---
+function SubmitIdeaModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+  const [planningId, setPlanningId] = useState("");
+  const [title, setTitle] = useState("");
+  const [note, setNote] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setFiles(Array.from(e.target.files));
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    if (!planningId || isNaN(Number(planningId)) || Number(planningId) <= 0) {
+      setError("Please enter a valid positive Planning ID.");
+      return;
+    }
+    if (!title.trim() || title.trim().length < 3) {
+      setError("Please enter a title (at least 3 characters).");
+      return;
+    }
+    if (files.length === 0) {
+      setError("Please upload at least one file (e.g. PSD, ZIP).");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const formData = new FormData();
+      formData.append("planningId", planningId);
+      formData.append("title", title);
+      if (note.trim()) {
+        formData.append("note", note);
+      }
+      files.forEach(file => {
+        formData.append("files", file);
+      });
+
+      // Get actual userId from auth storage, fallback to 1
+      const userId = tokenStorage.getAccount()?.id || 1;
+
+      await submitIdea(userId, formData);
+      toast.success("Submission successfully uploaded!");
+      onSuccess();
+    } catch (err: any) {
+      setError(err.message || "An error occurred during submission.");
+      toast.error("Failed to submit idea.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000
+    }}>
+      <div style={{
+        background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
+        borderRadius: 16, width: "100%", maxWidth: 500, padding: 24, boxShadow: "0 20px 40px rgba(0,0,0,0.4)"
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 800 }}>Submit New Project</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)" }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        {error && <div style={{ padding: "10px 14px", background: "rgba(255,42,109,0.1)", border: "1px solid var(--mf-magenta)50", color: "var(--mf-magenta)", borderRadius: 8, fontSize: 13, marginBottom: 16 }}>{error}</div>}
+
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--mf-text-muted)", marginBottom: 6 }}>Planning ID</label>
+            <input type="number" value={planningId} onChange={e => setPlanningId(e.target.value)} placeholder="e.g. 1" style={{ width: "100%", padding: "10px 14px", background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 14 }} />
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--mf-text-muted)", marginBottom: 6 }}>Title</label>
+            <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Project Title" style={{ width: "100%", padding: "10px 14px", background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 14 }} />
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--mf-text-muted)", marginBottom: 6 }}>SYNOPSIS</label>
+            <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Synopsis for the editor..." rows={3} style={{ width: "100%", padding: "10px 14px", background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 14, resize: "vertical" }} />
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--mf-text-muted)", marginBottom: 6 }}>Files (e.g. sketches, PSD)</label>
+            <input type="file" multiple onChange={handleFileChange} style={{ width: "100%", padding: "10px 14px", background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13 }} />
+            {files.length > 0 && <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 6 }}>{files.length} file(s) selected</div>}
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 10 }}>
+            <button type="button" onClick={onClose} style={{ padding: "10px 16px", background: "transparent", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+            <button type="submit" disabled={isSubmitting} style={{ padding: "10px 20px", background: "var(--mf-magenta)", border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 800, cursor: isSubmitting ? "not-allowed" : "pointer", opacity: isSubmitting ? 0.7 : 1 }}>
+              {isSubmitting ? "Submitting..." : "Submit Project"}
+            </button>
+          </div>
+        </form>
       </div>
+    </div>
+  );
+}
+
+// --- Submit View ---
+function SubmitView() {
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  return (
+    <div style={{ padding: "24px 28px", height: "100%", display: "flex", flexDirection: "column" }}>
+      <div style={{ marginBottom: 22 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em" }}>Submissions</h2>
+        <p style={{ fontSize: 13, color: "var(--mf-text-muted)", marginTop: 3 }}>Manage your submissions and new ideas</p>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 20, borderBottom: "1px solid var(--mf-border)", paddingBottom: 10 }}>
+        <button
+          style={{
+            padding: "8px 16px",
+            background: "var(--mf-bg-elevated)",
+            border: "1px solid var(--mf-border-bright)",
+            borderRadius: 8,
+            color: "var(--mf-text)",
+            fontSize: 13,
+            fontWeight: 700,
+            cursor: "default",
+          }}
+        >
+          Submitted
+        </button>
+        <button
+          onClick={() => setShowSubmitModal(true)}
+          style={{
+            padding: "10px 18px",
+            background: "var(--mf-magenta)",
+            border: "none",
+            borderRadius: 8,
+            fontSize: 13,
+            color: "#fff",
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            boxShadow: "0 0 15px var(--mf-magenta-glow)"
+          }}
+        >
+          <Plus size={15} /> Submit Idea
+        </button>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        <SubmittedChaptersApi key={refreshKey} />
+      </div>
+
+      {showSubmitModal && (
+        <SubmitIdeaModal
+          onClose={() => setShowSubmitModal(false)}
+          onSuccess={() => {
+            setShowSubmitModal(false);
+            setRefreshKey(prev => prev + 1);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -746,13 +919,14 @@ const tabs = [
 export function MangakaStudio() {
   const [activeTab, setActiveTab] = useState("schedule");
   const [activeNav, setActiveNav] = useState("My Projects");
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
 
   const handleNavClick = (label: string) => {
     setActiveNav(label);
     if (label === "My Projects") setActiveTab("schedule");
     else if (label === "Deadlines") setActiveTab("schedule");
     else if (label === "Script Drafts") setActiveTab("script");
-    // "Submitted" shows the submitted view (handled by activeNav check in render)
+    // "Submissions" shows the submit view (handled by activeNav check in render)
   };
 
   return (
@@ -767,11 +941,6 @@ export function MangakaStudio() {
             <div>
               <div style={{ fontSize: 15, fontWeight: 900, letterSpacing: "-0.01em" }}>#naruto-ch-101</div>
               <div style={{ fontSize: 11, color: "var(--mf-text-muted)" }}>Naruto Returns · Chapter 101 · Due Jul 18</div>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <div style={{ padding: "5px 12px", background: "var(--mf-green-dim)", border: "1px solid var(--mf-green)40", borderRadius: 7, fontSize: 11, color: "var(--mf-green)", fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
-              <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--mf-green)" }} /> 2 Assistants Online
             </div>
           </div>
         </div>
@@ -809,8 +978,8 @@ export function MangakaStudio() {
 
         {/* Tab content */}
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {activeNav === "Submitted" ? (
-            <SubmittedChaptersApi />
+          {activeNav === "Submissions" ? (
+            <SubmitView />
           ) : (
             <>
               {activeTab === "schedule" && <ProductionSchedule />}
@@ -821,6 +990,15 @@ export function MangakaStudio() {
           )}
         </div>
       </div>
+      {showSubmitModal && (
+        <SubmitIdeaModal
+          onClose={() => setShowSubmitModal(false)}
+          onSuccess={() => {
+            setShowSubmitModal(false);
+            // In a real app we might want to show a toast or refresh data here
+          }}
+        />
+      )}
     </AppLayout>
   );
 }

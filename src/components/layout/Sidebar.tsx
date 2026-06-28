@@ -70,7 +70,7 @@ const roleConfig: Record<LayoutRole, RoleConfig> = {
       { icon: Layers, label: "My Projects", badge: 3 },
       { icon: AlertTriangle, label: "Deadlines", badge: 2, badgeColor: "var(--mf-orange)" },
       { icon: FileText, label: "Script Drafts" },
-      { icon: CheckCircle, label: "Submitted" },
+      { icon: CheckCircle, label: "Submissions" },
     ],
     channels: ["naruto-ch-101", "team-chat", "assistant-coloring", "background-art"],
     dms: ["Editor: Yamada-san", "Assistant Aiko", "Assistant Kenji"],
