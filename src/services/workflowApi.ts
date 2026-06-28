@@ -13,6 +13,19 @@ export interface SubmissionApi {
   contentUrl: string | null;
   status: string | null;
   submittedAt: string | null;
+  submittedBy?: AccountSummaryApi | null;
+  account?: AccountSummaryApi | null;
+  createdBy?: AccountSummaryApi | null;
+  mangaka?: AccountSummaryApi | null;
+  submittedById?: number | null;
+  accountId?: number | null;
+  createdById?: number | null;
+  mangakaId?: number | null;
+  planning?: PlanningSummaryApi | null;
+  project?: ProjectSummaryApi | null;
+  files?: SubmissionFileApi[] | null;
+  note?: string | null;
+  description?: string | null;
 }
 
 export interface SubmissionReviewApi {
@@ -20,6 +33,59 @@ export interface SubmissionReviewApi {
   decision: string | null;
   comment: string | null;
   reviewedAt: string | null;
+}
+
+export interface AccountSummaryApi {
+  id?: number | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
+  phoneNumber?: string | null;
+  username?: string | null;
+  name?: string | null;
+}
+
+export interface PlanningSummaryApi {
+  id?: number | null;
+  title?: string | null;
+  name?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  status?: string | null;
+}
+
+export interface ProjectSummaryApi {
+  id?: number | null;
+  title?: string | null;
+  name?: string | null;
+  status?: string | null;
+  description?: string | null;
+}
+
+export interface SubmissionFileApi {
+  id?: number | null;
+  originalName?: string | null;
+  originalFilename?: string | null;
+  fileName?: string | null;
+  filename?: string | null;
+  path?: string | null;
+  filePath?: string | null;
+  url?: string | null;
+  fileUrl?: string | null;
+  size?: number | null;
+  fileSize?: number | null;
+  contentType?: string | null;
+  mimeType?: string | null;
+}
+
+export interface ReviewRequest {
+  submissionId: number;
+  reviewerId: number;
+  decision: "APPROVED" | "REJECTED" | string;
+  comment: string;
+  pacingPass: boolean;
+  structurePass: boolean;
+  imageFlowPass: boolean;
 }
 
 export interface TaskApi {
@@ -112,6 +178,15 @@ export function getSubmissions(): Promise<SubmissionApi[]> {
   return apiRequest<SubmissionApi[]>("/submissions");
 }
 
+export function getSubmissionById(id: number): Promise<SubmissionApi> {
+  return apiRequest<SubmissionApi>(`/submissions/${id}`);
+}
+
+export function getWorkflowSubmissions(status?: string): Promise<SubmissionApi[]> {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  return apiRequest<SubmissionApi[]>(`/workflow/name/submissions${query}`);
+}
+
 export function getSubmissionReviews(): Promise<SubmissionReviewApi[]> {
   return apiRequest<SubmissionReviewApi[]>("/submissionreviews");
 }
@@ -151,6 +226,13 @@ export function castSubmissionReviewVote(payload: {
   comment?: string;
 }): Promise<VoteApi> {
   return apiRequest<VoteApi>("/votes", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }, [200, 201]);
+}
+
+export function reviewSubmissionByTantou(payload: ReviewRequest): Promise<SubmissionReviewApi> {
+  return apiRequest<SubmissionReviewApi>("/workflow/name/review/tantou", {
     method: "POST",
     body: JSON.stringify(payload),
   }, [200, 201]);
