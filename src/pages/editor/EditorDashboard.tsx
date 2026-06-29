@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppLayout } from "../../components/layout/AppLayout";
 import {
   AlertTriangle, ArrowUpRight, CheckCircle, Clock, FileText,
-  Image, Inbox, Link2, Loader2, RefreshCw, User,
+  Image, Inbox, Link2, Loader2, RefreshCw, RotateCcw, User,
 } from "lucide-react";
 import {
   getSubmissionById,
@@ -74,8 +74,13 @@ function accountDisplayName(account?: AccountSummaryApi | AccountProfile | null)
   return account.email || null;
 }
 
-function nestedAuthorAccounts(submission: SubmissionApi): Array<AccountSummaryApi | null | undefined> {
-  return [submission.submittedBy, submission.account, submission.createdBy, submission.mangaka];
+function nestedAuthorAccounts(submission: any): Array<AccountSummaryApi | null | undefined> {
+  return [
+    submission.submittedBy && typeof submission.submittedBy === "object" ? submission.submittedBy : null,
+    submission.account && typeof submission.account === "object" ? submission.account : null,
+    submission.createdBy && typeof submission.createdBy === "object" ? submission.createdBy : null,
+    submission.mangaka && typeof submission.mangaka === "object" ? submission.mangaka : null,
+  ];
 }
 
 function submissionForAuthorResolution(submission: SubmissionApi, lookup?: AuthorLookupState): SubmissionApi {
@@ -87,13 +92,26 @@ function nestedAuthorAccount(submission: SubmissionApi): AccountSummaryApi | nul
   return nestedAuthorAccounts(submission).find((account) => Boolean(account && accountDisplayName(account))) || null;
 }
 
-function nestedAuthorEmail(submission: SubmissionApi): string | null {
-  return nestedAuthorAccounts(submission).find((account) => account?.email)?.email || null;
+function extractId(val: any): number | null {
+  if (typeof val === "number") return val;
+  if (typeof val === "string" && !isNaN(Number(val))) return Number(val);
+  return null;
 }
 
-function authorId(submission: SubmissionApi): number | null {
+function authorId(submission: any): number | null {
   const nestedId = nestedAuthorAccounts(submission).find((account) => typeof account?.id === "number")?.id;
-  return nestedId ?? submission.submittedById ?? submission.accountId ?? submission.createdById ?? submission.mangakaId ?? null;
+  return nestedId
+    ?? extractId(submission.submittedBy)
+    ?? extractId(submission.submitted_by)
+    ?? extractId(submission.account)
+    ?? extractId(submission.createdBy)
+    ?? extractId(submission.created_by)
+    ?? extractId(submission.mangaka)
+    ?? extractId(submission.submittedById)
+    ?? extractId(submission.accountId)
+    ?? extractId(submission.createdById)
+    ?? extractId(submission.mangakaId)
+    ?? null;
 }
 
 function needsAuthorLookup(submission: SubmissionApi): boolean {
@@ -122,16 +140,6 @@ function submitterName(submission: SubmissionApi, lookup: AuthorLookupState): st
   if (lookup.loadingIds.has(id)) return "Loading author...";
   if (lookup.failedIds.has(id)) return `Mangaka #${id}`;
   return `Mangaka #${id}`;
-}
-
-function submitterEmail(submission: SubmissionApi, lookup: AuthorLookupState): string {
-  const resolvedSubmission = submissionForAuthorResolution(submission, lookup);
-  const nestedEmail = nestedAuthorEmail(resolvedSubmission);
-  if (nestedEmail) return nestedEmail;
-
-  const id = authorId(resolvedSubmission);
-  if (!id) return "N/A";
-  return lookup.names[id]?.email || "N/A";
 }
 
 function formatBytes(value?: number | null): string {
@@ -208,19 +216,24 @@ function hasProjectData(submission: SubmissionApi): boolean {
   ));
 }
 
-function FieldRow({ label, value }: { label: string; value: string | number | null | undefined }) {
+function FieldRow({ label, value, badge }: { label: string; value?: string | number | null | undefined; badge?: React.ReactNode }) {
   return (
-    <div style={{ padding: "10px 12px", background: "var(--mf-bg-elevated)", borderRadius: 8, border: "1px solid var(--mf-border)" }}>
+    <div style={{ padding: "10px 12px", background: "var(--mf-bg-deep)", borderRadius: 8, border: "1px solid var(--mf-border)" }}>
       <div style={{ fontSize: 10, color: "var(--mf-text-muted)", fontWeight: 800, letterSpacing: "0.06em", marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 13, color: "var(--mf-text-secondary)", lineHeight: 1.45, wordBreak: "break-word" }}>{displayText(value, "N/A")}</div>
+      <div style={{ fontSize: 13, color: "var(--mf-text-secondary)", lineHeight: 1.45, wordBreak: "break-word" }}>
+        {badge ? badge : displayText(value, "N/A")}
+      </div>
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, style }: { title: string; children: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <div style={{ marginBottom: 18, padding: 18, background: "var(--mf-bg-surface)", borderRadius: 14, border: "1px solid var(--mf-border)" }}>
-      <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.08em", marginBottom: 12 }}>{title}</div>
+    <div style={{ marginBottom: 20, padding: 20, background: "var(--mf-bg-surface)", borderRadius: 16, border: "1px solid var(--mf-border)", boxShadow: "0 4px 12px rgba(0,0,0,0.2)", ...style }}>
+      <div style={{ fontSize: 11, fontWeight: 900, color: "var(--mf-text)", letterSpacing: "0.08em", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ width: 4, height: 14, background: "var(--mf-cyan)", borderRadius: 2 }} />
+        {title}
+      </div>
       {children}
     </div>
   );
@@ -244,31 +257,25 @@ function FileCard({ file }: { file: SubmissionFileApi }) {
   const isPsd = isPsdFile(file);
 
   return (
-    <div style={{ padding: 14, background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", borderRadius: 10, display: "flex", gap: 12, alignItems: "flex-start" }}>
-      <div style={{ width: 72, height: 72, borderRadius: 8, background: "var(--mf-bg-deep)", border: "1px solid var(--mf-border-bright)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", flexShrink: 0 }}>
+    <div style={{ background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", borderRadius: 12, overflow: "hidden", display: "flex", flexDirection: "column", transition: "transform 0.2s, box-shadow 0.2s" }}
+      onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.3)"; }}
+      onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}>
+      <div style={{ width: "100%", aspectRatio: "3/4", background: "var(--mf-bg-deep)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
         {canPreview ? (
           <img src={path || ""} alt={fileName(file)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : (
-          <FileText size={24} color="var(--mf-text-muted)" />
+          <FileText size={40} color="var(--mf-text-muted)" />
         )}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)", marginBottom: 7, wordBreak: "break-word" }}>{fileName(file)}</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
-          <FieldRow label="FILE PATH / URL" value={path || "N/A"} />
-          <FieldRow label="FILE SIZE" value={formatBytes(fileSize(file))} />
-          <FieldRow label="CONTENT TYPE" value={fileContentType(file)} />
-        </div>
         {canOpen && (
-          <a href={path || undefined} target="_blank" rel="noreferrer" style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 6, color: "var(--mf-cyan)", fontSize: 12, fontWeight: 800, textDecoration: "none" }}>
-            <Link2 size={12} /> Open file
+          <a href={path || undefined} target="_blank" rel="noreferrer" title="Open File" style={{ position: "absolute", bottom: 8, right: 8, width: 32, height: 32, borderRadius: "50%", background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none", border: "1px solid rgba(255,255,255,0.2)" }}>
+            <ArrowUpRight size={16} />
           </a>
         )}
-        {isPsd && (
-          <div style={{ marginTop: 8, fontSize: 12, color: "var(--mf-text-muted)", fontWeight: 700 }}>
-            PSD preview is not available in browser.
-          </div>
-        )}
+      </div>
+      <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 4 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)", wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{fileName(file)}</div>
+        <div style={{ fontSize: 11, color: "var(--mf-text-muted)", fontWeight: 700 }}>{formatBytes(fileSize(file))} • {fileContentType(file).split("/").pop()?.toUpperCase()}</div>
+        {isPsd && <div style={{ fontSize: 10, color: "var(--mf-magenta)", fontWeight: 800, marginTop: 4 }}>NO PREVIEW</div>}
       </div>
     </div>
   );
@@ -338,93 +345,94 @@ function ProposalFeed({
       </div>
 
       {selectedSubmission && (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ padding: "16px 24px 13px", borderBottom: "1px solid var(--mf-border)", background: "var(--mf-bg-base)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 7, flexWrap: "wrap" }}>
-              <h1 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em" }}>{displayText(selectedSubmission.title, `Submission #${selectedSubmission.id}`)}</h1>
-              <StatusBadge status={selectedSubmission.status} />
-            </div>
-            <div style={{ display: "flex", gap: 14, fontSize: 12, color: "var(--mf-text-muted)", flexWrap: "wrap" }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 4 }}><User size={11} />{submitterName(selectedSubmission, authorLookup)}</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Clock size={11} />{formatDateTime(selectedSubmission.submittedAt)}</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 4 }}><FileText size={11} />Submission ID: {selectedSubmission.id}</span>
-            </div>
-          </div>
-
-          <div className="editor-minimal-scrollbar" style={{ flex: 1, overflowY: "auto", padding: "20px 24px" }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
+          <div className="editor-minimal-scrollbar" style={{ flex: 1, overflowY: "auto", padding: "30px 40px", display: "flex", flexDirection: "column", gap: 24 }}>
             {error && (
-              <div style={{ marginBottom: 18, padding: 14, background: "rgba(255,42,122,0.08)", border: "1px solid rgba(255,42,122,0.25)", borderRadius: 10, color: "var(--mf-magenta)", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ padding: 14, background: "rgba(255,42,122,0.08)", border: "1px solid rgba(255,42,122,0.25)", borderRadius: 10, color: "var(--mf-magenta)", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
                 <AlertTriangle size={15} /> {error}
               </div>
             )}
 
-            <Section title="SUBMISSION INFORMATION">
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10 }}>
-                <FieldRow label="SUBMISSION ID" value={selectedSubmission.id} />
-                <FieldRow label="TITLE" value={selectedSubmission.title || "N/A"} />
-                <FieldRow label="STATUS" value={selectedSubmission.status || "N/A"} />
-                <FieldRow label="SUBMITTED AT" value={formatDateTime(selectedSubmission.submittedAt)} />
-                <FieldRow label="SUBMITTED BY" value={submitterName(selectedSubmission, authorLookup)} />
-                <FieldRow label="SUBMITTER EMAIL" value={submitterEmail(selectedSubmission, authorLookup)} />
+            {/* Header Block */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+                  <h1 style={{ fontSize: 26, fontWeight: 900, letterSpacing: "-0.02em", margin: 0, color: "var(--mf-text)" }}>{displayText(selectedSubmission.title, `Submission #${selectedSubmission.id}`)}</h1>
+                  <StatusBadge status={selectedSubmission.status} />
+                </div>
+                <div style={{ display: "flex", gap: 18, fontSize: 13, color: "var(--mf-text-muted)", fontWeight: 600, flexWrap: "wrap" }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}><User size={14} color="var(--mf-cyan)" />{submitterName(selectedSubmission, authorLookup)}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Clock size={14} />{formatDateTime(selectedSubmission.submittedAt)}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}><FileText size={14} />ID: {selectedSubmission.id}</span>
+                </div>
               </div>
-            </Section>
+            </div>
 
-            <Section title="CONTENT">
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10 }}>
-                <FieldRow label="CONTENT URL" value={selectedSubmission.contentUrl || "Not provided"} />
-                <FieldRow label="NOTE" value={selectedSubmission.note || "Not provided"} />
-                <FieldRow label="DESCRIPTION" value={selectedSubmission.description || "Not provided"} />
+            {/* SYNOPSIS */}
+            <Section title="SYNOPSIS" style={{ background: "var(--mf-bg-deep)" }}>
+              <div style={{ fontSize: 14, color: "var(--mf-text-secondary)", lineHeight: 1.6, wordBreak: "break-word" }}>
+                {selectedSubmission.contentUrl || selectedSubmission.description || selectedSubmission.note || (
+                  <span style={{ color: "var(--mf-text-muted)" }}>No synopsis provided.</span>
+                )}
               </div>
               {selectedSubmission.contentUrl && isBrowserUrl(selectedSubmission.contentUrl) && (
-                <a href={selectedSubmission.contentUrl} target="_blank" rel="noreferrer" style={{ marginTop: 12, display: "inline-flex", alignItems: "center", gap: 6, color: "var(--mf-cyan)", fontSize: 12, fontWeight: 800, textDecoration: "none" }}>
-                  <Link2 size={12} /> Open content URL
+                <a href={selectedSubmission.contentUrl} target="_blank" rel="noreferrer" style={{ marginTop: 16, display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 16px", background: "rgba(0, 230, 230, 0.1)", borderRadius: 8, color: "var(--mf-cyan)", fontSize: 12, fontWeight: 800, textDecoration: "none", transition: "background 0.2s" }} onMouseEnter={e => e.currentTarget.style.background = "rgba(0, 230, 230, 0.15)"} onMouseLeave={e => e.currentTarget.style.background = "rgba(0, 230, 230, 0.1)"}>
+                  <Link2 size={14} /> Open attached link
                 </a>
               )}
             </Section>
 
-            {resolvedSelectedSubmission && hasPlanningData(resolvedSelectedSubmission) && (
-              <Section title="PLANNING INFORMATION">
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10 }}>
-                  <FieldRow label="PLANNING ID" value={resolvedSelectedSubmission.planning?.id ?? "N/A"} />
-                  <FieldRow label="PLANNING TITLE" value={resolvedSelectedSubmission.planning?.title || resolvedSelectedSubmission.planning?.name || "N/A"} />
-                  <FieldRow label="PLANNING STATUS" value={resolvedSelectedSubmission.planning?.status || "N/A"} />
-                  <FieldRow label="START DATE" value={formatDateTime(resolvedSelectedSubmission.planning?.startDate)} />
-                  <FieldRow label="END DATE" value={formatDateTime(resolvedSelectedSubmission.planning?.endDate)} />
+            {/* METADATA */}
+            {(hasPlanningData(resolvedSelectedSubmission || selectedSubmission) || hasProjectData(resolvedSelectedSubmission || selectedSubmission)) && (
+              <Section title="METADATA">
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
+                  {hasProjectData(resolvedSelectedSubmission || selectedSubmission) && (
+                    <>
+                      <FieldRow label="PROJECT" value={resolvedSelectedSubmission?.project?.title || resolvedSelectedSubmission?.project?.name || selectedSubmission.project?.title || "N/A"} />
+                      <FieldRow label="PROJECT STATUS" value={resolvedSelectedSubmission?.project?.status || selectedSubmission.project?.status || "N/A"} />
+                    </>
+                  )}
+                  {hasPlanningData(resolvedSelectedSubmission || selectedSubmission) && (
+                    <>
+                      <FieldRow label="PLANNING" value={resolvedSelectedSubmission?.planning?.title || resolvedSelectedSubmission?.planning?.name || selectedSubmission.planning?.title || "N/A"} />
+                      <FieldRow label="DEADLINE" value={formatDateTime(resolvedSelectedSubmission?.planning?.endDate || selectedSubmission.planning?.endDate)} />
+                    </>
+                  )}
                 </div>
               </Section>
             )}
 
-            {resolvedSelectedSubmission && hasProjectData(resolvedSelectedSubmission) && (
-              <Section title="PROJECT INFORMATION">
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10 }}>
-                  <FieldRow label="PROJECT ID" value={resolvedSelectedSubmission.project?.id ?? "N/A"} />
-                  <FieldRow label="PROJECT TITLE" value={resolvedSelectedSubmission.project?.title || resolvedSelectedSubmission.project?.name || "N/A"} />
-                  <FieldRow label="PROJECT STATUS" value={resolvedSelectedSubmission.project?.status || "N/A"} />
-                  <FieldRow label="PROJECT DESCRIPTION" value={resolvedSelectedSubmission.project?.description || "N/A"} />
-                </div>
-              </Section>
-            )}
-
-            <Section title={`UPLOADED FILES - ${files.length}`}>
+            {/* UPLOADED FILES */}
+            <Section title={`UPLOADED FILES (${files.length})`}>
               {files.length === 0 ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--mf-text-muted)", fontSize: 13 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--mf-text-muted)", fontSize: 13, padding: 10 }}>
                   <Image size={15} /> No uploaded files found.
                 </div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 16 }}>
                   {files.map((file, index) => <FileCard key={file.id ?? `${fileName(file)}-${index}`} file={file} />)}
                 </div>
               )}
             </Section>
           </div>
 
-          <div style={{ padding: "13px 24px", borderTop: "1px solid var(--mf-border)", background: "var(--mf-bg-base)", display: "flex", alignItems: "center", gap: 10 }}>
+          {/* Sticky Action Bar */}
+          <div style={{ position: "sticky", bottom: 0, padding: "16px 40px", borderTop: "1px solid rgba(255,255,255,0.05)", background: "rgba(10, 10, 10, 0.85)", backdropFilter: "blur(12px)", display: "flex", alignItems: "center", gap: 12, zIndex: 10 }}>
             <button
               onClick={() => onEscalate(selectedSubmission)}
               disabled={!canEscalate || escalatingId === selectedSubmission.id}
-              style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 18px", background: canEscalate ? "var(--mf-cyan)" : "var(--mf-green-dim)", border: canEscalate ? "none" : "1px solid var(--mf-green)", borderRadius: 10, color: canEscalate ? "#000" : "var(--mf-green)", fontSize: 13, fontWeight: 800, cursor: canEscalate && escalatingId !== selectedSubmission.id ? "pointer" : "default", boxShadow: canEscalate ? "0 0 18px var(--mf-cyan-glow)" : "none", opacity: escalatingId === selectedSubmission.id ? 0.75 : 1 }}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 24px", background: canEscalate ? "linear-gradient(135deg, var(--mf-cyan), #0099ff)" : "var(--mf-bg-surface)", border: canEscalate ? "none" : "1px solid var(--mf-border)", borderRadius: 100, color: canEscalate ? "#000" : "var(--mf-text-muted)", fontSize: 14, fontWeight: 900, cursor: canEscalate && escalatingId !== selectedSubmission.id ? "pointer" : "not-allowed", boxShadow: canEscalate ? "0 4px 16px rgba(0,230,230,0.3)" : "none", opacity: escalatingId === selectedSubmission.id ? 0.75 : 1, transition: "transform 0.1s" }}
+              onMouseDown={e => { if (canEscalate && e.currentTarget) e.currentTarget.style.transform = "scale(0.97)" }}
+              onMouseUp={e => { if (canEscalate && e.currentTarget) e.currentTarget.style.transform = "none" }}
+              onMouseLeave={e => { if (canEscalate && e.currentTarget) e.currentTarget.style.transform = "none" }}
             >
-              {escalatingId === selectedSubmission.id ? <><Loader2 size={13} /> Escalating...</> : canEscalate ? <><ArrowUpRight size={13} /> Escalate to Board</> : <><CheckCircle size={13} /> Pending Board Review</>}
+              {escalatingId === selectedSubmission.id ? <><Loader2 size={15} /> Escalating...</> : canEscalate ? <><ArrowUpRight size={15} /> Escalate to Board</> : <><CheckCircle size={15} /> Pending Board Review</>}
+            </button>
+            <button
+              disabled
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 24px", background: "transparent", border: "1px solid rgba(255, 128, 0, 0.5)", borderRadius: 100, color: "var(--mf-orange)", fontSize: 14, fontWeight: 800, cursor: "not-allowed", opacity: 0.7 }}
+            >
+              <RotateCcw size={15} /> Request Revision
             </button>
           </div>
         </div>
