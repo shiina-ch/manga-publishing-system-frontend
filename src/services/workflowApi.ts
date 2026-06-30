@@ -30,6 +30,10 @@ export interface SubmissionApi {
 
 export interface SubmissionReviewApi {
   id: number;
+  submissionId?: number | null;
+  reviewerId?: number | null;
+  reviewerEmail?: string | null;
+  stage?: string | null;
   decision: string | null;
   comment: string | null;
   reviewedAt: string | null;
@@ -43,6 +47,7 @@ export interface AccountSummaryApi {
   phoneNumber?: string | null;
   username?: string | null;
   name?: string | null;
+  systemRole?: Array<{ id: number; roleName: string }> | null;
 }
 
 export interface PlanningSummaryApi {
@@ -176,6 +181,18 @@ export function getChapters(): Promise<ChapterApi[]> {
 
 export function getSubmissions(): Promise<SubmissionApi[]> {
   return apiRequest<SubmissionApi[]>("/submissions");
+}
+
+export function getMangakaSubmissions(): Promise<SubmissionApi[]> {
+  return apiRequest<SubmissionApi[]>("/submissions");
+}
+
+export function submitToBoard(submissionId: number, tantouId: number): Promise<SubmissionApi> {
+  return apiRequest<SubmissionApi>(
+    `/workflow/name/${submissionId}/submit-to-board?tantouId=${tantouId}`,
+    { method: "POST" },
+    [200, 201],
+  );
 }
 
 export function getSubmissionById(id: number): Promise<SubmissionApi> {

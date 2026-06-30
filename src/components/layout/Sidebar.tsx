@@ -49,6 +49,7 @@ const roleConfig: Record<LayoutRole, RoleConfig> = {
       { icon: Clock, label: "In Revision" },
       { icon: AlertTriangle, label: "Escalated to Board", badgeColor: "var(--mf-orange)" },
       { icon: CheckCircle, label: "Approved" },
+      { icon: FileText, label: "Mangaka Submissions" },
     ],
     channels: [],
     dms: [],

@@ -1,206 +1,418 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { AppLayout } from "../../components/layout/AppLayout";
 import {
-  DollarSign, Calendar, Rocket, FileText,
-  User, Clock, CheckCircle, Edit3, Layers, TrendingUp, X,
-  Star, Package, AlertCircle, Loader2,
+  DollarSign, Calendar, FileText,
+  User, Clock, CheckCircle, Edit3, TrendingUp,
+  Star, Package, AlertCircle, Loader2, Image, ThumbsUp, ThumbsDown, RefreshCw, FileX,
 } from "lucide-react";
 import { getProjects, type ProjectUI } from "../../services/projectApi";
-import { getPlannings, getSubmissions, type SubmissionApi } from "../../services/workflowApi";
+import { getPlannings, getSubmissions, getSubmissionReviews, type SubmissionApi, type SubmissionReviewApi } from "../../services/workflowApi";
 
-const proposals = [
-  { id: 1, title: "Neon Samurai: The Last Blade", mangaka: "Ryu Akimoto", editor: "Kenji Yamada", genre: ["Action", "Cyberpunk"], synopsis: "In 2187 Neo-Tokyo, disgraced ronin Kaito discovers his katana can cut digital constructs. When a corrupt AI enslaves humanity, Kaito must master ancient and digital combat.", editorNotes: "Exceptional world-building. Character design sheets are outstanding. Recommend priority Q3 scheduling. High streaming adaptation value.", escalatedAt: "2 hours ago", pages: 32, concepts: 4, priority: "high" },
-  { id: 2, title: "Ghost Meridian", mangaka: "Sora Hayashi", editor: "Maya Oishi", genre: ["Thriller", "Supernatural"], synopsis: "A detective who can see 48 hours into the future must prevent crimes before they happen — but each vision costs a piece of her soul.", editorNotes: "Strong female protagonist with compelling supernatural hook. Script pacing is excellent. Significant streaming adaptation potential.", escalatedAt: "3 days ago", pages: 24, concepts: 6, priority: "medium" },
-];
-
-const calendarEvents: Record<number, { title: string; color: string }[]> = {
-  8: [{ title: "Bloom Protocol Ch.3", color: "var(--mf-green)" }],
-  15: [{ title: "Neon Samurai Ch.1", color: "var(--mf-cyan)" }],
-  18: [{ title: "Iron Lotus deadline", color: "var(--mf-orange)" }],
-  22: [{ title: "Ghost Meridian Ch.1", color: "var(--mf-magenta)" }],
-  28: [{ title: "Circuit Dancer Ch.1", color: "var(--mf-cyan)" }],
-  30: [{ title: "Summer Oni Ch.2", color: "var(--mf-orange)" }],
-};
-
-const budgetItems = [
-  { project: "Neon Samurai", allocated: 45000, spent: 35000, color: "var(--mf-cyan)" },
-  { project: "Ghost Meridian", allocated: 30000, spent: 13500, color: "var(--mf-orange)" },
-  { project: "Iron Lotus", allocated: 42000, spent: 9240, color: "var(--mf-magenta)" },
-  { project: "Bloom Protocol", allocated: 28000, spent: 25200, color: "var(--mf-green)" },
-  { project: "Circuit Dancer", allocated: 32000, spent: 18000, color: "var(--mf-cyan)" },
-  { project: "Summer Oni", allocated: 22000, spent: 14000, color: "var(--mf-orange)" },
-];
-
-interface BoardProposal {
-  id: number;
-  title: string;
-  mangaka: string;
-  editor: string;
-  genre: string[];
-  synopsis: string;
-  editorNotes: string;
-  escalatedAt: string;
-  pages: number;
-  concepts: number;
-  priority: "high" | "medium";
+// ─── helpers ────────────────────────────────────────────────────────────────
+function isTantorAccount(s: SubmissionApi): boolean {
+  const roles = s.submittedBy?.systemRole ?? [];
+  return roles.some(r => r.roleName?.toUpperCase() === "TANTOR");
 }
 
-function submissionToProposal(submission: SubmissionApi): BoardProposal {
-  return {
-    id: submission.id,
-    title: submission.title || `Submission #${submission.id}`,
-    mangaka: "Submitted account",
-    editor: "Editorial review",
-    genre: ["Unspecified"],
-    synopsis: submission.contentUrl || "No synopsis or content URL was provided.",
-    editorNotes: submission.status || "No editorial recommendation has been stored yet.",
-    escalatedAt: submission.submittedAt ? new Date(submission.submittedAt).toLocaleDateString() : "From API",
-    pages: 0,
-    concepts: 0,
-    priority: (submission.status || "").toLowerCase().includes("urgent") ? "high" : "medium",
-  };
+const BOARD_STATUSES = ["PENDING_BOARD_REVIEW", "APPROVED", "REJECTED"];
+
+function normalizeStatusLabel(status: string | null | undefined): string {
+  switch ((status ?? "").toUpperCase()) {
+    case "PENDING_BOARD_REVIEW": return "Pending";
+    case "APPROVED": return "Approved";
+    case "REJECTED": return "Rejected";
+    default: return status ?? "Unknown";
+  }
 }
 
-// --- Pending Approvals View ---
+function statusColor(status: string | null | undefined): string {
+  switch ((status ?? "").toUpperCase()) {
+    case "APPROVED": return "var(--mf-green)";
+    case "REJECTED": return "var(--mf-magenta)";
+    case "PENDING_BOARD_REVIEW": return "var(--mf-orange)";
+    default: return "var(--mf-text-muted)";
+  }
+}
+
+function formatDT(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" });
+  } catch { return iso; }
+}
+
+function filePath(f: NonNullable<SubmissionApi["files"]>[number]): string {
+  return f.filePath ?? f.url ?? f.fileUrl ?? f.path ?? "";
+}
+function fileName(f: NonNullable<SubmissionApi["files"]>[number]): string {
+  return f.originalName ?? f.originalFilename ?? f.fileName ?? f.filename ?? "file";
+}
+function isImage(f: NonNullable<SubmissionApi["files"]>[number]): boolean {
+  const name = fileName(f).toLowerCase();
+  return /\.(jpg|jpeg|png|gif|webp|svg)$/.test(name);
+}
+
+// ─── Pending Approvals View ─────────────────────────────────────────────────
 function PendingApprovalsView() {
-  const [proposalsFromApi, setProposalsFromApi] = useState<BoardProposal[]>([]);
+  const [submissions, setSubmissions] = useState<SubmissionApi[]>([]);
+  const [allReviews, setAllReviews] = useState<SubmissionReviewApi[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
-  const [budget, setBudget] = useState(45000);
-  const [months, setMonths] = useState(6);
-  const [startDate, setStartDate] = useState("2026-07-01");
-  const [approved, setApproved] = useState<Set<number>>(new Set());
-  const [showSuccess, setShowSuccess] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const proposal = proposalsFromApi.find(p => p.id === selected) || proposalsFromApi[0];
+  const [actionBusy, setActionBusy] = useState<"approve" | "reject" | null>(null);
+  const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
+  const showToast = (text: string, ok: boolean) => {
+    setToast({ text, ok });
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    getSubmissions()
-      .then(rows => {
-        if (cancelled) return;
-        const mapped = rows.map(submissionToProposal);
-        setProposalsFromApi(mapped);
-        setSelected(mapped[0]?.id ?? null);
-      })
-      .catch((err: { message?: string }) => {
-        if (!cancelled) setError(err.message || "Failed to load pending submissions.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+    try {
+      const [subs, revs] = await Promise.all([getSubmissions(), getSubmissionReviews()]);
+      const filtered = subs.filter(
+        s => BOARD_STATUSES.includes((s.status ?? "").toUpperCase()) && isTantorAccount(s)
+      );
+      setSubmissions(filtered);
+      setAllReviews(revs);
+      setSelected(prev => {
+        if (prev && filtered.some(s => s.id === prev)) return prev;
+        return filtered[0]?.id ?? null;
       });
-    return () => { cancelled = true; };
+    } catch (err: unknown) {
+      const msg = err && typeof err === "object" && "message" in err ? String((err as { message: unknown }).message) : "Failed to load data.";
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const handleApprove = () => {
-    if (!selected) return;
-    setApproved(prev => new Set([...prev, selected]));
-    setShowSuccess(true);
-    setTimeout(() => setShowSuccess(false), 3000);
+  useEffect(() => { void load(); }, [load]);
+
+  const submission = submissions.find(s => s.id === selected) ?? null;
+  const reviews = allReviews.filter(r => r.submissionId === selected);
+  const files = submission?.files ?? [];
+
+  const handleAction = async (action: "approve" | "reject") => {
+    // Placeholder — wire to real API endpoint when available
+    setActionBusy(action);
+    await new Promise(r => setTimeout(r, 900));
+    setActionBusy(null);
+    showToast(
+      action === "approve"
+        ? `Submission approved successfully.`
+        : `Submission rejected.`,
+      action === "approve",
+    );
+    void load();
   };
 
   if (loading) {
-    return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-text-muted)" }}>Loading pending submissions...</div>;
+    return (
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "var(--mf-text-muted)" }}>
+        <Loader2 size={18} style={{ animation: "board-spin 1s linear infinite" }} />
+        Loading pending submissions…
+        <style>{`@keyframes board-spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
   }
 
   if (error) {
-    return <div style={{ flex: 1, padding: 24, color: "var(--mf-magenta)" }}>{error}</div>;
+    return (
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12, color: "var(--mf-magenta)", padding: 24 }}>
+        <AlertCircle size={32} />
+        <span style={{ fontSize: 13, fontWeight: 700 }}>{error}</span>
+        <button onClick={() => void load()} style={{ padding: "7px 16px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text-muted)", fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+          <RefreshCw size={12} /> Retry
+        </button>
+      </div>
+    );
   }
 
-  if (!proposal) {
-    return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-text-muted)" }}>No pending submissions found in the database.</div>;
+  if (submissions.length === 0) {
+    return (
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 12, color: "var(--mf-text-muted)" }}>
+        <Package size={40} style={{ opacity: 0.3 }} />
+        <p style={{ fontSize: 14 }}>No board-level submissions found.</p>
+      </div>
+    );
   }
 
   return (
     <div style={{ display: "flex", height: "100%", overflow: "hidden", position: "relative" }}>
-      {showSuccess && (
-        <div style={{ position: "fixed", top: 24, left: "50%", transform: "translateX(-50%)", zIndex: 200, padding: "14px 24px", background: "var(--mf-green-dim)", border: "1px solid var(--mf-green)50", borderRadius: 12, color: "var(--mf-green)", fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", gap: 10, boxShadow: "0 0 30px rgba(57,255,138,0.25)", whiteSpace: "nowrap" }}>
-          <CheckCircle size={16} /> Project Approved! Mangaka workspace created.
+      <style>{`
+        @keyframes board-spin { to { transform: rotate(360deg); } }
+        @keyframes board-toast-in { from { opacity: 0; transform: translateY(-12px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        .board-sub-btn:hover { border-color: rgba(255,140,66,0.45) !important; background: var(--mf-bg-elevated) !important; }
+      `}</style>
+
+      {/* Toast */}
+      {toast && (
+        <div style={{
+          position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", zIndex: 99999,
+          padding: "13px 22px", borderRadius: 12,
+          background: toast.ok ? "rgba(0,230,160,0.12)" : "rgba(255,42,122,0.12)",
+          border: `1px solid ${toast.ok ? "rgba(0,230,160,0.4)" : "rgba(255,42,122,0.4)"}`,
+          color: toast.ok ? "var(--mf-green)" : "var(--mf-magenta)",
+          fontSize: 13, fontWeight: 700,
+          display: "flex", alignItems: "center", gap: 10,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+          animation: "board-toast-in 0.25s ease",
+          whiteSpace: "nowrap",
+        }}>
+          {toast.ok ? <CheckCircle size={15} /> : <AlertCircle size={15} />}
+          {toast.text}
         </div>
       )}
-      <div style={{ width: 300, flexShrink: 0, borderRight: "1px solid var(--mf-border)", background: "var(--mf-bg-base)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid var(--mf-border)" }}>
-          <h2 style={{ fontSize: 15, fontWeight: 900 }}>Pending Review</h2>
-          <p style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 3 }}>Escalated by Editorial Team</p>
+
+      {/* ── Left: Awaiting Vote list ── */}
+      <div style={{ width: 280, flexShrink: 0, borderRight: "1px solid var(--mf-border)", background: "var(--mf-bg-base)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid var(--mf-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <h2 style={{ fontSize: 14, fontWeight: 900 }}>Awaiting Vote</h2>
+            <p style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 2 }}>Board approval required</p>
+          </div>
+          <button onClick={() => void load()} style={{ padding: "5px 8px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 7, color: "var(--mf-text-muted)", fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+            <RefreshCw size={11} />
+          </button>
         </div>
         <div style={{ flex: 1, overflowY: "auto", padding: "10px 10px" }}>
-          {proposalsFromApi.map(p => (
-            <button key={p.id} onClick={() => setSelected(p.id)}
-              style={{ display: "block", width: "100%", padding: 12, marginBottom: 7, background: selected === p.id ? "var(--mf-bg-elevated)" : "var(--mf-bg-surface)", border: `1px solid ${selected === p.id ? "rgba(255,140,66,0.4)" : "var(--mf-border)"}`, borderRadius: 12, cursor: "pointer", textAlign: "left" }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)", lineHeight: 1.3, marginBottom: 3 }}>{p.title}</div>
-                  <div style={{ fontSize: 11, color: "var(--mf-text-muted)", display: "flex", alignItems: "center", gap: 4 }}><Edit3 size={9} /> {p.editor}</div>
-                </div>
-                <span style={{ padding: "2px 7px", background: p.priority === "high" ? "var(--mf-magenta-dim)" : "rgba(255,140,66,0.14)", color: p.priority === "high" ? "var(--mf-magenta)" : "var(--mf-orange)", fontSize: 9, fontWeight: 800, borderRadius: 5, flexShrink: 0 }}>{p.priority.toUpperCase()}</span>
+          {submissions.map(s => (
+            <button
+              key={s.id}
+              className="board-sub-btn"
+              onClick={() => setSelected(s.id)}
+              style={{
+                display: "block", width: "100%", padding: "12px 14px", marginBottom: 7,
+                background: selected === s.id ? "var(--mf-bg-elevated)" : "var(--mf-bg-surface)",
+                border: `1px solid ${selected === s.id ? "rgba(255,140,66,0.5)" : "var(--mf-border)"}`,
+                borderRadius: 12, cursor: "pointer", textAlign: "left",
+                transition: "border-color 0.15s, background 0.15s",
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)", marginBottom: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {s.title || `Submission #${s.id}`}
               </div>
-              <div style={{ fontSize: 11, color: "var(--mf-text-muted)", display: "flex", alignItems: "center", gap: 4 }}><Clock size={10} /> {p.escalatedAt}</div>
-              {approved.has(p.id) && <div style={{ marginTop: 7, display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--mf-green)", fontWeight: 700 }}><CheckCircle size={11} /> Approved</div>}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: 10, color: "var(--mf-text-muted)", display: "flex", alignItems: "center", gap: 3 }}>
+                  <Clock size={9} /> {formatDT(s.submittedAt)}
+                </span>
+                <span style={{
+                  padding: "2px 7px", borderRadius: 100, fontSize: 9, fontWeight: 800,
+                  background: `${statusColor(s.status)}18`,
+                  color: statusColor(s.status),
+                  border: `1px solid ${statusColor(s.status)}40`,
+                }}>
+                  {normalizeStatusLabel(s.status)}
+                </span>
+              </div>
             </button>
           ))}
         </div>
       </div>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ padding: "16px 24px 12px", borderBottom: "1px solid var(--mf-border)", background: "var(--mf-bg-base)" }}>
-          <h1 style={{ fontSize: 20, fontWeight: 900, marginBottom: 5 }}>{proposal.title}</h1>
-          <div style={{ display: "flex", gap: 14, fontSize: 12, color: "var(--mf-text-muted)" }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 4 }}><User size={11} />{proposal.mangaka}</span>
-            <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Edit3 size={11} />Editor: {proposal.editor}</span>
-          </div>
-        </div>
-        <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px", display: "flex", gap: 20 }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ marginBottom: 16, padding: 16, background: "var(--mf-bg-surface)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
-              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.08em", marginBottom: 9 }}>SYNOPSIS</div>
-              <p style={{ fontSize: 13, color: "var(--mf-text-secondary)", lineHeight: 1.7 }}>{proposal.synopsis}</p>
-            </div>
-            <div style={{ marginBottom: 16, padding: 16, background: "var(--mf-cyan-dim)", borderRadius: 12, border: "1px solid var(--mf-cyan)25" }}>
-              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-cyan)", letterSpacing: "0.08em", marginBottom: 9, display: "flex", alignItems: "center", gap: 6 }}><Edit3 size={10} /> EDITOR RECOMMENDATION</div>
-              <p style={{ fontSize: 13, color: "var(--mf-text-secondary)", lineHeight: 1.7 }}>{proposal.editorNotes}</p>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-              {[{ icon: FileText, label: "Pages", value: proposal.pages }, { icon: Layers, label: "Concepts", value: proposal.concepts }, { icon: TrendingUp, label: "Market", value: "High" }].map(s => {
-                const Icon = s.icon;
-                return <div key={s.label} style={{ padding: 14, background: "var(--mf-bg-surface)", borderRadius: 10, border: "1px solid var(--mf-border)" }}><Icon size={16} color="var(--mf-orange)" style={{ marginBottom: 8 }} /><div style={{ fontSize: 20, fontWeight: 900, color: "var(--mf-text)", marginBottom: 2 }}>{s.value}</div><div style={{ fontSize: 10, color: "var(--mf-text-muted)" }}>{s.label}</div></div>;
-              })}
-            </div>
-          </div>
-          <div style={{ width: 272, flexShrink: 0 }}>
-            <div style={{ marginBottom: 12, padding: 16, background: "var(--mf-bg-surface)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
-              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.07em", marginBottom: 12, display: "flex", alignItems: "center", gap: 5 }}><DollarSign size={11} color="var(--mf-green)" /> BUDGET ESTIMATOR</div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}><span style={{ fontSize: 11, color: "var(--mf-text-secondary)" }}>Total Budget</span><span style={{ fontSize: 13, fontWeight: 900, color: "var(--mf-green)" }}>${budget.toLocaleString()}</span></div>
-              <input type="range" min={10000} max={200000} step={5000} value={budget} onChange={e => setBudget(Number(e.target.value))} style={{ width: "100%", accentColor: "var(--mf-green)", marginBottom: 10 }} />
-              {[{ label: "Mangaka Fee", pct: 0.45 }, { label: "Assistants", pct: 0.25 }, { label: "Production", pct: 0.2 }, { label: "Marketing", pct: 0.1 }].map(item => (
-                <div key={item.label} style={{ marginBottom: 7 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3, fontSize: 10 }}><span style={{ color: "var(--mf-text-muted)" }}>{item.label}</span><span style={{ color: "var(--mf-text-secondary)", fontWeight: 700 }}>${Math.round(budget * item.pct).toLocaleString()}</span></div>
-                  <div style={{ height: 3, background: "var(--mf-bg-elevated)", borderRadius: 100, overflow: "hidden" }}><div style={{ height: "100%", width: `${item.pct * 100}%`, background: "var(--mf-green)", borderRadius: 100 }} /></div>
-                </div>
-              ))}
-            </div>
-            <div style={{ marginBottom: 12, padding: 16, background: "var(--mf-bg-surface)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
-              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.07em", marginBottom: 12, display: "flex", alignItems: "center", gap: 5 }}><Calendar size={11} color="var(--mf-cyan)" /> TIMELINE</div>
-              <div style={{ marginBottom: 10 }}>
-                <label style={{ fontSize: 10, color: "var(--mf-text-muted)", display: "block", marginBottom: 4 }}>START DATE</label>
-                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={{ width: "100%", padding: "7px 10px", background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border-bright)", borderRadius: 7, color: "var(--mf-text)", fontSize: 11, outline: "none", boxSizing: "border-box" }} />
+
+      {/* ── Middle: Submission detail ── */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", borderRight: "1px solid var(--mf-border)" }}>
+        {submission ? (
+          <>
+            {/* Header */}
+            <div style={{ padding: "16px 24px 13px", borderBottom: "1px solid var(--mf-border)", background: "var(--mf-bg-base)", flexShrink: 0 }}>
+              <h1 style={{ fontSize: 18, fontWeight: 900, marginBottom: 4 }}>
+                {submission.title || `Submission #${submission.id}`}
+              </h1>
+              <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--mf-text-muted)", alignItems: "center" }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <User size={11} />
+                  {submission.submittedBy?.email ?? submission.submittedBy?.username ?? "—"}
+                </span>
+                <span style={{
+                  padding: "2px 9px", borderRadius: 100, fontSize: 10, fontWeight: 800,
+                  background: `${statusColor(submission.status)}18`,
+                  color: statusColor(submission.status),
+                  border: `1px solid ${statusColor(submission.status)}40`,
+                }}>
+                  {normalizeStatusLabel(submission.status)}
+                </span>
+                <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <Clock size={11} /> {formatDT(submission.submittedAt)}
+                </span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span style={{ fontSize: 10, color: "var(--mf-text-muted)" }}>DURATION</span><span style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-cyan)" }}>{months}mo</span></div>
-              <input type="range" min={3} max={24} step={1} value={months} onChange={e => setMonths(Number(e.target.value))} style={{ width: "100%", accentColor: "var(--mf-cyan)" }} />
             </div>
-            <button onClick={handleApprove} disabled={approved.has(proposal.id)}
-              style={{ width: "100%", padding: "13px", background: approved.has(proposal.id) ? "var(--mf-green-dim)" : "linear-gradient(135deg, var(--mf-magenta), #C2006A)", border: approved.has(proposal.id) ? "1px solid var(--mf-green)" : "none", borderRadius: 12, color: approved.has(proposal.id) ? "var(--mf-green)" : "#fff", fontSize: 13, fontWeight: 900, cursor: approved.has(proposal.id) ? "default" : "pointer", letterSpacing: "0.04em", boxShadow: approved.has(proposal.id) ? "none" : "0 0 28px var(--mf-magenta-glow)", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
-              {approved.has(proposal.id) ? <><CheckCircle size={14} /> LAUNCHED</> : <><Rocket size={14} /> APPROVE & LAUNCH</>}
-            </button>
-            <button style={{ width: "100%", marginTop: 7, padding: "10px", background: "transparent", border: "1px solid var(--mf-magenta)30", borderRadius: 10, color: "var(--mf-magenta)", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-              <X size={12} /> Reject
-            </button>
-          </div>
-        </div>
+
+            {/* Body */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: 20 }}>
+              {/* Submitted by info */}
+              <div style={{ padding: 16, background: "var(--mf-bg-surface)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.07em", marginBottom: 12 }}>SUBMITTED BY</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ width: 38, height: 38, borderRadius: "50%", background: "var(--mf-orange-dim, rgba(255,140,66,0.12))", border: "1px solid rgba(255,140,66,0.3)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <User size={16} color="var(--mf-orange)" />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)" }}>
+                      {[submission.submittedBy?.firstName, submission.submittedBy?.lastName].filter(Boolean).join(" ") || "—"}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 2 }}>
+                      {submission.submittedBy?.email ?? "—"}
+                    </div>
+                    <div style={{ fontSize: 10, color: "var(--mf-orange)", fontWeight: 700, marginTop: 2 }}>
+                      {submission.submittedBy?.systemRole?.map(r => r.roleName).join(", ") ?? "—"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Files */}
+              {files.length > 0 ? (
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.07em", marginBottom: 12 }}>UPLOADED FILES ({files.length})</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 12 }}>
+                    {files.map((f, idx) => {
+                      const path = filePath(f);
+                      const canPreview = Boolean(path && isImage(f));
+                      return (
+                        <div key={f.id ?? idx} style={{ background: "var(--mf-bg-deep, var(--mf-bg-elevated))", border: "1px solid var(--mf-border)", borderRadius: 10, overflow: "hidden" }}>
+                          <div style={{ width: "100%", aspectRatio: "3/4", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden", background: "var(--mf-bg-elevated)" }}>
+                            {canPreview ? (
+                              <img src={path} alt={fileName(f)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            ) : (
+                              <FileX size={28} color="var(--mf-text-muted)" />
+                            )}
+                            {path && (
+                              <a href={path} target="_blank" rel="noreferrer" style={{ position: "absolute", bottom: 5, right: 5, width: 24, height: 24, borderRadius: "50%", background: "rgba(0,0,0,0.7)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}>
+                                <Image size={11} />
+                              </a>
+                            )}
+                          </div>
+                          <div style={{ padding: "7px 9px" }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: "var(--mf-text)", wordBreak: "break-all", overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{fileName(f)}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ padding: "16px", background: "var(--mf-bg-surface)", borderRadius: 12, border: "1px solid var(--mf-border)", color: "var(--mf-text-muted)", fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                  <FileX size={16} /> No files attached to this submission.
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-text-muted)" }}>Select a submission to review.</div>
+        )}
+      </div>
+
+      {/* ── Right: Actions + Reviews ── */}
+      <div style={{ width: 300, flexShrink: 0, background: "var(--mf-bg-base)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {submission && (
+          <>
+            {/* Action buttons */}
+            <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid var(--mf-border)", display: "flex", flexDirection: "column", gap: 10, flexShrink: 0 }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.07em", marginBottom: 4 }}>BOARD DECISION</div>
+              <button
+                onClick={() => void handleAction("approve")}
+                disabled={actionBusy !== null}
+                style={{
+                  width: "100%", padding: "13px", borderRadius: 12,
+                  background: actionBusy ? "var(--mf-bg-elevated)" : "linear-gradient(135deg, #00e6a0, #00b87a)",
+                  border: actionBusy ? "1px solid var(--mf-border)" : "none",
+                  color: actionBusy ? "var(--mf-text-muted)" : "#000",
+                  fontSize: 13, fontWeight: 900, cursor: actionBusy ? "not-allowed" : "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  boxShadow: actionBusy ? "none" : "0 4px 20px rgba(0,230,160,0.3)",
+                  transition: "transform 0.1s, box-shadow 0.2s",
+                }}
+                onMouseEnter={e => { if (!actionBusy) e.currentTarget.style.transform = "scale(1.02)"; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
+              >
+                {actionBusy === "approve"
+                  ? <><Loader2 size={14} style={{ animation: "board-spin 1s linear infinite" }} /> Approving…</>
+                  : <><ThumbsUp size={14} /> APPROVE</>
+                }
+              </button>
+              <button
+                onClick={() => void handleAction("reject")}
+                disabled={actionBusy !== null}
+                style={{
+                  width: "100%", padding: "12px", borderRadius: 12,
+                  background: "transparent",
+                  border: "1px solid rgba(255,42,122,0.4)",
+                  color: "var(--mf-magenta)",
+                  fontSize: 13, fontWeight: 900, cursor: actionBusy ? "not-allowed" : "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                  opacity: actionBusy ? 0.6 : 1,
+                  transition: "background 0.15s",
+                }}
+                onMouseEnter={e => { if (!actionBusy) e.currentTarget.style.background = "rgba(255,42,122,0.08)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+              >
+                {actionBusy === "reject"
+                  ? <><Loader2 size={14} style={{ animation: "board-spin 1s linear infinite" }} /> Rejecting…</>
+                  : <><ThumbsDown size={14} /> REJECT</>
+                }
+              </button>
+            </div>
+
+            {/* Reviews list */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "16px 16px" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.07em", marginBottom: 12 }}>
+                EDITORIAL REVIEWS ({reviews.length})
+              </div>
+              {reviews.length === 0 ? (
+                <div style={{ color: "var(--mf-text-muted)", fontSize: 12, textAlign: "center", padding: "24px 0" }}>No reviews yet for this submission.</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {reviews.map(r => (
+                    <div key={r.id} style={{ padding: "12px 14px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 12 }}>
+                      {/* Reviewer email + decision */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--mf-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 140 }}>
+                          {r.reviewerEmail ?? `Reviewer #${r.reviewerId}`}
+                        </span>
+                        <span style={{
+                          padding: "2px 8px", borderRadius: 100, fontSize: 9, fontWeight: 800,
+                          background: r.decision === "APPROVED" ? "rgba(0,230,160,0.12)" : r.decision === "REJECTED" ? "rgba(255,42,122,0.12)" : "rgba(255,140,66,0.12)",
+                          color: r.decision === "APPROVED" ? "var(--mf-green)" : r.decision === "REJECTED" ? "var(--mf-magenta)" : "var(--mf-orange)",
+                          border: `1px solid ${r.decision === "APPROVED" ? "rgba(0,230,160,0.3)" : r.decision === "REJECTED" ? "rgba(255,42,122,0.3)" : "rgba(255,140,66,0.3)"}`,
+                        }}>
+                          {r.decision ?? "—"}
+                        </span>
+                      </div>
+                      {/* Stage badge */}
+                      {r.stage && (
+                        <div style={{ fontSize: 9, color: "var(--mf-text-muted)", fontWeight: 700, marginBottom: 5, letterSpacing: "0.04em" }}>
+                          {r.stage.replace(/_/g, " ")}
+                        </div>
+                      )}
+                      {/* Comment */}
+                      {r.comment && (
+                        <div style={{ fontSize: 11, color: "var(--mf-text-secondary, var(--mf-text-muted))", lineHeight: 1.55, marginBottom: 6 }}>
+                          {r.comment}
+                        </div>
+                      )}
+                      {/* Reviewed at */}
+                      <div style={{ fontSize: 10, color: "var(--mf-text-muted)", display: "flex", alignItems: "center", gap: 4 }}>
+                        <Clock size={9} /> {formatDT(r.reviewedAt)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+        {!submission && (
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-text-muted)", fontSize: 12 }}>No submission selected.</div>
+        )}
       </div>
     </div>
   );
 }
+
 
 // --- Active Projects View ---
 function ActiveProjectsView() {
