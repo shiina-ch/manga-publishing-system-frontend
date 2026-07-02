@@ -1,13 +1,14 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type CSSProperties } from "react";
 import { useSearchParams } from "react-router";
 import { AppLayout } from "../../components/layout/AppLayout";
 import {
   Users, BookOpen, Clock, CheckCircle, AlertTriangle, XCircle,
-  Eye, RefreshCw, UserPlus, FileText, MapPin,
-  Shield, Activity, TrendingUp, Wifi, WifiOff, MoreHorizontal,
-  ChevronRight, Search, Filter, Download, Inbox, ChevronDown,
-  BarChart3, Zap, Globe, PenTool, Layers, Edit3, ArrowUpRight,
+  Eye, RefreshCw, UserPlus, FileText,
+  Shield, Activity, TrendingUp,
+  Search, Inbox,
+  Globe,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { getAllAccounts, activateAccount, deactivateAccount, type AdminAccount } from "../../services/adminApi";
 import { getChapters, type ChapterApi } from "../../services/workflowApi";
 
@@ -36,20 +37,6 @@ interface ChapterStatus {
   progress: number;
   pages: number;
   mangaColor: string;
-}
-
-interface RegistrationRequest {
-  id: number;
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  role: string;
-  address: string;
-  cvFileName: string;
-  cvSize: string;
-  submittedAt: string;
-  status: "pending" | "approved" | "rejected";
 }
 
 interface ManagedUser {
@@ -82,14 +69,6 @@ const statusChapterConfig: Record<string, { label: string; color: string; bg: st
   rejected: { label: "Rejected", color: "var(--mf-magenta)", bg: "var(--mf-magenta-dim)" },
 };
 
-const roleLabel: Record<string, string> = {
-  TANTOU_EDITOR: "TANTOU_EDITOR",
-  EDITORIAL_BOARD_MEMBER: "EDITORIAL_BOARD_MEMBER",
-  MANGAKA: "MANGAKA",
-  ASSISTANT: "ASSISTANT",
-  UNASSIGNED: "UNASSIGNED",
-};
-
 const roleColor: Record<string, string> = {
   TANTOU_EDITOR: "var(--mf-cyan)",
   EDITORIAL_BOARD_MEMBER: "var(--mf-orange)",
@@ -115,7 +94,7 @@ function ChapterStatusBadge({ status }: { status: string }) {
 }
 
 function StatCard({ icon: Icon, label, value, color, trend, subtitle }: {
-  icon: any; label: string; value: string | number; color: string; trend?: string; subtitle?: string;
+  icon: LucideIcon; label: string; value: string | number; color: string; trend?: string; subtitle?: string;
 }) {
   return (
     <div style={{
@@ -174,7 +153,7 @@ function SectionHeader({ title, subtitle, rightContent }: { title: string; subti
 }
 
 // Table header row for consistent dark-header tables (Material Dashboard style)
-function TableHeader({ columns }: { columns: { label: string; width?: string | number; align?: string }[] }) {
+function TableHeader({ columns }: { columns: { label: string; width?: string | number; align?: CSSProperties["textAlign"] }[] }) {
   return (
     <div style={{
       display: "flex", alignItems: "center", padding: "12px 20px",
@@ -186,7 +165,7 @@ function TableHeader({ columns }: { columns: { label: string; width?: string | n
           flex: col.width ? `0 0 ${col.width}` : 1,
           fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)",
           letterSpacing: "0.08em", textTransform: "uppercase" as const,
-          textAlign: (col.align as any) || "left",
+          textAlign: col.align || "left",
         }}>
           {col.label}
         </div>
@@ -200,10 +179,8 @@ function TableHeader({ columns }: { columns: { label: string; width?: string | n
 function OverviewTab({ onlineUsers, chapters, registrations, activities }: {
   onlineUsers: OnlineUser[]; chapters: ChapterStatus[]; registrations: AdminAccount[]; activities: ActivityEvent[];
 }) {
-  const totalOnline = onlineUsers.filter(u => u.status === "online").length;
   const publishedCount = chapters.filter(c => c.status === "published").length;
   const pendingRegs = registrations.filter(r => r.status === "PENDING").length;
-  const inReviewCount = chapters.filter(c => c.status === "in_review").length;
 
   // Pipeline counts
   const pipeline = {
@@ -214,10 +191,6 @@ function OverviewTab({ onlineUsers, chapters, registrations, activities }: {
     rejected: chapters.filter(c => c.status === "rejected").length,
   };
   const totalChapters = chapters.length;
-
-  const statusDotColor: Record<string, string> = {
-    online: "var(--mf-green)", idle: "var(--mf-orange)", busy: "var(--mf-magenta)", offline: "var(--mf-text-muted)",
-  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -236,39 +209,48 @@ function OverviewTab({ onlineUsers, chapters, registrations, activities }: {
           background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
           borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column",
         }}>
-          <SectionHeader title="Recent Activity" subtitle="System events timeline" />
+          <SectionHeader title="Recent Activity" />
           <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
-            {activities.map((activity, idx) => (
-              <div key={activity.id} style={{
-                display: "flex", gap: 14, paddingBottom: idx < activities.length - 1 ? 18 : 0,
-                position: "relative",
+            {activities.length === 0 ? (
+              <div style={{
+                minHeight: 180, display: "flex", alignItems: "center", justifyContent: "center",
+                color: "var(--mf-text-muted)", fontSize: 12, fontWeight: 600,
               }}>
-                {/* Timeline line */}
-                {idx < activities.length - 1 && (
-                  <div style={{
-                    position: "absolute", left: 7, top: 18, bottom: 0, width: 1,
-                    background: "var(--mf-border)",
-                  }} />
-                )}
-                {/* Dot */}
-                <div style={{
-                  width: 15, height: 15, borderRadius: "50%", flexShrink: 0, marginTop: 2,
-                  background: `${activity.color}20`, border: `2px solid ${activity.color}`,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  <div style={{ width: 5, height: 5, borderRadius: "50%", background: activity.color }} />
-                </div>
-                {/* Content */}
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, color: "var(--mf-text)", fontWeight: 600, lineHeight: 1.4 }}>
-                    {activity.message}
-                  </div>
-                  <div style={{ fontSize: 10, color: "var(--mf-text-muted)", marginTop: 3, display: "flex", alignItems: "center", gap: 4 }}>
-                    <Clock size={9} /> {activity.timestamp}
-                  </div>
-                </div>
+                No recent activity to display.
               </div>
-            ))}
+            ) : (
+              activities.map((activity, idx) => (
+                <div key={activity.id} style={{
+                  display: "flex", gap: 14, paddingBottom: idx < activities.length - 1 ? 18 : 0,
+                  position: "relative",
+                }}>
+                  {/* Timeline line */}
+                  {idx < activities.length - 1 && (
+                    <div style={{
+                      position: "absolute", left: 7, top: 18, bottom: 0, width: 1,
+                      background: "var(--mf-border)",
+                    }} />
+                  )}
+                  {/* Dot */}
+                  <div style={{
+                    width: 15, height: 15, borderRadius: "50%", flexShrink: 0, marginTop: 2,
+                    background: `${activity.color}20`, border: `2px solid ${activity.color}`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <div style={{ width: 5, height: 5, borderRadius: "50%", background: activity.color }} />
+                  </div>
+                  {/* Content */}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, color: "var(--mf-text)", fontWeight: 600, lineHeight: 1.4 }}>
+                      {activity.message}
+                    </div>
+                    <div style={{ fontSize: 10, color: "var(--mf-text-muted)", marginTop: 3, display: "flex", alignItems: "center", gap: 4 }}>
+                      <Clock size={9} /> {activity.timestamp}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -336,50 +318,6 @@ function OverviewTab({ onlineUsers, chapters, registrations, activities }: {
         </div>
       </div>
 
-      {/* Users Online — compact horizontal strip */}
-      <div style={{
-        background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
-        borderRadius: 16, overflow: "hidden",
-      }}>
-        <SectionHeader
-          title="Users Online"
-          subtitle="Real-time user activity"
-          rightContent={
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--mf-green)", animation: "pulse 2s infinite" }} />
-              <span style={{ fontSize: 11, color: "var(--mf-green)", fontWeight: 700 }}>LIVE</span>
-            </div>
-          }
-        />
-        <div style={{ padding: "14px 20px", display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {onlineUsers.filter(u => u.status !== "offline").map(user => (
-            <div key={user.id} style={{
-              display: "flex", alignItems: "center", gap: 8, padding: "8px 14px 8px 10px",
-              background: "var(--mf-bg-elevated)", borderRadius: 10, border: "1px solid var(--mf-border)",
-              transition: "all 0.15s", cursor: "default",
-            }}>
-              <div style={{ position: "relative" }}>
-                <div style={{
-                  width: 30, height: 30, borderRadius: 8,
-                  background: `linear-gradient(135deg, ${roleColor[user.role] || "var(--mf-cyan)"}50, ${roleColor[user.role] || "var(--mf-cyan)"}20)`,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 10, fontWeight: 800, color: roleColor[user.role] || "var(--mf-cyan)",
-                }}>
-                  {user.avatar}
-                </div>
-                <div style={{
-                  position: "absolute", bottom: -1, right: -1, width: 9, height: 9, borderRadius: "50%",
-                  background: statusDotColor[user.status], border: "2px solid var(--mf-bg-elevated)",
-                }} />
-              </div>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--mf-text)", whiteSpace: "nowrap" }}>{user.name}</div>
-                <div style={{ fontSize: 9, color: roleColor[user.role] || "var(--mf-text-muted)", fontWeight: 700 }}>{user.role}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
@@ -702,11 +640,11 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole, onToggleStat
 
           {/* Table header */}
           <TableHeader columns={[
-            { label: "User", width: "40%" },
-            { label: "Role", width: "20%" },
-            { label: "Status", width: "16%" },
-            { label: "Joined", width: "16%" },
-            { label: "", width: "8%", align: "center" },
+            { label: "Name", width: "24%" },
+            { label: "Email", width: "26%" },
+            { label: "Role", width: "22%" },
+            { label: "Status", width: "14%" },
+            { label: "Joined", width: "14%" },
           ]} />
 
           {/* Table body */}
@@ -724,16 +662,24 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole, onToggleStat
                     key={user.id}
                     onClick={() => setSelectedId(selectedId === user.id ? null : user.id)}
                     style={{
-                      display: "flex", alignItems: "center", padding: "10px 20px",
+                      display: "flex", alignItems: "center", padding: "12px 20px",
                       borderBottom: "1px solid var(--mf-border)", cursor: "pointer",
                       background: selectedId === user.id ? "var(--mf-bg-elevated)" : "transparent",
-                      transition: "background 0.12s",
+                      transition: "background 0.12s ease, transform 0.06s ease",
                     }}
                     onMouseEnter={e => { if (selectedId !== user.id) e.currentTarget.style.background = "var(--mf-bg-elevated)"; }}
-                    onMouseLeave={e => { if (selectedId !== user.id) e.currentTarget.style.background = "transparent"; }}
+                    onMouseLeave={e => {
+                      if (selectedId !== user.id) e.currentTarget.style.background = "transparent";
+                      e.currentTarget.style.transform = "translateY(0)";
+                    }}
+                    onMouseDown={e => { e.currentTarget.style.transform = "translateY(1px)"; }}
+                    onMouseUp={e => { e.currentTarget.style.transform = "translateY(0)"; }}
                   >
-                    {/* User */}
-                    <div style={{ flex: "0 0 40%", display: "flex", alignItems: "center", gap: 10 }}>
+                    {/* Name */}
+                    <div style={{
+                      flex: "0 0 24%", display: "flex", alignItems: "center", gap: 10,
+                      minWidth: 0, paddingRight: 12,
+                    }}>
                       <div style={{ position: "relative", flexShrink: 0 }}>
                         <div style={{
                           width: 34, height: 34, borderRadius: 9,
@@ -748,17 +694,26 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole, onToggleStat
                           background: st.color, border: "2px solid var(--mf-bg-surface)",
                         }} />
                       </div>
-                      <div style={{ overflow: "hidden" }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {user.name}
-                        </div>
-                        <div style={{ fontSize: 10, color: "var(--mf-text-muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {user.email}
-                        </div>
+                      <div style={{
+                        fontSize: 12, fontWeight: 700, color: "var(--mf-text)", whiteSpace: "nowrap",
+                        overflow: "hidden", textOverflow: "ellipsis", minWidth: 0,
+                      }}>
+                        {user.name}
                       </div>
                     </div>
+                    {/* Email */}
+                    <div style={{
+                      flex: "0 0 26%", minWidth: 0, display: "flex", alignItems: "center",
+                      paddingRight: 12,
+                      fontSize: 11, color: "var(--mf-text-muted)",
+                    }}>
+                      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user.email || "—"}</span>
+                    </div>
                     {/* Roles (tags) */}
-                    <div style={{ flex: "0 0 20%", display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+                    <div style={{
+                      flex: "0 0 22%", display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center",
+                      minWidth: 0, paddingRight: 12,
+                    }}>
                       {user.roles.length === 0 ? (
                         <span style={{
                           padding: "3px 8px", fontSize: 10, fontWeight: 700, borderRadius: 6,
@@ -778,14 +733,19 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole, onToggleStat
                       )}
                     </div>
                     {/* Status */}
-                    <div style={{ flex: "0 0 16%" }}>
+                    <div style={{
+                      flex: "0 0 14%", display: "flex", alignItems: "center",
+                      minWidth: 0, paddingRight: 12,
+                    }}>
                       <StatusBadge label={st.label} color={st.color} bg={st.bg} />
                     </div>
                     {/* Joined */}
-                    <div style={{ flex: "0 0 16%", fontSize: 11, color: "var(--mf-text-muted)" }}>{user.joinedAt}</div>
-                    {/* Action */}
-                    <div style={{ flex: "0 0 8%", textAlign: "center" }}>
-                      <Eye size={14} color="var(--mf-text-muted)" />
+                    <div style={{
+                      flex: "0 0 14%", display: "flex", alignItems: "center",
+                      minWidth: 0,
+                      fontSize: 11, color: "var(--mf-text-muted)",
+                    }}>
+                      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{user.joinedAt}</span>
                     </div>
                   </div>
                 );
@@ -799,7 +759,6 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole, onToggleStat
           <div style={{
             flex: "0 0 40%", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
             borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column",
-            animation: "smoothZoomIn 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
           }}>
             {/* Header */}
             <div style={{ padding: "22px 20px 16px", borderBottom: "1px solid var(--mf-border)", textAlign: "center", position: "relative" }}>
@@ -1012,19 +971,23 @@ export function AdminDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
 
+  const formatJoinedDate = useCallback((account: AdminAccount): string => {
+    const dates = account as AdminAccount & {
+      joinedAt?: string | null;
+      createdAt?: string | null;
+    };
+    const dateValue = dates.joinedAt || dates.createdAt || dates.approvedAt;
+    if (!dateValue) return "—";
+
+    const parsed = new Date(dateValue);
+    if (Number.isNaN(parsed.getTime())) return "—";
+
+    return parsed.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }, []);
+
   const mapAccountToOnlineUser = useCallback((account: AdminAccount): OnlineUser => {
     const name = `${account.firstName || ""} ${account.lastName || ""}`.trim() || account.email || `Account #${account.id}`;
     const role = (account.requestedRole || (account.status === "ACTIVE" ? "UNASSIGNED" : "PENDING")).toUpperCase();
-
-    // Format the date if available
-    let joinedAtStr = "Unknown";
-    if (account.approvedAt) {
-      try {
-        joinedAtStr = new Date(account.approvedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-      } catch (e) {
-        // keep as Unknown
-      }
-    }
 
     return {
       id: account.id,
@@ -1035,9 +998,9 @@ export function AdminDashboard() {
       status: account.status === "ACTIVE" ? "active" : "deactive",
       lastActive: account.status || "Unknown",
       currentPage: "Workspace",
-      joinedAt: joinedAtStr,
+      joinedAt: formatJoinedDate(account),
     };
-  }, []);
+  }, [formatJoinedDate]);
 
   const mapChapter = useCallback((chapter: ChapterApi, index: number): ChapterStatus => {
     const rawStatus = (chapter.status || "draft").toLowerCase();
@@ -1058,7 +1021,7 @@ export function AdminDashboard() {
   }, []);
 
   const buildActivities = useCallback((accounts: AdminAccount[], chapterRows: ChapterStatus[]): ActivityEvent[] => {
-    const accountEvents = accounts.slice(0, 4).map((account, index) => ({
+    const accountEvents = accounts.filter(account => account.status !== "ACTIVE").slice(0, 4).map((account, index) => ({
       id: index + 1,
       type: "registration" as const,
       message: `${account.firstName || account.email || "Account"} is ${account.status || "UNKNOWN"}`,
@@ -1077,8 +1040,6 @@ export function AdminDashboard() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
 
     Promise.all([getAllAccounts(), getChapters()])
       .then(([accounts, chapterRows]) => {
@@ -1147,7 +1108,7 @@ export function AdminDashboard() {
           status: (currentStatus === "active" || currentStatus === "online") ? "deactive" : "active"
         };
       }));
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to toggle status:", err);
     }
   }, []);
