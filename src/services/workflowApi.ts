@@ -86,7 +86,7 @@ export interface SubmissionFileApi {
 export interface ReviewRequest {
   submissionId: number;
   reviewerId: number;
-  decision: "APPROVED" | "REJECTED" | string;
+  decision: "APPROVE" | "REJECT";
   comment: string;
   pacingPass: boolean;
   structurePass: boolean;
@@ -250,6 +250,13 @@ export function castSubmissionReviewVote(payload: {
 
 export function reviewSubmissionByTantou(payload: ReviewRequest): Promise<SubmissionReviewApi> {
   return apiRequest<SubmissionReviewApi>("/workflow/name/review/tantou", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }, [200, 201]);
+}
+
+export function reviewSubmissionByBoard(payload: ReviewRequest): Promise<SubmissionReviewApi> {
+  return apiRequest<SubmissionReviewApi>("/workflow/name/review/board", {
     method: "POST",
     body: JSON.stringify(payload),
   }, [200, 201]);

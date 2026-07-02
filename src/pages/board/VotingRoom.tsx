@@ -5,23 +5,23 @@ import {
   Package, AlertCircle, Loader2, RefreshCw, FileX, Image,
 } from "lucide-react";
 import {
-  getSubmissions,
+  getWorkflowSubmissions,
   getSubmissionReviews,
+  reviewSubmissionByBoard,
   type SubmissionApi,
   type SubmissionReviewApi,
 } from "../../services/workflowApi";
+import { tokenStorage } from "../../storage/tokenStorage";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
-const BOARD_STATUSES = ["PENDING_BOARD_REVIEW", "APPROVED", "REJECTED"];
-
-function isTantorAccount(s: SubmissionApi): boolean {
-  const roles = s.submittedBy?.systemRole ?? [];
-  return roles.some(r => r.roleName?.toUpperCase() === "TANTOR");
+function normalizeStatus(status: string | null | undefined): string {
+  return (status ?? "").toUpperCase().replace(/-/g, "_");
 }
 
 function statusLabel(status: string | null | undefined): string {
-  switch ((status ?? "").toUpperCase()) {
+  switch (normalizeStatus(status)) {
     case "PENDING_BOARD_REVIEW": return "Pending";
+    case "ON_GOING": return "Voting In Progress";
     case "APPROVED": return "Approved";
     case "REJECTED": return "Rejected";
     default: return status ?? "Unknown";
@@ -29,9 +29,10 @@ function statusLabel(status: string | null | undefined): string {
 }
 
 function statusColor(status: string | null | undefined): string {
-  switch ((status ?? "").toUpperCase()) {
+  switch (normalizeStatus(status)) {
     case "APPROVED": return "var(--mf-green)";
     case "REJECTED": return "var(--mf-magenta)";
+    case "ON_GOING": return "var(--mf-cyan)";
     case "PENDING_BOARD_REVIEW": return "var(--mf-orange)";
     default: return "var(--mf-text-muted)";
   }
@@ -39,7 +40,9 @@ function statusColor(status: string | null | undefined): string {
 
 function decisionColor(decision: string | null | undefined): string {
   switch ((decision ?? "").toUpperCase()) {
+    case "APPROVE":
     case "APPROVED": return "var(--mf-green)";
+    case "REJECT":
     case "REJECTED": return "var(--mf-magenta)";
     default: return "var(--mf-orange)";
   }
@@ -70,6 +73,11 @@ export function VotingRoom() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<"approve" | "reject" | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [comment, setComment] = useState("");
+  const [pacingPass, setPacingPass] = useState(true);
+  const [structurePass, setStructurePass] = useState(true);
+  const [imageFlowPass, setImageFlowPass] = useState(true);
   const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null);
 
   const showToast = (text: string, ok: boolean) => {
@@ -81,10 +89,8 @@ export function VotingRoom() {
     setLoading(true);
     setError(null);
     try {
-      const [subs, revs] = await Promise.all([getSubmissions(), getSubmissionReviews()]);
-      const filtered = subs.filter(
-        s => BOARD_STATUSES.includes((s.status ?? "").toUpperCase()) && isTantorAccount(s)
-      );
+      const [subs, revs] = await Promise.all([getWorkflowSubmissions(), getSubmissionReviews()]);
+      const filtered = subs.filter(s => normalizeStatus(s.status) === "ON_GOING");
       setSubmissions(filtered);
       setAllReviews(revs);
       setSelectedId(prev => {
@@ -103,19 +109,69 @@ export function VotingRoom() {
 
   useEffect(() => { void load(); }, [load]);
 
+  useEffect(() => {
+    setActionError(null);
+    setComment("");
+  }, [selectedId]);
+
   const submission = submissions.find(s => s.id === selectedId) ?? null;
   const reviews = allReviews.filter(r => r.submissionId === selectedId);
   const files = submission?.files ?? [];
+  const canVote = normalizeStatus(submission?.status) === "ON_GOING";
+  const currentAccount = tokenStorage.getAccount();
+  const currentReviewerId = typeof currentAccount?.id === "number" ? currentAccount.id : null;
+  const currentReviewerEmail = currentAccount?.email?.trim().toLowerCase() || null;
+  const hasCurrentUserVoted = reviews.some((review) => {
+    if (currentReviewerId !== null && Number(review.reviewerId) === currentReviewerId) return true;
+    if (review.reviewerEmail && currentReviewerEmail) {
+      return review.reviewerEmail.trim().toLowerCase() === currentReviewerEmail;
+    }
+    return false;
+  });
 
   const handleAction = async (action: "approve" | "reject") => {
+    if (!submission) return;
+    if (!canVote) {
+      setActionError("Voting is only available after the submission status is ON_GOING.");
+      return;
+    }
+
+    const reviewerId = tokenStorage.getAccount()?.id;
+    if (!reviewerId) {
+      setActionError("Cannot vote: logged-in reviewer account ID was not found.");
+      return;
+    }
+
+    const trimmedComment = comment.trim();
+    if (action === "reject" && !trimmedComment) {
+      setActionError("Comment is required when rejecting a submission.");
+      return;
+    }
+
     setActionBusy(action);
-    await new Promise(r => setTimeout(r, 800));
-    setActionBusy(null);
-    showToast(
-      action === "approve" ? "Submission approved successfully." : "Submission rejected.",
-      action === "approve",
-    );
-    void load();
+    setActionError(null);
+    try {
+      await reviewSubmissionByBoard({
+        submissionId: submission.id,
+        reviewerId,
+        decision: action === "approve" ? "APPROVE" : "REJECT",
+        comment: trimmedComment,
+        pacingPass,
+        structurePass,
+        imageFlowPass,
+      });
+      setComment("");
+      showToast("Vote submitted. Status refreshed from backend.", true);
+      await load();
+    } catch (err: unknown) {
+      const msg = err && typeof err === "object" && "message" in err
+        ? String((err as { message: unknown }).message)
+        : "Failed to submit board vote.";
+      setActionError(msg);
+      showToast(msg, false);
+    } finally {
+      setActionBusy(null);
+    }
   };
 
   if (loading) {
@@ -336,46 +392,92 @@ export function VotingRoom() {
               {/* APPROVE / REJECT buttons */}
               <div style={{ padding: "20px 18px 16px", borderBottom: "1px solid var(--mf-border)", display: "flex", flexDirection: "column", gap: 10, flexShrink: 0 }}>
                 <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.07em", marginBottom: 4 }}>BOARD DECISION</div>
-                <button
-                  onClick={() => void handleAction("approve")}
-                  disabled={actionBusy !== null}
-                  style={{
-                    width: "100%", padding: "13px", borderRadius: 12,
-                    background: actionBusy ? "var(--mf-bg-elevated)" : "linear-gradient(135deg, #00e6a0, #00b87a)",
-                    border: actionBusy ? "1px solid var(--mf-border)" : "none",
-                    color: actionBusy ? "var(--mf-text-muted)" : "#000",
-                    fontSize: 13, fontWeight: 900, cursor: actionBusy ? "not-allowed" : "pointer",
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                    boxShadow: actionBusy ? "none" : "0 4px 20px rgba(0,230,160,0.3)",
-                    transition: "transform 0.1s",
-                  }}
-                  onMouseEnter={e => { if (!actionBusy) e.currentTarget.style.transform = "scale(1.02)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
-                >
-                  {actionBusy === "approve"
-                    ? <><Loader2 size={14} style={{ animation: "vr-spin 1s linear infinite" }} /> Approving…</>
-                    : <><ThumbsUp size={14} /> APPROVE</>}
-                </button>
-                <button
-                  onClick={() => void handleAction("reject")}
-                  disabled={actionBusy !== null}
-                  style={{
-                    width: "100%", padding: "12px", borderRadius: 12,
-                    background: "transparent",
-                    border: "1px solid rgba(255,42,122,0.45)",
-                    color: "var(--mf-magenta)",
-                    fontSize: 13, fontWeight: 900, cursor: actionBusy ? "not-allowed" : "pointer",
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                    opacity: actionBusy ? 0.6 : 1,
-                    transition: "background 0.15s",
-                  }}
-                  onMouseEnter={e => { if (!actionBusy) e.currentTarget.style.background = "rgba(255,42,122,0.08)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
-                >
-                  {actionBusy === "reject"
-                    ? <><Loader2 size={14} style={{ animation: "vr-spin 1s linear infinite" }} /> Rejecting…</>
-                    : <><ThumbsDown size={14} /> REJECT</>}
-                </button>
+                {hasCurrentUserVoted ? (
+                  <div style={{ padding: "10px 12px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 10, color: "var(--mf-text-muted)", fontSize: 11, lineHeight: 1.5 }}>
+                    You have already voted on this submission.
+                  </div>
+                ) : (
+                  <>
+                    {!canVote && (
+                      <div style={{ padding: "10px 12px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 10, color: "var(--mf-text-muted)", fontSize: 11, lineHeight: 1.5 }}>
+                        Voting is disabled until backend status is ON_GOING. Current status: {statusLabel(submission.status)}.
+                      </div>
+                    )}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
+                      {([
+                        { label: "Pacing", value: pacingPass, onChange: setPacingPass },
+                        { label: "Structure", value: structurePass, onChange: setStructurePass },
+                        { label: "Image Flow", value: imageFlowPass, onChange: setImageFlowPass },
+                      ] as const).map(({ label, value, onChange }) => (
+                        <label key={label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "8px 10px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 9 }}>
+                          <span style={{ fontSize: 11, color: "var(--mf-text-muted)", fontWeight: 800 }}>{label}</span>
+                          <select
+                            value={value ? "true" : "false"}
+                            disabled={actionBusy !== null}
+                            onChange={(e) => onChange(e.target.value === "true")}
+                            style={{ background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", borderRadius: 7, color: "var(--mf-text)", fontSize: 11, fontWeight: 700, padding: "5px 8px" }}
+                          >
+                            <option value="true">Pass</option>
+                            <option value="false">Fail</option>
+                          </select>
+                        </label>
+                      ))}
+                    </div>
+                    <textarea
+                      value={comment}
+                      onChange={(e) => setComment(e.target.value)}
+                      disabled={actionBusy !== null}
+                      placeholder="Comment"
+                      rows={3}
+                      style={{ width: "100%", boxSizing: "border-box", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 10, color: "var(--mf-text)", fontSize: 12, lineHeight: 1.5, padding: "10px 12px", resize: "vertical", fontFamily: "inherit", outline: "none" }}
+                    />
+                    {actionError && (
+                      <div style={{ padding: "9px 11px", background: "rgba(255,42,122,0.08)", border: "1px solid rgba(255,42,122,0.25)", borderRadius: 9, color: "var(--mf-magenta)", fontSize: 11, fontWeight: 700, lineHeight: 1.45 }}>
+                        {actionError}
+                      </div>
+                    )}
+                    <button
+                      onClick={() => void handleAction("approve")}
+                      disabled={!canVote || actionBusy !== null}
+                      style={{
+                        width: "100%", padding: "13px", borderRadius: 12,
+                        background: actionBusy || !canVote ? "var(--mf-bg-elevated)" : "linear-gradient(135deg, #00e6a0, #00b87a)",
+                        border: actionBusy || !canVote ? "1px solid var(--mf-border)" : "none",
+                        color: actionBusy || !canVote ? "var(--mf-text-muted)" : "#000",
+                        fontSize: 13, fontWeight: 900, cursor: actionBusy || !canVote ? "not-allowed" : "pointer",
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                        boxShadow: actionBusy || !canVote ? "none" : "0 4px 20px rgba(0,230,160,0.3)",
+                        transition: "transform 0.1s",
+                      }}
+                      onMouseEnter={e => { if (!actionBusy && canVote) e.currentTarget.style.transform = "scale(1.02)"; }}
+                      onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
+                    >
+                      {actionBusy === "approve"
+                        ? <><Loader2 size={14} style={{ animation: "vr-spin 1s linear infinite" }} /> Approving…</>
+                        : <><ThumbsUp size={14} /> APPROVE</>}
+                    </button>
+                    <button
+                      onClick={() => void handleAction("reject")}
+                      disabled={!canVote || actionBusy !== null}
+                      style={{
+                        width: "100%", padding: "12px", borderRadius: 12,
+                        background: "transparent",
+                        border: "1px solid rgba(255,42,122,0.45)",
+                        color: "var(--mf-magenta)",
+                        fontSize: 13, fontWeight: 900, cursor: actionBusy || !canVote ? "not-allowed" : "pointer",
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                        opacity: actionBusy || !canVote ? 0.6 : 1,
+                        transition: "background 0.15s",
+                      }}
+                      onMouseEnter={e => { if (!actionBusy && canVote) e.currentTarget.style.background = "rgba(255,42,122,0.08)"; }}
+                      onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+                    >
+                      {actionBusy === "reject"
+                        ? <><Loader2 size={14} style={{ animation: "vr-spin 1s linear infinite" }} /> Rejecting…</>
+                        : <><ThumbsDown size={14} /> REJECT</>}
+                    </button>
+                  </>
+                )}
               </div>
 
               {/* Reviews list */}

@@ -24,12 +24,13 @@ const statusConfig: Record<string, { label: string; color: string; bg: string }>
   in_revision: { label: "In Revision", color: "var(--mf-orange)", bg: "rgba(255,140,66,0.14)" },
   revision: { label: "In Revision", color: "var(--mf-orange)", bg: "rgba(255,140,66,0.14)" },
   pending_board_review: { label: "Pending Board Review", color: "var(--mf-green)", bg: "var(--mf-green-dim)" },
+  on_going: { label: "Voting In Progress", color: "var(--mf-orange)", bg: "rgba(255,140,66,0.14)" },
   approved: { label: "Approved", color: "var(--mf-magenta)", bg: "var(--mf-magenta-dim)" },
   rejected: { label: "Rejected", color: "var(--mf-red)", bg: "rgba(255,42,122,0.14)" },
 };
 
 function normalizeStatus(status?: string | null): string {
-  return (status || "pending").toLowerCase().replace(/\s+/g, "_");
+  return (status || "pending").toLowerCase().replace(/[\s-]+/g, "_");
 }
 
 function statusLabel(status?: string | null): string {
@@ -245,12 +246,29 @@ function Section({ title, children, style }: { title: string; children: React.Re
 function filterSubmissions(submissions: SubmissionApi[], filter: string): SubmissionApi[] {
   return submissions.filter((submission) => {
     const status = normalizeStatus(submission.status);
-    if (filter === "New Proposals") return status === "pending" || status === "pending_tantou_review";
+    if (filter === "New Proposals") return status === "pending" || status === "pending_tantou_review" || status === "submitted";
     if (filter === "In Revision") return status === "revision" || status === "in_revision";
-    if (filter === "Escalated to Board") return status === "pending_board_review";
+    if (filter === "Escalated to Board") return status === "pending_board_review" || status === "on_going";
     if (filter === "Approved") return status === "approved";
     return true;
   });
+}
+
+function boardVotingActionLabel(status?: string | null): string {
+  switch (normalizeStatus(status)) {
+    case "pending_board_review": return "Start Board Voting";
+    case "on_going": return "Voting In Progress";
+    case "approved": return "Approved";
+    case "rejected": return "Rejected";
+    default: return "Start Board Voting";
+  }
+}
+
+function proposalActionLabel(status?: string | null, filter?: string): string {
+  const normalized = normalizeStatus(status);
+  if (filter === "Escalated to Board") return boardVotingActionLabel(status);
+  if (["pending", "pending_tantou_review", "submitted"].includes(normalized)) return "Escalate to Board";
+  return statusLabel(status);
 }
 
 function FileCard({ file }: { file: SubmissionFileApi }) {
@@ -290,14 +308,16 @@ function ProposalFeed({
   escalatingId,
   error,
   authorLookup,
-  onEscalate,
+  onTantouEscalate,
+  onStartBoardVoting,
 }: {
   filter: string;
   submissions: SubmissionApi[];
   escalatingId: number | null;
   error: string | null;
   authorLookup: AuthorLookupState;
-  onEscalate: (submission: SubmissionApi) => void;
+  onTantouEscalate: (submission: SubmissionApi) => void;
+  onStartBoardVoting: (submission: SubmissionApi) => void;
 }) {
   const [selected, setSelected] = useState<number | null>(null);
   const filtered = useMemo(() => filterSubmissions(submissions, filter), [filter, submissions]);
@@ -313,7 +333,10 @@ function ProposalFeed({
     );
   }
 
-  const canEscalate = selectedSubmission && normalizeStatus(selectedSubmission.status) !== "pending_board_review";
+  const selectedStatus = normalizeStatus(selectedSubmission?.status);
+  const canTantouEscalate = filter === "New Proposals" && ["pending", "pending_tantou_review", "submitted"].includes(selectedStatus);
+  const canStartBoardVoting = selectedStatus === "pending_board_review";
+  const canRunPrimaryAction = canTantouEscalate || canStartBoardVoting;
   const resolvedSelectedSubmission = selectedSubmission ? submissionForAuthorResolution(selectedSubmission, authorLookup) : selectedSubmission;
   const files = resolvedSelectedSubmission?.files || [];
 
@@ -422,14 +445,14 @@ function ProposalFeed({
           {/* Sticky Action Bar */}
           <div style={{ position: "sticky", bottom: 0, padding: "16px 40px", borderTop: "1px solid rgba(255,255,255,0.05)", background: "rgba(10, 10, 10, 0.85)", backdropFilter: "blur(12px)", display: "flex", alignItems: "center", gap: 12, zIndex: 10 }}>
             <button
-              onClick={() => onEscalate(selectedSubmission)}
-              disabled={!canEscalate || escalatingId === selectedSubmission.id}
-              style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 24px", background: canEscalate ? "linear-gradient(135deg, var(--mf-cyan), #0099ff)" : "var(--mf-bg-surface)", border: canEscalate ? "none" : "1px solid var(--mf-border)", borderRadius: 100, color: canEscalate ? "#000" : "var(--mf-text-muted)", fontSize: 14, fontWeight: 900, cursor: canEscalate && escalatingId !== selectedSubmission.id ? "pointer" : "not-allowed", boxShadow: canEscalate ? "0 4px 16px rgba(0,230,230,0.3)" : "none", opacity: escalatingId === selectedSubmission.id ? 0.75 : 1, transition: "transform 0.1s" }}
-              onMouseDown={e => { if (canEscalate && e.currentTarget) e.currentTarget.style.transform = "scale(0.97)" }}
-              onMouseUp={e => { if (canEscalate && e.currentTarget) e.currentTarget.style.transform = "none" }}
-              onMouseLeave={e => { if (canEscalate && e.currentTarget) e.currentTarget.style.transform = "none" }}
+              onClick={() => canTantouEscalate ? onTantouEscalate(selectedSubmission) : onStartBoardVoting(selectedSubmission)}
+              disabled={!canRunPrimaryAction || escalatingId === selectedSubmission.id}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 24px", background: canRunPrimaryAction ? "linear-gradient(135deg, var(--mf-cyan), #0099ff)" : "var(--mf-bg-surface)", border: canRunPrimaryAction ? "none" : "1px solid var(--mf-border)", borderRadius: 100, color: canRunPrimaryAction ? "#000" : "var(--mf-text-muted)", fontSize: 14, fontWeight: 900, cursor: canRunPrimaryAction && escalatingId !== selectedSubmission.id ? "pointer" : "not-allowed", boxShadow: canRunPrimaryAction ? "0 4px 16px rgba(0,230,230,0.3)" : "none", opacity: escalatingId === selectedSubmission.id ? 0.75 : 1, transition: "transform 0.1s" }}
+              onMouseDown={e => { if (canRunPrimaryAction && e.currentTarget) e.currentTarget.style.transform = "scale(0.97)" }}
+              onMouseUp={e => { if (canRunPrimaryAction && e.currentTarget) e.currentTarget.style.transform = "none" }}
+              onMouseLeave={e => { if (canRunPrimaryAction && e.currentTarget) e.currentTarget.style.transform = "none" }}
             >
-              {escalatingId === selectedSubmission.id ? <><Loader2 size={15} /> Escalating...</> : canEscalate ? <><ArrowUpRight size={15} /> Escalate to Board</> : <><CheckCircle size={15} /> Pending Board Review</>}
+              {escalatingId === selectedSubmission.id ? <><Loader2 size={15} /> {canTantouEscalate ? "Escalating..." : "Starting voting..."}</> : canRunPrimaryAction ? <><ArrowUpRight size={15} /> {proposalActionLabel(selectedSubmission.status, filter)}</> : <><CheckCircle size={15} /> {proposalActionLabel(selectedSubmission.status, filter)}</>}
             </button>
             <button
               disabled
@@ -1237,7 +1260,7 @@ export function EditorDashboard() {
     return () => window.clearTimeout(timer);
   }, [submissions, submissionDetails, loadingDetailIds, failedDetailIds, authorNames, loadingAuthorIds, failedAuthorIds]);
 
-  async function handleEscalate(submission: SubmissionApi) {
+  async function handleTantouEscalate(submission: SubmissionApi) {
     const reviewerId = tokenStorage.getAccount()?.id;
     if (!reviewerId) {
       setActionError("Cannot escalate because the logged-in Tantou account ID was not found.");
@@ -1250,7 +1273,7 @@ export function EditorDashboard() {
       await reviewSubmissionByTantou({
         submissionId: submission.id,
         reviewerId,
-        decision: "APPROVED",
+        decision: "APPROVE",
         comment: "Recommended to Editorial Board",
         pacingPass: true,
         structurePass: true,
@@ -1259,6 +1282,26 @@ export function EditorDashboard() {
       await loadSubmissions();
     } catch (err) {
       const message = err && typeof err === "object" && "message" in err ? String(err.message) : "Failed to escalate submission.";
+      setActionError(message);
+    } finally {
+      setEscalatingId(null);
+    }
+  }
+
+  async function handleStartBoardVoting(submission: SubmissionApi) {
+    const tantouId = tokenStorage.getAccount()?.id;
+    if (!tantouId) {
+      setActionError("Cannot start board voting because the logged-in Tantou account ID was not found.");
+      return;
+    }
+
+    setEscalatingId(submission.id);
+    setActionError(null);
+    try {
+      await submitToBoard(submission.id, tantouId);
+      await loadSubmissions();
+    } catch (err) {
+      const message = err && typeof err === "object" && "message" in err ? String(err.message) : "Failed to start board voting.";
       setActionError(message);
     } finally {
       setEscalatingId(null);
@@ -1359,7 +1402,8 @@ export function EditorDashboard() {
                   loadingDetailIds,
                   failedDetailIds,
                 }}
-                onEscalate={(submission) => void handleEscalate(submission)}
+                onTantouEscalate={(submission) => void handleTantouEscalate(submission)}
+                onStartBoardVoting={(submission) => void handleStartBoardVoting(submission)}
               />
             )}
           </div>
