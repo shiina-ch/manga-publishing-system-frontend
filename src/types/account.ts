@@ -51,6 +51,7 @@ export interface RegistrationRequest {
   email: string;
   password: string;
   requestedRole: PublicRequestedRole;
+  otpCode: string;
 }
 
 export interface LoginRequest {

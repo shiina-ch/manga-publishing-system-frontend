@@ -156,6 +156,15 @@ export async function registerAccount(payload: RegistrationRequest): Promise<Reg
   return response.data;
 }
 
+export async function sendOtp(email: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/auth/send-otp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+  await parseApiResponse<unknown>(res, [200, 201]);
+}
+
 export function logout(): void {
   tokenStorage.clear();
 }
