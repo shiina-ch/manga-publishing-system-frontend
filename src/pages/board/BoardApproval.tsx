@@ -3,7 +3,7 @@ import { AppLayout } from "../../components/layout/AppLayout";
 import {
   DollarSign, Calendar, FileText,
   User, Clock, CheckCircle, Edit3, TrendingUp,
-  Star, Package, AlertCircle, Loader2, Image, ThumbsUp, ThumbsDown, RefreshCw, FileX,
+  Star, Package, AlertCircle, Loader2, Image, RefreshCw, FileX,
 } from "lucide-react";
 import { getProjects, type ProjectUI } from "../../services/projectApi";
 import { getPlannings, getSubmissions, getSubmissionReviews, type SubmissionApi, type SubmissionReviewApi } from "../../services/workflowApi";
@@ -14,11 +14,16 @@ function isTantorAccount(s: SubmissionApi): boolean {
   return roles.some(r => r.roleName?.toUpperCase() === "TANTOR");
 }
 
-const BOARD_STATUSES = ["PENDING_BOARD_REVIEW", "APPROVED", "REJECTED"];
+const BOARD_STATUSES = ["PENDING_BOARD_REVIEW", "ON_GOING", "APPROVED", "REJECTED"];
+
+function normalizeStatus(status: string | null | undefined): string {
+  return (status ?? "").toUpperCase().replace(/-/g, "_");
+}
 
 function normalizeStatusLabel(status: string | null | undefined): string {
-  switch ((status ?? "").toUpperCase()) {
+  switch (normalizeStatus(status)) {
     case "PENDING_BOARD_REVIEW": return "Pending";
+    case "ON_GOING": return "Voting In Progress";
     case "APPROVED": return "Approved";
     case "REJECTED": return "Rejected";
     default: return status ?? "Unknown";
@@ -26,11 +31,22 @@ function normalizeStatusLabel(status: string | null | undefined): string {
 }
 
 function statusColor(status: string | null | undefined): string {
-  switch ((status ?? "").toUpperCase()) {
+  switch (normalizeStatus(status)) {
     case "APPROVED": return "var(--mf-green)";
     case "REJECTED": return "var(--mf-magenta)";
+    case "ON_GOING": return "var(--mf-cyan)";
     case "PENDING_BOARD_REVIEW": return "var(--mf-orange)";
     default: return "var(--mf-text-muted)";
+  }
+}
+
+function decisionColor(decision: string | null | undefined): string {
+  switch ((decision ?? "").toUpperCase()) {
+    case "APPROVE":
+    case "APPROVED": return "var(--mf-green)";
+    case "REJECT":
+    case "REJECTED": return "var(--mf-magenta)";
+    default: return "var(--mf-orange)";
   }
 }
 
@@ -59,13 +75,6 @@ function PendingApprovalsView() {
   const [selected, setSelected] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [actionBusy, setActionBusy] = useState<"approve" | "reject" | null>(null);
-  const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null);
-
-  const showToast = (text: string, ok: boolean) => {
-    setToast({ text, ok });
-    setTimeout(() => setToast(null), 3500);
-  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -73,7 +82,7 @@ function PendingApprovalsView() {
     try {
       const [subs, revs] = await Promise.all([getSubmissions(), getSubmissionReviews()]);
       const filtered = subs.filter(
-        s => BOARD_STATUSES.includes((s.status ?? "").toUpperCase()) && isTantorAccount(s)
+        s => BOARD_STATUSES.includes(normalizeStatus(s.status)) && isTantorAccount(s)
       );
       setSubmissions(filtered);
       setAllReviews(revs);
@@ -94,20 +103,6 @@ function PendingApprovalsView() {
   const submission = submissions.find(s => s.id === selected) ?? null;
   const reviews = allReviews.filter(r => r.submissionId === selected);
   const files = submission?.files ?? [];
-
-  const handleAction = async (action: "approve" | "reject") => {
-    // Placeholder — wire to real API endpoint when available
-    setActionBusy(action);
-    await new Promise(r => setTimeout(r, 900));
-    setActionBusy(null);
-    showToast(
-      action === "approve"
-        ? `Submission approved successfully.`
-        : `Submission rejected.`,
-      action === "approve",
-    );
-    void load();
-  };
 
   if (loading) {
     return (
@@ -147,25 +142,6 @@ function PendingApprovalsView() {
         @keyframes board-toast-in { from { opacity: 0; transform: translateY(-12px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
         .board-sub-btn:hover { border-color: rgba(255,140,66,0.45) !important; background: var(--mf-bg-elevated) !important; }
       `}</style>
-
-      {/* Toast */}
-      {toast && (
-        <div style={{
-          position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)", zIndex: 99999,
-          padding: "13px 22px", borderRadius: 12,
-          background: toast.ok ? "rgba(0,230,160,0.12)" : "rgba(255,42,122,0.12)",
-          border: `1px solid ${toast.ok ? "rgba(0,230,160,0.4)" : "rgba(255,42,122,0.4)"}`,
-          color: toast.ok ? "var(--mf-green)" : "var(--mf-magenta)",
-          fontSize: 13, fontWeight: 700,
-          display: "flex", alignItems: "center", gap: 10,
-          boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
-          animation: "board-toast-in 0.25s ease",
-          whiteSpace: "nowrap",
-        }}>
-          {toast.ok ? <CheckCircle size={15} /> : <AlertCircle size={15} />}
-          {toast.text}
-        </div>
-      )}
 
       {/* ── Left: Awaiting Vote list ── */}
       <div style={{ width: 280, flexShrink: 0, borderRight: "1px solid var(--mf-border)", background: "var(--mf-bg-base)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -310,51 +286,12 @@ function PendingApprovalsView() {
       <div style={{ width: 300, flexShrink: 0, background: "var(--mf-bg-base)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {submission && (
           <>
-            {/* Action buttons */}
+            {/* Voting notice */}
             <div style={{ padding: "20px 20px 16px", borderBottom: "1px solid var(--mf-border)", display: "flex", flexDirection: "column", gap: 10, flexShrink: 0 }}>
               <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.07em", marginBottom: 4 }}>BOARD DECISION</div>
-              <button
-                onClick={() => void handleAction("approve")}
-                disabled={actionBusy !== null}
-                style={{
-                  width: "100%", padding: "13px", borderRadius: 12,
-                  background: actionBusy ? "var(--mf-bg-elevated)" : "linear-gradient(135deg, #00e6a0, #00b87a)",
-                  border: actionBusy ? "1px solid var(--mf-border)" : "none",
-                  color: actionBusy ? "var(--mf-text-muted)" : "#000",
-                  fontSize: 13, fontWeight: 900, cursor: actionBusy ? "not-allowed" : "pointer",
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                  boxShadow: actionBusy ? "none" : "0 4px 20px rgba(0,230,160,0.3)",
-                  transition: "transform 0.1s, box-shadow 0.2s",
-                }}
-                onMouseEnter={e => { if (!actionBusy) e.currentTarget.style.transform = "scale(1.02)"; }}
-                onMouseLeave={e => { e.currentTarget.style.transform = "none"; }}
-              >
-                {actionBusy === "approve"
-                  ? <><Loader2 size={14} style={{ animation: "board-spin 1s linear infinite" }} /> Approving…</>
-                  : <><ThumbsUp size={14} /> APPROVE</>
-                }
-              </button>
-              <button
-                onClick={() => void handleAction("reject")}
-                disabled={actionBusy !== null}
-                style={{
-                  width: "100%", padding: "12px", borderRadius: 12,
-                  background: "transparent",
-                  border: "1px solid rgba(255,42,122,0.4)",
-                  color: "var(--mf-magenta)",
-                  fontSize: 13, fontWeight: 900, cursor: actionBusy ? "not-allowed" : "pointer",
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                  opacity: actionBusy ? 0.6 : 1,
-                  transition: "background 0.15s",
-                }}
-                onMouseEnter={e => { if (!actionBusy) e.currentTarget.style.background = "rgba(255,42,122,0.08)"; }}
-                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
-              >
-                {actionBusy === "reject"
-                  ? <><Loader2 size={14} style={{ animation: "board-spin 1s linear infinite" }} /> Rejecting…</>
-                  : <><ThumbsDown size={14} /> REJECT</>
-                }
-              </button>
+              <div style={{ padding: "12px 14px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 10, color: "var(--mf-text-muted)", fontSize: 12, lineHeight: 1.55 }}>
+                Voting actions are handled on the active board voting page at /board/voting. This view only displays submissions and real review records returned by the API.
+              </div>
             </div>
 
             {/* Reviews list */}
@@ -375,9 +312,9 @@ function PendingApprovalsView() {
                         </span>
                         <span style={{
                           padding: "2px 8px", borderRadius: 100, fontSize: 9, fontWeight: 800,
-                          background: r.decision === "APPROVED" ? "rgba(0,230,160,0.12)" : r.decision === "REJECTED" ? "rgba(255,42,122,0.12)" : "rgba(255,140,66,0.12)",
-                          color: r.decision === "APPROVED" ? "var(--mf-green)" : r.decision === "REJECTED" ? "var(--mf-magenta)" : "var(--mf-orange)",
-                          border: `1px solid ${r.decision === "APPROVED" ? "rgba(0,230,160,0.3)" : r.decision === "REJECTED" ? "rgba(255,42,122,0.3)" : "rgba(255,140,66,0.3)"}`,
+                          background: `${decisionColor(r.decision)}15`,
+                          color: decisionColor(r.decision),
+                          border: `1px solid ${decisionColor(r.decision)}40`,
                         }}>
                           {r.decision ?? "—"}
                         </span>
