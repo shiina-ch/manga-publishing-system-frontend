@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { getAllAccounts, activateAccount, deactivateAccount, type AdminAccount } from "../../services/adminApi";
-import { getChapters, type ChapterApi } from "../../services/workflowApi";
+import { getChapters, getSubmissions, getSubmissionReviews, getVotes, type ChapterApi, type SubmissionApi, type SubmissionReviewApi, type VoteApi } from "../../services/workflowApi";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -98,41 +98,39 @@ function StatCard({ icon: Icon, label, value, color, trend, subtitle }: {
 }) {
   return (
     <div style={{
-      padding: "20px 22px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
-      borderRadius: 16, flex: 1, minWidth: 180, transition: "all 0.25s", position: "relative", overflow: "hidden",
+      padding: "24px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
+      borderRadius: 16, display: "flex", flexDirection: "column", gap: 16,
+      transition: "all 0.25s ease",
     }}>
-      {/* Subtle gradient accent */}
-      <div style={{
-        position: "absolute", top: 0, right: 0, width: 80, height: 80, borderRadius: "0 16px 0 80px",
-        background: `${color}08`, pointerEvents: "none",
-      }} />
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-        <div style={{
-          width: 40, height: 40, borderRadius: 12, background: `${color}15`, border: `1px solid ${color}25`,
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          <Icon size={18} color={color} />
-        </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--mf-text-muted)" }}>{label}</div>
         {trend && (
           <div style={{
-            display: "flex", alignItems: "center", gap: 3, fontSize: 11,
-            color: trend.startsWith("-") ? "var(--mf-magenta)" : "var(--mf-green)", fontWeight: 700,
-            padding: "3px 8px", background: trend.startsWith("-") ? "var(--mf-magenta-dim)" : "var(--mf-green-dim)",
+            fontSize: 11, fontWeight: 700,
+            color: trend.startsWith("-") ? "var(--mf-magenta)" : "var(--mf-green)",
+            padding: "4px 8px", background: trend.startsWith("-") ? "var(--mf-magenta-dim)" : "var(--mf-green-dim)",
             borderRadius: 6,
           }}>
-            <TrendingUp size={11} /> {trend}
+            {trend}
+          </div>
+        )}
+        {!trend && (
+          <div style={{
+            width: 32, height: 32, borderRadius: 8, background: `${color}15`,
+            display: "flex", alignItems: "center", justifyContent: "center"
+          }}>
+            <Icon size={16} color={color} />
           </div>
         )}
       </div>
-      <div style={{ fontSize: 28, fontWeight: 900, color: "var(--mf-text)", letterSpacing: "-0.03em", lineHeight: 1 }}>
-        {value}
+      <div>
+        <div style={{ fontSize: 32, fontWeight: 900, color: "var(--mf-text)", letterSpacing: "-0.02em", lineHeight: 1, marginBottom: 8 }}>
+          {value}
+        </div>
+        <div style={{ fontSize: 12, color: "var(--mf-text-muted)", fontWeight: 500 }}>
+          {subtitle || "Current total"}
+        </div>
       </div>
-      <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 6, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase" }}>
-        {label}
-      </div>
-      {subtitle && (
-        <div style={{ fontSize: 10, color: "var(--mf-text-muted)", marginTop: 3, opacity: 0.7 }}>{subtitle}</div>
-      )}
     </div>
   );
 }
@@ -140,31 +138,29 @@ function StatCard({ icon: Icon, label, value, color, trend, subtitle }: {
 function SectionHeader({ title, subtitle, rightContent }: { title: string; subtitle?: string; rightContent?: React.ReactNode }) {
   return (
     <div style={{
-      padding: "16px 20px 14px", borderBottom: "1px solid var(--mf-border)",
+      padding: "24px 24px 16px",
       display: "flex", alignItems: "center", justifyContent: "space-between",
     }}>
       <div>
-        <h3 style={{ fontSize: 14, fontWeight: 900, margin: 0, color: "var(--mf-text)" }}>{title}</h3>
-        {subtitle && <p style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 2, margin: 0 }}>{subtitle}</p>}
+        <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0, color: "var(--mf-text)", letterSpacing: "-0.01em" }}>{title}</h3>
+        {subtitle && <p style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4, margin: 0 }}>{subtitle}</p>}
       </div>
       {rightContent}
     </div>
   );
 }
 
-// Table header row for consistent dark-header tables (Material Dashboard style)
+// Table header row for consistent minimal tables
 function TableHeader({ columns }: { columns: { label: string; width?: string | number; align?: CSSProperties["textAlign"] }[] }) {
   return (
     <div style={{
-      display: "flex", alignItems: "center", padding: "12px 20px",
-      background: "var(--mf-bg-elevated)", borderBottom: "1px solid var(--mf-border)",
-      borderRadius: "14px 14px 0 0",
+      display: "flex", alignItems: "center", padding: "12px 24px",
+      borderBottom: "1px solid var(--mf-border)",
     }}>
       {columns.map((col, i) => (
         <div key={i} style={{
           flex: col.width ? `0 0 ${col.width}` : 1,
-          fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)",
-          letterSpacing: "0.08em", textTransform: "uppercase" as const,
+          fontSize: 12, fontWeight: 600, color: "var(--mf-text-muted)",
           textAlign: col.align || "left",
         }}>
           {col.label}
@@ -176,9 +172,11 @@ function TableHeader({ columns }: { columns: { label: string; width?: string | n
 
 // ─── Tab 1: System Overview ──────────────────────────────────────────────────
 
-function OverviewTab({ onlineUsers, chapters, registrations, activities }: {
-  onlineUsers: OnlineUser[]; chapters: ChapterStatus[]; registrations: AdminAccount[]; activities: ActivityEvent[];
+function OverviewTab({ onlineUsers, chapters, registrations, activities, submissions, submissionReviews, votes }: {
+  onlineUsers: OnlineUser[]; chapters: ChapterStatus[]; registrations: AdminAccount[]; activities: ActivityEvent[]; submissions: SubmissionApi[]; submissionReviews: SubmissionReviewApi[]; votes: VoteApi[];
 }) {
+  const [selectedSubId, setSelectedSubId] = useState<number | null>(null);
+  const [selectedVoteId, setSelectedVoteId] = useState<number | null>(null);
   const publishedCount = chapters.filter(c => c.status === "published").length;
   const pendingRegs = registrations.filter(r => r.status === "PENDING").length;
 
@@ -193,63 +191,120 @@ function OverviewTab({ onlineUsers, chapters, registrations, activities }: {
   const totalChapters = chapters.length;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+      <style>{`.hide-scroll::-webkit-scrollbar { display: none; } .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }`}</style>
+
       {/* Stat cards row */}
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 24 }}>
         <StatCard icon={Users} label="Total Users" value={onlineUsers.length} color="var(--mf-cyan)" />
         <StatCard icon={BookOpen} label="Total Chapters" value={chapters.length} color="var(--mf-magenta)" />
         <StatCard icon={UserPlus} label="Pending Registrations" value={pendingRegs} color="var(--mf-orange)" />
         <StatCard icon={CheckCircle} label="Published Chapters" value={publishedCount} color="var(--mf-green)" />
       </div>
 
-      {/* Two-column: Activity Timeline + Chapter Pipeline */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
-        {/* Activity Timeline */}
+      {/* Two-column: Vote Status Monitor + Chapter Pipeline */}
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 24 }}>
+        {/* Vote Status Monitor Frame */}
         <div style={{
           background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
           borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column",
         }}>
-          <SectionHeader title="Recent Activity" />
-          <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
-            {activities.length === 0 ? (
-              <div style={{
-                minHeight: 180, display: "flex", alignItems: "center", justifyContent: "center",
-                color: "var(--mf-text-muted)", fontSize: 12, fontWeight: 600,
-              }}>
-                No recent activity to display.
-              </div>
-            ) : (
-              activities.map((activity, idx) => (
-                <div key={activity.id} style={{
-                  display: "flex", gap: 14, paddingBottom: idx < activities.length - 1 ? 18 : 0,
-                  position: "relative",
-                }}>
-                  {/* Timeline line */}
-                  {idx < activities.length - 1 && (
-                    <div style={{
-                      position: "absolute", left: 7, top: 18, bottom: 0, width: 1,
-                      background: "var(--mf-border)",
-                    }} />
+          <SectionHeader title="Vote Status Monitor" subtitle="Real-time voting status" />
+          <TableHeader columns={[
+            { label: "Submission", width: "40%" },
+            { label: "Stage", width: "20%" },
+            { label: "Progress", width: "25%" },
+            { label: "Result", width: "15%", align: "right" },
+          ]} />
+          <div style={{ flex: 1, overflowY: "auto", maxHeight: 400 }}>
+            {submissionReviews.slice(0, 10).map(review => {
+              const sub = submissions.find(s => s.id === review.submissionId);
+              if (!sub) return null;
+              const reviewVotes = votes.filter(v => v.submissionReviewId === review.id);
+              const approveCount = reviewVotes.filter(v => v.voteValue === "APPROVE").length;
+              const rejectCount = reviewVotes.filter(v => v.voteValue === "REJECT").length;
+              const total = Math.max(approveCount + rejectCount, 1);
+              const approvePct = (approveCount / total) * 100;
+              const rejectPct = (rejectCount / total) * 100;
+              const mangaTitle = sub.project?.name || sub.project?.title || "Unknown Manga";
+              const mColor = ["#FF2A7A", "#39FF8A", "#00F0FF", "#FF8C42"][sub.id % 4] || "var(--mf-cyan)";
+              const isSelected = selectedVoteId === review.id;
+
+              return (
+                <div key={review.id} style={{ borderBottom: "1px solid var(--mf-border)", display: "flex", flexDirection: "column" }}>
+                  <div
+                    onClick={() => setSelectedVoteId(isSelected ? null : review.id)}
+                    style={{ display: "flex", alignItems: "center", padding: "16px 24px", cursor: "pointer", background: isSelected ? "var(--mf-bg-elevated)" : "transparent", transition: "background 0.2s" }}
+                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "var(--mf-bg-elevated)" }}
+                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "transparent" }}
+                  >
+                    <div style={{ flex: "0 0 40%", fontWeight: 700, color: "var(--mf-text)", paddingRight: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <div style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: `${mColor}20`, border: `1px solid ${mColor}40`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <BookOpen size={14} color={mColor} />
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", overflow: "hidden", alignItems: "flex-start" }}>
+                          <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: 14, color: mColor, fontWeight: 800, letterSpacing: "-0.01em", maxWidth: "100%" }}>{mangaTitle}</span>
+                          <span style={{
+                            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: 11,
+                            color: "var(--mf-text-muted)", fontWeight: 500, marginTop: 2
+                          }}>{sub.title || `Sub #${sub.id}`}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ flex: "0 0 20%", display: "flex", alignItems: "center" }}>
+                      <span style={{
+                        padding: "4px 10px", borderRadius: 6,
+                        background: "linear-gradient(135deg, rgba(57,255,138,0.1), rgba(0,240,255,0.2))",
+                        color: "var(--mf-cyan)", fontWeight: 800, fontSize: 11,
+                        border: "1px solid rgba(0,240,255,0.3)",
+                        textTransform: "uppercase", letterSpacing: 0.5
+                      }}>
+                        {review.stage || "N/A"}
+                      </span>
+                    </div>
+
+                    {/* Compact Progress Bar */}
+                    <div style={{ flex: "0 0 25%", display: "flex", flexDirection: "column", gap: 6, paddingRight: 10 }}>
+                      <div style={{ display: "flex", width: "100%", height: 10, borderRadius: 5, overflow: "hidden", background: "var(--mf-border)" }}>
+                        <div style={{ width: `${approvePct}%`, background: "var(--mf-green)" }} />
+                        <div style={{ width: `${rejectPct}%`, background: "var(--mf-magenta)" }} />
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, fontWeight: 800 }}>
+                        <span style={{ color: "var(--mf-green)" }}>{approveCount}</span>
+                        <span style={{ color: "var(--mf-magenta)" }}>{rejectCount}</span>
+                      </div>
+                    </div>
+
+                    <div style={{ flex: "0 0 15%", textAlign: "right" }}>
+                      <StatusBadge label={review.decision || "PENDING"} color={review.decision === "APPROVED" ? "var(--mf-green)" : review.decision === "REJECTED" ? "var(--mf-magenta)" : "var(--mf-orange)"} bg="transparent" />
+                    </div>
+                  </div>
+
+                  {/* Expanded Voters List */}
+                  {isSelected && (
+                    <div style={{ padding: "16px 24px", background: "var(--mf-bg-base)", borderTop: "1px dashed var(--mf-border)" }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-muted)", marginBottom: 12 }}>Voter Details</div>
+                      {reviewVotes.length === 0 ? <div style={{ fontSize: 12, color: "var(--mf-text-muted)" }}>No votes recorded yet.</div> : null}
+                      {reviewVotes.map(v => {
+                        const voterName = onlineUsers.find(u => u.id === v.voterId)?.name || registrations.find(r => r.id === v.voterId)?.firstName || `Member #${v.voterId}`;
+                        return (
+                          <div key={v.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, padding: "8px 0", borderBottom: "1px solid var(--mf-border)" }}>
+                            <span style={{ color: "var(--mf-text)", fontWeight: 600 }}>{voterName}</span>
+                            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                              {v.comment && <span style={{ color: "var(--mf-text-muted)", fontStyle: "italic", flex: 1, textAlign: "right" }}>"{v.comment}"</span>}
+                              <span style={{ color: v.voteValue === "APPROVE" ? "var(--mf-green)" : "var(--mf-magenta)", fontWeight: 800 }}>{v.voteValue}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
-                  {/* Dot */}
-                  <div style={{
-                    width: 15, height: 15, borderRadius: "50%", flexShrink: 0, marginTop: 2,
-                    background: `${activity.color}20`, border: `2px solid ${activity.color}`,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                  }}>
-                    <div style={{ width: 5, height: 5, borderRadius: "50%", background: activity.color }} />
-                  </div>
-                  {/* Content */}
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, color: "var(--mf-text)", fontWeight: 600, lineHeight: 1.4 }}>
-                      {activity.message}
-                    </div>
-                    <div style={{ fontSize: 10, color: "var(--mf-text-muted)", marginTop: 3, display: "flex", alignItems: "center", gap: 4 }}>
-                      <Clock size={9} /> {activity.timestamp}
-                    </div>
-                  </div>
                 </div>
-              ))
+              );
+            })}
+            {submissionReviews.length === 0 && (
+              <div style={{ padding: 40, textAlign: "center", color: "var(--mf-text-muted)", fontSize: 13 }}>No active votes found.</div>
             )}
           </div>
         </div>
@@ -260,9 +315,9 @@ function OverviewTab({ onlineUsers, chapters, registrations, activities }: {
           borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column",
         }}>
           <SectionHeader title="Chapter Pipeline" subtitle="Distribution by status" />
-          <div style={{ flex: 1, padding: "20px" }}>
-            {/* Stacked bar */}
-            <div style={{ display: "flex", height: 24, borderRadius: 12, overflow: "hidden", marginBottom: 20, background: "var(--mf-bg-elevated)" }}>
+          <div style={{ flex: 1, padding: "0 24px 24px" }}>
+            {/* Minimal Stacked bar */}
+            <div style={{ display: "flex", height: 12, borderRadius: 6, overflow: "hidden", marginBottom: 24, background: "var(--mf-bg-elevated)" }}>
               {[
                 { key: "draft", color: "var(--mf-text-muted)", count: pipeline.draft },
                 { key: "in_review", color: "var(--mf-orange)", count: pipeline.in_review },
@@ -272,43 +327,32 @@ function OverviewTab({ onlineUsers, chapters, registrations, activities }: {
               ].filter(s => s.count > 0).map(s => (
                 <div key={s.key} style={{
                   width: `${(s.count / totalChapters) * 100}%`, background: s.color,
-                  transition: "width 0.6s ease", minWidth: s.count > 0 ? 8 : 0,
-                  opacity: 0.85,
+                  transition: "width 0.6s ease", minWidth: s.count > 0 ? 4 : 0,
                 }} />
               ))}
             </div>
 
-            {/* Status breakdown cards */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {/* List breakdown */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               {[
-                { key: "published", label: "Published", icon: CheckCircle, color: "var(--mf-green)", count: pipeline.published },
-                { key: "approved", label: "Approved", icon: Eye, color: "var(--mf-cyan)", count: pipeline.approved },
-                { key: "in_review", label: "In Review", icon: Clock, color: "var(--mf-orange)", count: pipeline.in_review },
-                { key: "draft", label: "Draft", icon: FileText, color: "var(--mf-text-muted)", count: pipeline.draft },
-                { key: "rejected", label: "Rejected", icon: XCircle, color: "var(--mf-magenta)", count: pipeline.rejected },
+                { key: "published", label: "Published", color: "var(--mf-green)", count: pipeline.published },
+                { key: "approved", label: "Approved", color: "var(--mf-cyan)", count: pipeline.approved },
+                { key: "in_review", label: "In Review", color: "var(--mf-orange)", count: pipeline.in_review },
+                { key: "draft", label: "Draft", color: "var(--mf-text-muted)", count: pipeline.draft },
+                { key: "rejected", label: "Rejected", color: "var(--mf-magenta)", count: pipeline.rejected },
               ].map(item => {
-                const ItemIcon = item.icon;
                 const pct = totalChapters > 0 ? Math.round((item.count / totalChapters) * 100) : 0;
                 return (
                   <div key={item.key} style={{
-                    display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
-                    background: "var(--mf-bg-elevated)", borderRadius: 10, border: "1px solid var(--mf-border)",
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
                   }}>
-                    <div style={{
-                      width: 30, height: 30, borderRadius: 8, background: `${item.color}15`,
-                      display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                    }}>
-                      <ItemIcon size={14} color={item.color} />
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: "50%", background: item.color }} />
+                      <div style={{ fontSize: 13, fontWeight: 500, color: "var(--mf-text-secondary)" }}>{item.label}</div>
                     </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text)" }}>{item.label}</div>
-                    </div>
-                    <div style={{ fontSize: 18, fontWeight: 900, color: item.color, marginRight: 8 }}>{item.count}</div>
-                    <div style={{
-                      fontSize: 10, fontWeight: 700, color: "var(--mf-text-muted)",
-                      padding: "2px 6px", background: "var(--mf-bg-surface)", borderRadius: 4,
-                    }}>
-                      {pct}%
+                    <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                      <div style={{ fontSize: 13, color: "var(--mf-text-muted)" }}>{pct}%</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--mf-text)", minWidth: 24, textAlign: "right" }}>{item.count}</div>
                     </div>
                   </div>
                 );
@@ -318,7 +362,104 @@ function OverviewTab({ onlineUsers, chapters, registrations, activities }: {
         </div>
       </div>
 
-    </div>
+      {/* Recent Submissions Frame */}
+      <div style={{
+        background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
+        borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column",
+      }}>
+        <SectionHeader title="Recent Submissions" subtitle="Monitor latest chapters submitted to the system" />
+        <TableHeader columns={[
+          { label: "Manga", width: "25%" },
+          { label: "Title", width: "25%" },
+          { label: "Status", width: "20%" },
+          { label: "Updated", width: "30%", align: "right" },
+        ]} />
+        <div className="hide-scroll" style={{ maxHeight: 400, overflowY: "auto" }}>
+          {submissions.slice(0, 10).map(sub => {
+            const mangaTitle = sub.project?.name || sub.project?.title || "Unknown Manga";
+            const mColor = ["#FF2A7A", "#39FF8A", "#00F0FF", "#FF8C42"][sub.id % 4] || "var(--mf-cyan)";
+            const statusLower = (sub.status || "draft").toLowerCase();
+            const isSelected = selectedSubId === sub.id;
+
+            // Extract the most accurate name available
+            const acc = sub.submittedBy || sub.mangaka || sub.account || sub.createdBy;
+            let submitterName = acc?.name || (acc?.firstName ? `${acc.firstName} ${acc.lastName || ""}`.trim() : "") || acc?.username;
+            if (!submitterName) {
+              const submitterId = sub.submittedById || sub.mangakaId || sub.accountId || sub.createdById;
+              if (submitterId) {
+                const foundUser = onlineUsers.find(u => u.id === submitterId);
+                const foundReg = registrations.find(r => r.id === submitterId);
+                submitterName = foundUser?.name || (foundReg?.firstName ? `${foundReg.firstName} ${foundReg.lastName || ""}`.trim() : null) || `User #${submitterId}`;
+              } else {
+                submitterName = "Unknown User";
+              }
+            }
+
+            return (
+              <div key={sub.id} style={{ borderBottom: "1px solid var(--mf-border)", display: "flex", flexDirection: "column" }}>
+                <div
+                  onClick={() => setSelectedSubId(isSelected ? null : sub.id)}
+                  style={{
+                    display: "flex", alignItems: "center", padding: "16px 24px",
+                    cursor: "pointer", background: isSelected ? "var(--mf-bg-elevated)" : "transparent",
+                    transition: "background 0.2s"
+                  }}
+                  onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "var(--mf-bg-elevated)" }}
+                  onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "transparent" }}
+                >
+                  <div style={{ flex: "0 0 25%", fontWeight: 700, color: "var(--mf-text)", paddingRight: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <div style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: `${mColor}20`, border: `1px solid ${mColor}40`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <BookOpen size={14} color={mColor} />
+                      </div>
+                      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: 14, color: mColor, fontWeight: 800, letterSpacing: "-0.01em" }} title={mangaTitle}>{mangaTitle}</span>
+                    </div>
+                  </div>
+                  <div style={{ flex: "0 0 25%", paddingRight: 10, display: "flex", alignItems: "center" }}>
+                    <span style={{
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                      fontWeight: 600, fontSize: 13, color: "var(--mf-text)", opacity: 0.95
+                    }} title={sub.title || ""}>{sub.title || "—"}</span>
+                  </div>
+                  <div style={{ flex: "0 0 20%" }}>
+                    {statusChapterConfig[statusLower] ? <ChapterStatusBadge status={statusLower} /> : (
+                      <StatusBadge label={sub.status || "UNKNOWN"} color="var(--mf-orange)" bg="rgba(255,140,66,0.14)" />
+                    )}
+                  </div>
+                  <div style={{ flex: "0 0 30%", fontSize: 12, color: "var(--mf-text-muted)", textAlign: "right" }}>
+                    {sub.submittedAt ? new Date(sub.submittedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : "—"}
+                  </div>
+                </div>
+                {/* Expanded Details */}
+                {isSelected && (
+                  <div style={{ padding: "20px 24px", background: "var(--mf-bg-base)", fontSize: 13, color: "var(--mf-text-secondary)", borderTop: "1px dashed var(--mf-border)", cursor: "default" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                      <div><strong style={{ color: "var(--mf-text-muted)" }}>Raw DB Status:</strong> <span style={{ color: "var(--mf-orange)", fontWeight: 700 }}>{sub.status || "N/A"}</span></div>
+                      <div><strong style={{ color: "var(--mf-text-muted)" }}>Submission ID:</strong> #{sub.id}</div>
+                      <div><strong style={{ color: "var(--mf-text-muted)" }}>Submitted By:</strong> {submitterName}</div>
+                      <div>
+                        <strong style={{ color: "var(--mf-text-muted)" }}>Content URL:</strong>{" "}
+                        {sub.contentUrl ? (
+                          <a href={sub.contentUrl} target="_blank" rel="noreferrer" style={{ color: "var(--mf-cyan)", textDecoration: "none", fontWeight: 600 }}>View Content ↗</a>
+                        ) : "N/A"}
+                      </div>
+                    </div>
+                    {sub.note && (
+                      <div style={{ marginTop: 16, padding: 14, background: "var(--mf-bg-elevated)", borderRadius: 8, border: "1px solid var(--mf-border)" }}>
+                        <strong style={{ color: "var(--mf-text-muted)", display: "block", marginBottom: 4 }}>Note:</strong> {sub.note}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          {submissions.length === 0 && (
+            <div style={{ padding: 40, textAlign: "center", color: "var(--mf-text-muted)", fontSize: 13 }}>No submissions found.</div>
+          )}
+        </div>
+      </div>
+    </div >
   );
 }
 
@@ -346,7 +487,7 @@ function ChapterMonitorTab({ chapters }: { chapters: ChapterStatus[] }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18, height: "100%" }}>
       {/* Top stats */}
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 18 }}>
         <StatCard icon={BookOpen} label="Total Chapters" value={chapters.length} color="var(--mf-cyan)" />
         <StatCard icon={Clock} label="In Review" value={chapters.filter(c => c.status === "in_review").length} color="var(--mf-orange)" />
         <StatCard icon={CheckCircle} label="Published" value={chapters.filter(c => c.status === "published").length} color="var(--mf-green)" />
@@ -592,7 +733,7 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole, onToggleStat
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18, height: "100%" }}>
       {/* Stats */}
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 18 }}>
         <StatCard icon={Users} label="Total Users" value={managedUsers.length} color="var(--mf-cyan)" />
         <StatCard icon={Activity} label="Active Now" value={activeCount} color="var(--mf-green)" />
         <StatCard icon={AlertTriangle} label="Unassigned Role" value={unassignedCount} color="var(--mf-orange)" subtitle={unassignedCount > 0 ? "Requires attention" : undefined} />
@@ -695,8 +836,8 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole, onToggleStat
                         }} />
                       </div>
                       <div style={{
-                        fontSize: 12, fontWeight: 700, color: "var(--mf-text)", whiteSpace: "nowrap",
-                        overflow: "hidden", textOverflow: "ellipsis", minWidth: 0,
+                        fontSize: 13, fontWeight: 800, color: roleColor[user.roles[0]] || "var(--mf-text)", whiteSpace: "nowrap",
+                        overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, letterSpacing: "-0.01em"
                       }}>
                         {user.name}
                       </div>
@@ -958,6 +1099,61 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole, onToggleStat
   );
 }
 
+// ─── Tab 4: Submissions Monitor ──────────────────────────────────────────────
+
+function SubmissionsTab({ chapters }: { chapters: ChapterStatus[] }) {
+  const submissions = chapters.filter(c => c.status !== "draft");
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18, height: "100%" }}>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+        <StatCard icon={FileText} label="Total Submissions" value={submissions.length} color="var(--mf-cyan)" />
+        <StatCard icon={Clock} label="Pending Review" value={submissions.filter(c => c.status === "in_review").length} color="var(--mf-orange)" />
+        <StatCard icon={CheckCircle} label="Approved & Published" value={submissions.filter(c => c.status === "approved" || c.status === "published").length} color="var(--mf-green)" />
+      </div>
+
+      <div style={{ flex: 1, background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+        <SectionHeader title="All Submissions" subtitle="Monitor all chapters submitted by Mangakas" />
+        <TableHeader columns={[
+          { label: "Manga", width: "20%" },
+          { label: "Chapter", width: "10%" },
+          { label: "Author", width: "20%" },
+          { label: "Status", width: "15%" },
+          { label: "Last Updated", width: "20%" },
+          { label: "Actions", width: "15%", align: "right" }
+        ]} />
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {submissions.length === 0 ? (
+            <div style={{ padding: 40, textAlign: "center", color: "var(--mf-text-muted)" }}>No submissions found.</div>
+          ) : (
+            submissions.map(sub => (
+              <div key={sub.id} style={{ display: "flex", alignItems: "center", padding: "12px 20px", borderBottom: "1px solid var(--mf-border)" }}>
+                <div style={{ flex: "0 0 20%", fontWeight: 700, color: "var(--mf-text)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 24, height: 24, borderRadius: 6, background: `${sub.mangaColor}20`, border: `1px solid ${sub.mangaColor}40`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <BookOpen size={12} color={sub.mangaColor} />
+                    </div>
+                    {sub.manga}
+                  </div>
+                </div>
+                <div style={{ flex: "0 0 10%", fontWeight: 600, color: "var(--mf-text-muted)" }}>Ch. {sub.chapter}</div>
+                <div style={{ flex: "0 0 20%", color: "var(--mf-text-secondary)", fontSize: 12 }}>{sub.author}</div>
+                <div style={{ flex: "0 0 15%" }}><ChapterStatusBadge status={sub.status} /></div>
+                <div style={{ flex: "0 0 20%", fontSize: 11, color: "var(--mf-text-muted)" }}>{sub.updatedAt}</div>
+                <div style={{ flex: "0 0 15%", textAlign: "right" }}>
+                  <button style={{ padding: "4px 10px", background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", borderRadius: 6, color: "var(--mf-text)", fontSize: 10, cursor: "pointer", fontWeight: 700 }}>
+                    View Details
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Admin Dashboard ─────────────────────────────────────────────────────
 
 export function AdminDashboard() {
@@ -966,6 +1162,9 @@ export function AdminDashboard() {
   const [chapters, setChapters] = useState<ChapterStatus[]>([]);
   const [registrations, setRegistrations] = useState<AdminAccount[]>([]);
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
+  const [systemSubmissions, setSystemSubmissions] = useState<SubmissionApi[]>([]);
+  const [submissionReviews, setSubmissionReviews] = useState<SubmissionReviewApi[]>([]);
+  const [votes, setVotes] = useState<VoteApi[]>([]);
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1041,8 +1240,8 @@ export function AdminDashboard() {
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([getAllAccounts(), getChapters()])
-      .then(([accounts, chapterRows]) => {
+    Promise.all([getAllAccounts(), getChapters(), getSubmissions(), getSubmissionReviews(), getVotes()])
+      .then(([accounts, chapterRows, subRows, reviewRows, voteRows]) => {
         if (cancelled) return;
         const nonAdminAccounts = accounts.filter(a => {
           const hasAdminSystem = a.systemRole?.some(r => r.roleName === "ADMIN" || r.roleName === "MANAGER");
@@ -1054,6 +1253,9 @@ export function AdminDashboard() {
         setRegistrations(nonAdminAccounts);
         setOnlineUsers(users);
         setChapters(mappedChapters);
+        setSystemSubmissions(subRows);
+        setSubmissionReviews(reviewRows);
+        setVotes(voteRows);
         setManagedUsers(users.map(user => ({
           id: user.id,
           name: user.name,
@@ -1114,12 +1316,14 @@ export function AdminDashboard() {
   }, []);
 
   const requestedTab = searchParams.get("tab");
-  const currentTab = requestedTab === "chapters" || requestedTab === "users" ? requestedTab : "overview";
+  const currentTab = requestedTab === "chapters" || requestedTab === "users" || requestedTab === "submissions" ? requestedTab : "overview";
   const activeNav = currentTab === "chapters"
     ? "Chapter Monitor"
     : currentTab === "users"
       ? "User Management"
-      : "System Overview";
+      : currentTab === "submissions"
+        ? "All Submissions"
+        : "System Overview";
 
   return (
     <AppLayout role="admin" activeNav={activeNav}>
@@ -1164,10 +1368,21 @@ export function AdminDashboard() {
             </div>
           )}
           {!loading && !error && currentTab === "overview" && (
-            <OverviewTab onlineUsers={onlineUsers} chapters={chapters} registrations={registrations} activities={activities} />
+            <OverviewTab
+              onlineUsers={onlineUsers}
+              chapters={chapters}
+              registrations={registrations}
+              activities={activities}
+              submissions={systemSubmissions}
+              submissionReviews={submissionReviews}
+              votes={votes}
+            />
           )}
           {!loading && !error && currentTab === "chapters" && (
             <ChapterMonitorTab chapters={chapters} />
+          )}
+          {!loading && !error && currentTab === "submissions" && (
+            <SubmissionsTab chapters={chapters} />
           )}
           {!loading && !error && currentTab === "users" && (
             <UserManagementTab managedUsers={managedUsers} onAddRole={handleAddRole} onRemoveRole={handleRemoveRole} onToggleStatus={handleToggleStatus} />
