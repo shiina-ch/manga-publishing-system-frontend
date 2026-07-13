@@ -93,17 +93,17 @@ function ChapterStatusBadge({ status }: { status: string }) {
   return <StatusBadge label={s.label} color={s.color} bg={s.bg} />;
 }
 
-function StatCard({ icon: Icon, label, value, color, trend, subtitle }: {
-  icon: LucideIcon; label: string; value: string | number; color: string; trend?: string; subtitle?: string;
+function StatCard({ icon: Icon, label, value, color, trend, subtitle, compact }: {
+  icon: LucideIcon; label: string; value: string | number; color: string; trend?: string; subtitle?: string; compact?: boolean;
 }) {
   return (
     <div style={{
-      padding: "24px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
-      borderRadius: 16, display: "flex", flexDirection: "column", gap: 16,
+      padding: compact ? "16px 20px" : "24px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
+      borderRadius: 16, display: "flex", flexDirection: "column", gap: compact ? 10 : 16,
       transition: "all 0.25s ease",
     }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--mf-text-muted)" }}>{label}</div>
+        <div style={{ fontSize: compact ? 13 : 14, fontWeight: 600, color: "var(--mf-text-muted)" }}>{label}</div>
         {trend && (
           <div style={{
             fontSize: 11, fontWeight: 700,
@@ -116,24 +116,25 @@ function StatCard({ icon: Icon, label, value, color, trend, subtitle }: {
         )}
         {!trend && (
           <div style={{
-            width: 32, height: 32, borderRadius: 8, background: `${color}15`,
+            width: compact ? 28 : 32, height: compact ? 28 : 32, borderRadius: 8, background: `${color}15`,
             display: "flex", alignItems: "center", justifyContent: "center"
           }}>
-            <Icon size={16} color={color} />
+            <Icon size={compact ? 14 : 16} color={color} />
           </div>
         )}
       </div>
       <div>
-        <div style={{ fontSize: 32, fontWeight: 900, color: "var(--mf-text)", letterSpacing: "-0.02em", lineHeight: 1, marginBottom: 8 }}>
+        <div style={{ fontSize: compact ? 24 : 32, fontWeight: 900, color: "var(--mf-text)", letterSpacing: "-0.02em", lineHeight: 1, marginBottom: compact ? 4 : 8 }}>
           {value}
         </div>
-        <div style={{ fontSize: 12, color: "var(--mf-text-muted)", fontWeight: 500 }}>
+        <div style={{ fontSize: compact ? 11 : 12, color: "var(--mf-text-muted)", fontWeight: 500 }}>
           {subtitle || "Current total"}
         </div>
       </div>
     </div>
   );
 }
+
 
 function SectionHeader({ title, subtitle, rightContent }: { title: string; subtitle?: string; rightContent?: React.ReactNode }) {
   return (
@@ -248,7 +249,7 @@ function OverviewTab({ onlineUsers, chapters, registrations, activities, submiss
                           <span style={{
                             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: 11,
                             color: "var(--mf-text-muted)", fontWeight: 500, marginTop: 2
-                          }}>{sub.title || `Sub #${sub.id}`}</span>
+                          }}>{`Sub #${sub.id}`}</span>
                         </div>
                       </div>
                     </div>
@@ -376,16 +377,15 @@ function OverviewTab({ onlineUsers, chapters, registrations, activities, submiss
         ]} />
         <div className="hide-scroll" style={{ maxHeight: 400, overflowY: "auto" }}>
           {submissions.slice(0, 10).map(sub => {
-            const mangaTitle = sub.project?.name || sub.project?.title || "Unknown Manga";
+            const mangaTitle = "Unknown Manga";
             const mColor = ["#FF2A7A", "#39FF8A", "#00F0FF", "#FF8C42"][sub.id % 4] || "var(--mf-cyan)";
             const statusLower = (sub.status || "draft").toLowerCase();
             const isSelected = selectedSubId === sub.id;
 
             // Extract the most accurate name available
-            const acc = sub.submittedBy || sub.mangaka || sub.account || sub.createdBy;
-            let submitterName = acc?.name || (acc?.firstName ? `${acc.firstName} ${acc.lastName || ""}`.trim() : "") || acc?.username;
+            let submitterName = sub.submittedByName;
             if (!submitterName) {
-              const submitterId = sub.submittedById || sub.mangakaId || sub.accountId || sub.createdById;
+              const submitterId = sub.submittedById;
               if (submitterId) {
                 const foundUser = onlineUsers.find(u => u.id === submitterId);
                 const foundReg = registrations.find(r => r.id === submitterId);
@@ -419,7 +419,7 @@ function OverviewTab({ onlineUsers, chapters, registrations, activities, submiss
                     <span style={{
                       whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                       fontWeight: 600, fontSize: 13, color: "var(--mf-text)", opacity: 0.95
-                    }} title={sub.title || ""}>{sub.title || "—"}</span>
+                    }} title={sub.submissionType || ""}>{sub.submissionType || "—"}</span>
                   </div>
                   <div style={{ flex: "0 0 20%" }}>
                     {statusChapterConfig[statusLower] ? <ChapterStatusBadge status={statusLower} /> : (
@@ -439,16 +439,11 @@ function OverviewTab({ onlineUsers, chapters, registrations, activities, submiss
                       <div><strong style={{ color: "var(--mf-text-muted)" }}>Submitted By:</strong> {submitterName}</div>
                       <div>
                         <strong style={{ color: "var(--mf-text-muted)" }}>Content URL:</strong>{" "}
-                        {sub.contentUrl ? (
-                          <a href={sub.contentUrl} target="_blank" rel="noreferrer" style={{ color: "var(--mf-cyan)", textDecoration: "none", fontWeight: 600 }}>View Content ↗</a>
+                        {sub.note ? (
+                          <a href={sub.note} target="_blank" rel="noreferrer" style={{ color: "var(--mf-cyan)", textDecoration: "none", fontWeight: 600 }}>View Content ↗</a>
                         ) : "N/A"}
                       </div>
                     </div>
-                    {sub.note && (
-                      <div style={{ marginTop: 16, padding: 14, background: "var(--mf-bg-elevated)", borderRadius: 8, border: "1px solid var(--mf-border)" }}>
-                        <strong style={{ color: "var(--mf-text-muted)", display: "block", marginBottom: 4 }}>Note:</strong> {sub.note}
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -702,6 +697,14 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole, onToggleStat
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [activeUser, setActiveUser] = useState<typeof managedUsers[0] | null>(null);
+
+  useEffect(() => {
+    if (selectedId !== null) {
+      const u = managedUsers.find(x => x.id === selectedId);
+      if (u) setActiveUser(u);
+    }
+  }, [selectedId, managedUsers]);
 
   const unassignedCount = managedUsers.filter(u => u.roles.length === 0).length;
   const activeCount = managedUsers.filter(u => u.status === "online").length;
@@ -734,18 +737,18 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole, onToggleStat
     <div style={{ display: "flex", flexDirection: "column", gap: 18, height: "100%" }}>
       {/* Stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 18 }}>
-        <StatCard icon={Users} label="Total Users" value={managedUsers.length} color="var(--mf-cyan)" />
-        <StatCard icon={Activity} label="Active Now" value={activeCount} color="var(--mf-green)" />
-        <StatCard icon={AlertTriangle} label="Unassigned Role" value={unassignedCount} color="var(--mf-orange)" subtitle={unassignedCount > 0 ? "Requires attention" : undefined} />
+        <StatCard compact icon={Users} label="Total Users" value={managedUsers.length} color="var(--mf-cyan)" />
+        <StatCard compact icon={Activity} label="Active Now" value={activeCount} color="var(--mf-green)" />
+        <StatCard compact icon={AlertTriangle} label="Unassigned Role" value={unassignedCount} color="var(--mf-orange)" subtitle={unassignedCount > 0 ? "Requires attention" : undefined} />
       </div>
 
       {/* Table + detail */}
-      <div style={{ display: "flex", flex: 1, gap: 18, minHeight: 0 }}>
+      <div style={{ display: "flex", flex: 1, gap: selectedId ? 18 : 0, transition: "gap 0.3s cubic-bezier(0.16, 1, 0.3, 1)", minHeight: 0 }}>
         {/* Table */}
         <div style={{
-          flex: selected ? "0 0 58%" : 1, background: "var(--mf-bg-surface)",
+          flex: selectedId ? "0 0 58%" : "1 1 auto", background: "var(--mf-bg-surface)",
           border: "1px solid var(--mf-border)", borderRadius: 16, overflow: "hidden",
-          display: "flex", flexDirection: "column", transition: "flex 0.3s ease",
+          display: "flex", flexDirection: "column", transition: "flex 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
         }}>
           {/* Toolbar */}
           <div style={{ padding: "14px 20px 12px", borderBottom: "1px solid var(--mf-border)", display: "flex", alignItems: "center", gap: 12 }}>
@@ -895,205 +898,221 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole, onToggleStat
           </div>
         </div>
 
-        {/* Detail panel */}
-        {selected && (
-          <div style={{
-            flex: "0 0 40%", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
-            borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column",
-          }}>
-            {/* Header */}
-            <div style={{ padding: "22px 20px 16px", borderBottom: "1px solid var(--mf-border)", textAlign: "center", position: "relative" }}>
-              <button onClick={() => setSelectedId(null)} style={{
-                position: "absolute", right: 16, top: 16,
-                background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", borderRadius: 6,
-                padding: "4px 8px", cursor: "pointer", color: "var(--mf-text-muted)", fontSize: 11,
-              }}>✕</button>
-              <div style={{
-                width: 56, height: 56, borderRadius: 14, margin: "0 auto 12px",
-                background: `linear-gradient(135deg, ${roleColor[selected.roles[0]] || "var(--mf-text-muted)"}60, ${roleColor[selected.roles[0]] || "var(--mf-text-muted)"}20)`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 18, fontWeight: 900, color: roleColor[selected.roles[0]] || "var(--mf-text-muted)",
-                border: `2px solid ${roleColor[selected.roles[0]] || "var(--mf-text-muted)"}40`,
-              }}>
-                {selected.avatar}
-              </div>
-              <h2 style={{ fontSize: 18, fontWeight: 900, margin: "0 0 4px", letterSpacing: "-0.02em" }}>{selected.name}</h2>
-              <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginBottom: 10 }}>{selected.email}</div>
-              {/* Role tags */}
-              <div style={{ display: "flex", gap: 5, justifyContent: "center", flexWrap: "wrap" }}>
-                {selected.roles.length === 0 ? (
-                  <span style={{
-                    padding: "3px 10px", fontSize: 10, fontWeight: 700, borderRadius: 6,
-                    background: "rgba(255,140,66,0.14)", color: "var(--mf-orange)",
-                    border: "1px solid rgba(255,140,66,0.3)",
-                  }}>UNASSIGNED</span>
-                ) : (
-                  selected.roles.map(r => (
-                    <span key={r} style={{
-                      padding: "4px 12px", fontSize: 10, fontWeight: 900, borderRadius: 6,
-                      background: roleColor[r] || "var(--mf-text-muted)",
-                      color: "#1e1326", // dark background for high contrast with neon colors
-                      border: "none",
-                      letterSpacing: "0.06em",
-                      boxShadow: `0 0 10px ${roleColor[r] || "var(--mf-text-muted)"}40`
-                    }}>{r}</span>
-                  ))
-                )}
-              </div>
-            </div>
+        {/* Detail panel wrapper */}
+        <div style={{
+          flex: selectedId ? "0 0 40%" : "0 0 0%",
+          opacity: selectedId ? 1 : 0,
+          overflow: "hidden",
+          transition: "flex 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+          display: "flex", flexDirection: "column",
+          position: "relative",
+        }}>
+          {/* Close button fixed at top right of the frame */}
+          <button onClick={() => setSelectedId(null)} style={{
+            position: "absolute", right: 24, top: 16, zIndex: 10,
+            background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", borderRadius: 6,
+            padding: "4px 8px", cursor: "pointer", color: "var(--mf-text-muted)", fontSize: 11,
+          }}>✕</button>
 
-            <div className="no-scrollbar" style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                {[
-                  { icon: Activity, label: "STATUS", value: (statusConfig[selected.status] || statusConfig.offline).label },
-                  { icon: Globe, label: "JOINED", value: selected.joinedAt },
-                ].map((info, i) => {
-                  const InfoIcon = info.icon;
-                  return (
-                    <div key={i} style={{
-                      padding: "12px 14px", background: "var(--mf-bg-elevated)", borderRadius: 10,
-                      border: "1px solid var(--mf-border)",
-                    }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
-                        <InfoIcon size={10} color="var(--mf-text-muted)" />
-                        <span style={{ fontSize: 9, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.08em" }}>{info.label}</span>
-                      </div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--mf-text)" }}>{info.value}</div>
+          {activeUser && (() => {
+            const panelUser = activeUser;
+            return (
+              <div key={panelUser.id} className="no-scrollbar" style={{
+                flex: 1, background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
+                borderRadius: 16, overflowY: "auto", display: "flex", flexDirection: "column",
+                minWidth: 320, position: "relative",
+                animation: selectedId ? "slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) both" : "none",
+              }}>
+                {/* Header */}
+                <div style={{ padding: "22px 20px 16px", borderBottom: "1px solid var(--mf-border)", textAlign: "center", flexShrink: 0 }}>
+                  <div style={{
+                    width: 56, height: 56, borderRadius: 14, margin: "0 auto 12px",
+                    background: `linear-gradient(135deg, ${roleColor[panelUser.roles[0]] || "var(--mf-text-muted)"}60, ${roleColor[panelUser.roles[0]] || "var(--mf-text-muted)"}20)`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 18, fontWeight: 900, color: roleColor[panelUser.roles[0]] || "var(--mf-text-muted)",
+                    border: `2px solid ${roleColor[panelUser.roles[0]] || "var(--mf-text-muted)"}40`,
+                  }}>
+                    {panelUser.avatar}
+                  </div>
+                  <h2 style={{ fontSize: 18, fontWeight: 900, margin: "0 0 4px", letterSpacing: "-0.02em" }}>{panelUser.name}</h2>
+                  <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginBottom: 10 }}>{panelUser.email}</div>
+                  {/* Role tags */}
+                  <div style={{ display: "flex", gap: 5, justifyContent: "center", flexWrap: "wrap" }}>
+                    {panelUser.roles.length === 0 ? (
+                      <span style={{
+                        padding: "3px 10px", fontSize: 10, fontWeight: 700, borderRadius: 6,
+                        background: "rgba(255,140,66,0.14)", color: "var(--mf-orange)",
+                        border: "1px solid rgba(255,140,66,0.3)",
+                      }}>UNASSIGNED</span>
+                    ) : (
+                      panelUser.roles.map(r => (
+                        <span key={r} style={{
+                          padding: "4px 12px", fontSize: 10, fontWeight: 900, borderRadius: 6,
+                          background: roleColor[r] || "var(--mf-text-muted)",
+                          color: "#1e1326", // dark background for high contrast with neon colors
+                          border: "none",
+                          letterSpacing: "0.06em",
+                          boxShadow: `0 0 10px ${roleColor[r] || "var(--mf-text-muted)"}40`
+                        }}>{r}</span>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ padding: "18px 20px", flexShrink: 0 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    {[
+                      { icon: Activity, label: "STATUS", value: (statusConfig[panelUser.status] || statusConfig.offline).label },
+                      { icon: Globe, label: "JOINED", value: panelUser.joinedAt },
+                    ].map((info, i) => {
+                      const InfoIcon = info.icon;
+                      return (
+                        <div key={i} style={{
+                          padding: "12px 14px", background: "var(--mf-bg-elevated)", borderRadius: 10,
+                          border: "1px solid var(--mf-border)",
+                        }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
+                            <InfoIcon size={10} color="var(--mf-text-muted)" />
+                            <span style={{ fontSize: 9, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.08em" }}>{info.label}</span>
+                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--mf-text)" }}>{info.value}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Account Controls */}
+                  <div style={{
+                    marginTop: 16, padding: "16px", background: "var(--mf-bg-elevated)",
+                    borderRadius: 12, border: "1px solid var(--mf-border)",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
+                      <Shield size={12} color="var(--mf-cyan)" />
+                      <span style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-secondary)", letterSpacing: "0.06em" }}>ACCOUNT CONTROLS</span>
                     </div>
-                  );
-                })}
-              </div>
-
-              {/* Account Controls */}
-              <div style={{
-                marginTop: 16, padding: "16px", background: "var(--mf-bg-elevated)",
-                borderRadius: 12, border: "1px solid var(--mf-border)",
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
-                  <Shield size={12} color="var(--mf-cyan)" />
-                  <span style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-secondary)", letterSpacing: "0.06em" }}>ACCOUNT CONTROLS</span>
-                </div>
-                <div style={{ display: "flex", gap: 10 }}>
-                  <button
-                    onClick={() => onToggleStatus(selected.id, selected.status)}
-                    style={{
-                      flex: 1, padding: "8px 0", borderRadius: 8, fontWeight: 800, fontSize: 11,
-                      cursor: "pointer", transition: "all 0.2s",
-                      background: selected.status === "active" || selected.status === "online" ? "var(--mf-bg-surface)" : "var(--mf-green-dim)",
-                      color: selected.status === "active" || selected.status === "online" ? "var(--mf-magenta)" : "var(--mf-green)",
-                      border: `1px solid ${selected.status === "active" || selected.status === "online" ? "var(--mf-magenta)40" : "var(--mf-green)40"}`,
-                    }}
-                    onMouseEnter={e => {
-                      if (selected.status === "active" || selected.status === "online") {
-                        e.currentTarget.style.background = "var(--mf-magenta-dim)";
-                      } else {
-                        e.currentTarget.style.background = "var(--mf-green)20";
-                      }
-                    }}
-                    onMouseLeave={e => {
-                      if (selected.status === "active" || selected.status === "online") {
-                        e.currentTarget.style.background = "var(--mf-bg-surface)";
-                      } else {
-                        e.currentTarget.style.background = "var(--mf-green-dim)";
-                      }
-                    }}
-                  >
-                    {selected.status === "active" || selected.status === "online" ? "Deactivate Account" : "Activate Account"}
-                  </button>
-                </div>
-              </div>
-
-              {/* Current roles section - always visible */}
-              {selected.roles.length > 0 && (
-                <div style={{
-                  marginTop: 16, padding: "16px", background: "var(--mf-bg-elevated)",
-                  borderRadius: 12, border: "1px solid var(--mf-border)",
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
-                    <Shield size={12} color="var(--mf-cyan)" />
-                    <span style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-secondary)", letterSpacing: "0.06em" }}>ASSIGNED ROLES</span>
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <button
+                        onClick={() => onToggleStatus(panelUser.id, panelUser.status)}
+                        style={{
+                          flex: 1, padding: "8px 0", borderRadius: 8, fontWeight: 800, fontSize: 11,
+                          cursor: "pointer", transition: "all 0.2s",
+                          background: panelUser.status === "active" || panelUser.status === "online" ? "var(--mf-bg-surface)" : "var(--mf-green-dim)",
+                          color: panelUser.status === "active" || panelUser.status === "online" ? "var(--mf-magenta)" : "var(--mf-green)",
+                          border: `1px solid ${panelUser.status === "active" || panelUser.status === "online" ? "var(--mf-magenta)40" : "var(--mf-green)40"}`,
+                        }}
+                        onMouseEnter={e => {
+                          if (panelUser.status === "active" || panelUser.status === "online") {
+                            e.currentTarget.style.background = "var(--mf-magenta-dim)";
+                          } else {
+                            e.currentTarget.style.background = "var(--mf-green)20";
+                          }
+                        }}
+                        onMouseLeave={e => {
+                          if (panelUser.status === "active" || panelUser.status === "online") {
+                            e.currentTarget.style.background = "var(--mf-bg-surface)";
+                          } else {
+                            e.currentTarget.style.background = "var(--mf-green-dim)";
+                          }
+                        }}
+                      >
+                        {panelUser.status === "active" || panelUser.status === "online" ? "Deactivate Account" : "Activate Account"}
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
-                    {selected.roles.map(r => (
-                      <div key={r} style={{
-                        display: "flex", alignItems: "center", gap: 6, padding: "5px 10px 5px 12px",
-                        background: `${roleColor[r] || "var(--mf-text-muted)"}12`, border: `1px solid ${roleColor[r] || "var(--mf-text-muted)"}35`,
-                        borderRadius: 8, fontSize: 11, fontWeight: 700, color: roleColor[r] || "var(--mf-text-muted)",
-                      }}>
-                        {r}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onRemoveRole(selected.id, r); }}
-                          style={{
-                            background: "none", border: "none", cursor: "pointer",
-                            color: roleColor[r] || "var(--mf-text-muted)", opacity: 0.6, padding: "0 2px",
-                            fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center",
-                          }}
-                          onMouseEnter={e => { e.currentTarget.style.opacity = "1"; }}
-                          onMouseLeave={e => { e.currentTarget.style.opacity = "0.6"; }}
-                          title={`Remove ${r} role`}
-                        >✕</button>
+
+                  {/* Current roles section - always visible */}
+                  {panelUser.roles.length > 0 && (
+                    <div style={{
+                      marginTop: 16, padding: "16px", background: "var(--mf-bg-elevated)",
+                      borderRadius: 12, border: "1px solid var(--mf-border)",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
+                        <Shield size={12} color="var(--mf-cyan)" />
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-secondary)", letterSpacing: "0.06em" }}>ASSIGNED ROLES</span>
                       </div>
-                    ))}
-                  </div>
-                  {/* Add more roles */}
-                  {assignableRoles.filter(r => !selected.roles.includes(r)).length > 0 && (
-                    <div>
-                      <div style={{ fontSize: 10, color: "var(--mf-text-muted)", marginBottom: 6, fontWeight: 600 }}>Add another role:</div>
-                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        {assignableRoles.filter(r => !selected.roles.includes(r)).map(r => (
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+                        {panelUser.roles.map(r => (
+                          <div key={r} style={{
+                            display: "flex", alignItems: "center", gap: 6, padding: "5px 10px 5px 12px",
+                            background: `${roleColor[r] || "var(--mf-text-muted)"}12`, border: `1px solid ${roleColor[r] || "var(--mf-text-muted)"}35`,
+                            borderRadius: 8, fontSize: 11, fontWeight: 700, color: roleColor[r] || "var(--mf-text-muted)",
+                          }}>
+                            {r}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); onRemoveRole(panelUser.id, r); }}
+                              style={{
+                                background: "none", border: "none", cursor: "pointer",
+                                color: roleColor[r] || "var(--mf-text-muted)", opacity: 0.6, padding: "0 2px",
+                                fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center",
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.opacity = "1"; }}
+                              onMouseLeave={e => { e.currentTarget.style.opacity = "0.6"; }}
+                              title={`Remove ${r} role`}
+                            >✕</button>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Add more roles */}
+                      {assignableRoles.filter(r => !panelUser.roles.includes(r)).length > 0 && (
+                        <div>
+                          <div style={{ fontSize: 10, color: "var(--mf-text-muted)", marginBottom: 6, fontWeight: 600 }}>Add another role:</div>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {assignableRoles.filter(r => !panelUser.roles.includes(r)).map(r => (
+                              <button
+                                key={r}
+                                onClick={() => onAddRole(panelUser.id, r)}
+                                style={{
+                                  padding: "5px 12px", fontSize: 10, fontWeight: 700, borderRadius: 6,
+                                  background: "transparent", border: `1px dashed ${roleColor[r]}50`,
+                                  color: roleColor[r], cursor: "pointer", transition: "all 0.15s",
+                                  opacity: 0.7,
+                                }}
+                                onMouseEnter={e => { e.currentTarget.style.background = `${roleColor[r]}15`; e.currentTarget.style.opacity = "1"; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.opacity = "0.7"; }}
+                              >
+                                + {r}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Role assignment section for users with no roles */}
+                  {panelUser.roles.length === 0 && (
+                    <div style={{
+                      marginTop: 16, padding: "16px", background: "rgba(255,140,66,0.08)",
+                      borderRadius: 12, border: "1px solid rgba(255,140,66,0.2)",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+                        <AlertTriangle size={12} color="var(--mf-orange)" />
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-orange)" }}>ROLE ASSIGNMENT REQUIRED</span>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {assignableRoles.map(r => (
                           <button
                             key={r}
-                            onClick={() => onAddRole(selected.id, r)}
+                            onClick={() => onAddRole(panelUser.id, r)}
                             style={{
-                              padding: "5px 12px", fontSize: 10, fontWeight: 700, borderRadius: 6,
-                              background: "transparent", border: `1px dashed ${roleColor[r]}50`,
+                              padding: "7px 14px", fontSize: 11, fontWeight: 700, borderRadius: 8,
+                              background: `${roleColor[r]}15`, border: `1px solid ${roleColor[r]}40`,
                               color: roleColor[r], cursor: "pointer", transition: "all 0.15s",
-                              opacity: 0.7,
                             }}
-                            onMouseEnter={e => { e.currentTarget.style.background = `${roleColor[r]}15`; e.currentTarget.style.opacity = "1"; }}
-                            onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.opacity = "0.7"; }}
+                            onMouseEnter={e => { e.currentTarget.style.background = `${roleColor[r]}30`; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = `${roleColor[r]}15`; }}
                           >
-                            + {r}
+                            {r}
                           </button>
                         ))}
                       </div>
                     </div>
                   )}
                 </div>
-              )}
-
-              {/* Role assignment section for users with no roles */}
-              {selected.roles.length === 0 && (
-                <div style={{
-                  marginTop: 16, padding: "16px", background: "rgba(255,140,66,0.08)",
-                  borderRadius: 12, border: "1px solid rgba(255,140,66,0.2)",
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-                    <AlertTriangle size={12} color="var(--mf-orange)" />
-                    <span style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-orange)" }}>ROLE ASSIGNMENT REQUIRED</span>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {assignableRoles.map(r => (
-                      <button
-                        key={r}
-                        onClick={() => onAddRole(selected.id, r)}
-                        style={{
-                          padding: "7px 14px", fontSize: 11, fontWeight: 700, borderRadius: 8,
-                          background: `${roleColor[r]}15`, border: `1px solid ${roleColor[r]}40`,
-                          color: roleColor[r], cursor: "pointer", transition: "all 0.15s",
-                        }}
-                        onMouseEnter={e => { e.currentTarget.style.background = `${roleColor[r]}30`; }}
-                        onMouseLeave={e => { e.currentTarget.style.background = `${roleColor[r]}15`; }}
-                      >
-                        {r}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+              </div>
+            );
+          })()}
+        </div>
       </div>
     </div>
   );
@@ -1107,9 +1126,9 @@ function SubmissionsTab({ chapters }: { chapters: ChapterStatus[] }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18, height: "100%" }}>
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-        <StatCard icon={FileText} label="Total Submissions" value={submissions.length} color="var(--mf-cyan)" />
-        <StatCard icon={Clock} label="Pending Review" value={submissions.filter(c => c.status === "in_review").length} color="var(--mf-orange)" />
-        <StatCard icon={CheckCircle} label="Approved & Published" value={submissions.filter(c => c.status === "approved" || c.status === "published").length} color="var(--mf-green)" />
+        <StatCard compact icon={FileText} label="Total Submissions" value={submissions.length} color="var(--mf-cyan)" />
+        <StatCard compact icon={Clock} label="Pending Review" value={submissions.filter(c => c.status === "in_review").length} color="var(--mf-orange)" />
+        <StatCard compact icon={CheckCircle} label="Approved & Published" value={submissions.filter(c => c.status === "approved" || c.status === "published").length} color="var(--mf-green)" />
       </div>
 
       <div style={{ flex: 1, background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column" }}>
@@ -1202,7 +1221,7 @@ export function AdminDashboard() {
   }, [formatJoinedDate]);
 
   const mapChapter = useCallback((chapter: ChapterApi, index: number): ChapterStatus => {
-    const rawStatus = (chapter.status || "draft").toLowerCase();
+    const rawStatus = (chapter.chapterStatus || "draft").toLowerCase();
     const allowed = ["draft", "in_review", "approved", "published", "rejected"];
     const status = (allowed.includes(rawStatus) ? rawStatus : "draft") as ChapterStatus["status"];
     return {
@@ -1211,10 +1230,10 @@ export function AdminDashboard() {
       chapter: chapter.chapterNumber ?? index + 1,
       title: chapter.title || `Chapter #${chapter.id}`,
       status,
-      author: "Unassigned",
-      updatedAt: "From API",
+      author: chapter.ownerName || "Unassigned",
+      updatedAt: chapter.publishDate || "From API",
       progress: status === "published" ? 100 : 0,
-      pages: 0,
+      pages: chapter.targetPageCount || 0,
       mangaColor: ["#FF2A7A", "#39FF8A", "#00F0FF", "#FF8C42"][index % 4],
     };
   }, []);

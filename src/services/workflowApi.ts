@@ -4,28 +4,32 @@ export interface ChapterApi {
   id: number;
   chapterNumber: number | null;
   title: string | null;
-  status: string | null;
+  chapterStatus: string | null;
+  targetPageCount?: number | null;
+  publishDate?: string | null;
+  projectId?: number | null;
+  ownerId?: number | null;
+  ownerName?: string | null;
 }
 
 export interface SubmissionApi {
   id: number;
-  title: string | null;
-  contentUrl: string | null;
+  taskId?: number | null;
+  subTaskId?: number | null;
+  submissionType?: string | null;
+  parentSubmissionId?: number | null;
   status: string | null;
-  submittedAt: string | null;
-  submittedBy?: AccountSummaryApi | null;
-  account?: AccountSummaryApi | null;
-  createdBy?: AccountSummaryApi | null;
-  mangaka?: AccountSummaryApi | null;
+  note: string | null;
   submittedById?: number | null;
-  accountId?: number | null;
-  createdById?: number | null;
-  mangakaId?: number | null;
-  planning?: PlanningSummaryApi | null;
-  project?: ProjectSummaryApi | null;
+  submittedByName?: string | null;
+  submittedAt: string | null;
+  reviewerId?: number | null;
+  reviewerName?: string | null;
+  reviewedAt?: string | null;
   files?: SubmissionFileApi[] | null;
-  note?: string | null;
-  description?: string | null;
+  fileCount?: number | null;
+  project?: ProjectSummaryApi | null;
+  planning?: PlanningSummaryApi | null;
 }
 
 export interface SubmissionReviewApi {
@@ -225,7 +229,7 @@ export function getPlannings(): Promise<PlanningApi[]> {
 }
 
 export function getVotes(): Promise<VoteApi[]> {
-  return apiRequest<VoteApi[]>("/votes");
+  return apiRequest<VoteApi[]>("/votes").catch(() => []);
 }
 
 export function getVotesForSubmissionReview(submissionReviewId: number): Promise<VoteApi[]> {
@@ -273,11 +277,11 @@ export function submissionToEditorProposal(submission: SubmissionApi): EditorPro
   const status = normalizeStatus(submission.status);
   return {
     id: submission.id,
-    title: submission.title || `Submission #${submission.id}`,
-    mangaka: "Submitted account",
+    title: `Submission #${submission.id}`,
+    mangaka: submission.submittedByName || "Submitted account",
     genre: ["Unspecified"],
-    synopsis: submission.contentUrl || "No synopsis or content URL was provided.",
-    pages: 0,
+    synopsis: submission.note || "No synopsis or content URL was provided.",
+    pages: submission.fileCount || 0,
     status: status === "pending" ? "new" : status,
     time: formatDateLabel(submission.submittedAt),
     concepts: 0,
