@@ -257,7 +257,7 @@ function filterSubmissions(submissions: SubmissionApi[], filter: string): Submis
 function boardVotingActionLabel(status?: string | null): string {
   switch (normalizeStatus(status)) {
     case "pending_board_review": return "Start Board Voting";
-    case "on_going": return "Voting In Progress";
+    case "on_going": return "Submit to Board";
     case "approved": return "Approved";
     case "rejected": return "Rejected";
     default: return "Start Board Voting";
@@ -267,7 +267,7 @@ function boardVotingActionLabel(status?: string | null): string {
 function proposalActionLabel(status?: string | null, filter?: string): string {
   const normalized = normalizeStatus(status);
   if (filter === "Escalated to Board") return boardVotingActionLabel(status);
-  if (["pending", "pending_tantou_review", "submitted"].includes(normalized)) return "Escalate to Board";
+  if (["pending", "pending_tantou_review", "submitted"].includes(normalized)) return "Approve";
   return statusLabel(status);
 }
 
@@ -335,7 +335,7 @@ function ProposalFeed({
 
   const selectedStatus = normalizeStatus(selectedSubmission?.status);
   const canTantouEscalate = filter === "New Proposals" && ["pending", "pending_tantou_review", "submitted"].includes(selectedStatus);
-  const canStartBoardVoting = selectedStatus === "pending_board_review";
+  const canStartBoardVoting = selectedStatus === "pending_board_review" || selectedStatus === "on_going";
   const canRunPrimaryAction = canTantouEscalate || canStartBoardVoting;
   const resolvedSelectedSubmission = selectedSubmission ? submissionForAuthorResolution(selectedSubmission, authorLookup) : selectedSubmission;
   const files = resolvedSelectedSubmission?.files || [];

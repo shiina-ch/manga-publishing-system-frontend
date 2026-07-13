@@ -14,6 +14,8 @@ import {
 import { tokenStorage } from "../../storage/tokenStorage";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
+const VOTING_VISIBLE_STATUSES = ["PENDING_BOARD_REVIEW", "ON_GOING", "APPROVED", "REJECTED"];
+
 function normalizeStatus(status: string | null | undefined): string {
   return (status ?? "").toUpperCase().replace(/-/g, "_");
 }
@@ -90,7 +92,7 @@ export function VotingRoom() {
     setError(null);
     try {
       const [subs, revs] = await Promise.all([getWorkflowSubmissions(), getSubmissionReviews()]);
-      const filtered = subs.filter(s => normalizeStatus(s.status) === "ON_GOING");
+      const filtered = subs.filter(s => VOTING_VISIBLE_STATUSES.includes(normalizeStatus(s.status)));
       setSubmissions(filtered);
       setAllReviews(revs);
       setSelectedId(prev => {
@@ -115,9 +117,9 @@ export function VotingRoom() {
   }, [selectedId]);
 
   const submission = submissions.find(s => s.id === selectedId) ?? null;
-  const reviews = allReviews.filter(r => r.submissionId === selectedId);
+  const reviews = allReviews.filter(r => r.submissionId === selectedId && r.stage === "EDITORIAL_BOARD");
   const files = submission?.files ?? [];
-  const canVote = normalizeStatus(submission?.status) === "ON_GOING";
+  const canVote = ["PENDING_BOARD_REVIEW", "ON_GOING"].includes(normalizeStatus(submission?.status));
   const currentAccount = tokenStorage.getAccount();
   const currentReviewerId = typeof currentAccount?.id === "number" ? currentAccount.id : null;
   const currentReviewerEmail = currentAccount?.email?.trim().toLowerCase() || null;

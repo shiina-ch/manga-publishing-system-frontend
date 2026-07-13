@@ -8,12 +8,6 @@ import {
 import { getProjects, type ProjectUI } from "../../services/projectApi";
 import { getPlannings, getSubmissions, getSubmissionReviews, type SubmissionApi, type SubmissionReviewApi } from "../../services/workflowApi";
 
-// ─── helpers ────────────────────────────────────────────────────────────────
-function isTantorAccount(s: SubmissionApi): boolean {
-  const roles = s.submittedBy?.systemRole ?? [];
-  return roles.some(r => r.roleName?.toUpperCase() === "TANTOR");
-}
-
 const BOARD_STATUSES = ["PENDING_BOARD_REVIEW", "ON_GOING", "APPROVED", "REJECTED"];
 
 function normalizeStatus(status: string | null | undefined): string {
@@ -81,9 +75,7 @@ function PendingApprovalsView() {
     setError(null);
     try {
       const [subs, revs] = await Promise.all([getSubmissions(), getSubmissionReviews()]);
-      const filtered = subs.filter(
-        s => BOARD_STATUSES.includes(normalizeStatus(s.status)) && isTantorAccount(s)
-      );
+      const filtered = subs.filter(s => BOARD_STATUSES.includes(normalizeStatus(s.status)));
       setSubmissions(filtered);
       setAllReviews(revs);
       setSelected(prev => {
@@ -101,7 +93,7 @@ function PendingApprovalsView() {
   useEffect(() => { void load(); }, [load]);
 
   const submission = submissions.find(s => s.id === selected) ?? null;
-  const reviews = allReviews.filter(r => r.submissionId === selected);
+  const reviews = allReviews.filter(r => r.submissionId === selected && r.stage === "EDITORIAL_BOARD");
   const files = submission?.files ?? [];
 
   if (loading) {
