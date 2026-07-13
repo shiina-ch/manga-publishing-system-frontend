@@ -68,8 +68,8 @@ const roleConfig: Record<LayoutRole, RoleConfig> = {
   mangaka: {
     label: "Mangaka", color: "var(--mf-magenta)", icon: PenTool,
     nav: [
-      { icon: Layers, label: "My Projects", badge: 3 },
-      { icon: AlertTriangle, label: "Deadlines", badge: 2, badgeColor: "var(--mf-orange)" },
+      { icon: Layers, label: "My Projects" },
+      { icon: AlertTriangle, label: "Deadlines", badgeColor: "var(--mf-orange)" },
       { icon: FileText, label: "Script Drafts" },
       { icon: CheckCircle, label: "Submissions" },
     ],
