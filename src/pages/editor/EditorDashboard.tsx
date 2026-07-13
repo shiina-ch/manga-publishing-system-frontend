@@ -23,9 +23,9 @@ const statusConfig: Record<string, { label: string; color: string; bg: string }>
   pending_tantou_review: { label: "Pending Tantou Review", color: "var(--mf-cyan)", bg: "var(--mf-cyan-dim)" },
   in_revision: { label: "In Revision", color: "var(--mf-orange)", bg: "rgba(255,140,66,0.14)" },
   revision: { label: "In Revision", color: "var(--mf-orange)", bg: "rgba(255,140,66,0.14)" },
-  pending_board_review: { label: "Pending Board Review", color: "var(--mf-green)", bg: "var(--mf-green-dim)" },
-  on_going: { label: "Voting In Progress", color: "var(--mf-orange)", bg: "rgba(255,140,66,0.14)" },
-  approved: { label: "Approved", color: "var(--mf-magenta)", bg: "var(--mf-magenta-dim)" },
+  pending_board_review: { label: "Voting In Progress", color: "var(--mf-green)", bg: "var(--mf-green-dim)" },
+  on_going: { label: "Pending to Board", color: "var(--mf-magenta)", bg: "var(--mf-magenta-dim)" },
+  approved: { label: "Approved by Board", color: "var(--mf-magenta)", bg: "var(--mf-magenta-dim)" },
   rejected: { label: "Rejected", color: "var(--mf-red)", bg: "rgba(255,42,122,0.14)" },
 };
 
@@ -256,7 +256,7 @@ function filterSubmissions(submissions: SubmissionApi[], filter: string): Submis
 
 function boardVotingActionLabel(status?: string | null): string {
   switch (normalizeStatus(status)) {
-    case "pending_board_review": return "Start Board Voting";
+    case "pending_board_review": return "Board Voting";
     case "on_going": return "Submit to Board";
     case "approved": return "Approved";
     case "rejected": return "Rejected";
@@ -334,9 +334,9 @@ function ProposalFeed({
   }
 
   const selectedStatus = normalizeStatus(selectedSubmission?.status);
-  const canTantouEscalate = filter === "New Proposals" && ["pending", "pending_tantou_review", "submitted"].includes(selectedStatus);
-  const canStartBoardVoting = selectedStatus === "pending_board_review" || selectedStatus === "on_going";
-  const canRunPrimaryAction = canTantouEscalate || canStartBoardVoting;
+  const canTantouEscalate = false;
+  const canSubmitToBoard = filter === "Escalated to Board" && selectedStatus === "on_going";
+  const canRunPrimaryAction = canTantouEscalate || canSubmitToBoard;
   const resolvedSelectedSubmission = selectedSubmission ? submissionForAuthorResolution(selectedSubmission, authorLookup) : selectedSubmission;
   const files = resolvedSelectedSubmission?.files || [];
 
@@ -358,13 +358,12 @@ function ProposalFeed({
               style={{ display: "block", width: "100%", padding: "12px 13px", marginBottom: 7, background: effectiveSelected === submission.id ? "var(--mf-bg-elevated)" : "var(--mf-bg-surface)", border: `1px solid ${effectiveSelected === submission.id ? "var(--mf-cyan)35" : "var(--mf-border)"}`, borderRadius: 12, cursor: "pointer", textAlign: "left", transition: "all 0.12s" }}
             >
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 6, gap: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)", lineHeight: 1.3, flex: 1 }}>{displayText(submission.title, `Submission #${submission.id}`)}</span>
+                <span style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)", lineHeight: 1.3, flex: 1 }}>{displayText(submission.title, "Untitled Submission")}</span>
                 <StatusBadge status={submission.status} />
               </div>
               <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginBottom: 7, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                 <User size={10} /><span>{submitterName(submission, authorLookup)}</span><span style={{ opacity: 0.4 }}>·</span><Clock size={10} /><span>{formatDateTime(submission.submittedAt)}</span>
               </div>
-              <div style={{ fontSize: 11, color: "var(--mf-text-muted)" }}>ID: {submission.id}</div>
             </button>
           ))}
         </div>
@@ -382,14 +381,16 @@ function ProposalFeed({
             {/* Header Block */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
               <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
-                  <h1 style={{ fontSize: 26, fontWeight: 900, letterSpacing: "-0.02em", margin: 0, color: "var(--mf-text)" }}>{displayText(selectedSubmission.title, `Submission #${selectedSubmission.id}`)}</h1>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                   <StatusBadge status={selectedSubmission.status} />
+                  <span style={{ fontSize: 11, color: "var(--mf-text-muted)", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                    {normalizeStatus(selectedSubmission.status) === "pending" || normalizeStatus(selectedSubmission.status) === "pending_tantou_review" ? "Awaiting your review" : "In Progress"}
+                  </span>
                 </div>
-                <div style={{ display: "flex", gap: 18, fontSize: 13, color: "var(--mf-text-muted)", fontWeight: 600, flexWrap: "wrap" }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}><User size={14} color="var(--mf-cyan)" />{submitterName(selectedSubmission, authorLookup)}</span>
+                <h1 style={{ fontSize: 26, fontWeight: 900, letterSpacing: "-0.02em", margin: 0, color: "var(--mf-text)" }}>{displayText(selectedSubmission.title, "Untitled Submission")}</h1>
+                <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 12, fontSize: 12, color: "var(--mf-text-muted)" }}>
                   <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Clock size={14} />{formatDateTime(selectedSubmission.submittedAt)}</span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}><FileText size={14} />ID: {selectedSubmission.id}</span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}><User size={14} />{submitterName(selectedSubmission, authorLookup)}</span>
                 </div>
               </div>
             </div>
@@ -499,7 +500,7 @@ function ApprovedList({
     setEscalatingId(submission.id);
     try {
       await submitToBoard(submission.id, tantouId);
-      showToast(`"${submission.title || `Submission #${submission.id}`}" submitted to Editorial Board successfully!`, true);
+      showToast(`"${submission.title || "Untitled Submission"}" submitted to Editorial Board successfully!`, true);
       setOpenId(null);
       onRefresh();
     } catch (err) {
@@ -614,7 +615,7 @@ function ApprovedList({
                     className="approved-row-title"
                     style={{ fontSize: 14, fontWeight: 800, color: "var(--mf-text)", transition: "color 0.15s", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
                   >
-                    {displayText(s.title, `Submission #${s.id}`)}
+                    {displayText(s.title, "Untitled Submission")}
                   </div>
                   <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 3, display: "flex", alignItems: "center", gap: 10 }}>
                     <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -624,8 +625,6 @@ function ApprovedList({
                     <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                       <Clock size={10} /> {formatDateTime(s.submittedAt)}
                     </span>
-                    <span style={{ opacity: 0.4 }}>·</span>
-                    <span>ID: {s.id}</span>
                   </div>
                 </div>
 
@@ -813,10 +812,10 @@ function ReviewModal({
         }}>
           <div>
             <div style={{ fontSize: 18, fontWeight: 900, color: "var(--mf-text)", letterSpacing: "-0.01em" }}>
-              {displayText(submission.title, `Submission #${submission.id}`)}
+              {displayText(submission.title, "Untitled Submission")}
             </div>
             <div style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4 }}>
-              Review Submission · ID: {submission.id}
+              Review Submission
             </div>
           </div>
           <button
@@ -1090,9 +1089,14 @@ function TantorSubmissions() {
                   onMouseLeave={(e) => { e.currentTarget.style.background = reviewed ? "rgba(0,230,180,0.04)" : "transparent"; }}
                 >
                   {/* Title */}
-                  <div style={{ paddingRight: 16 }}>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)", marginBottom: 2 }}>{displayText(s.title, `Submission #${s.id}`)}</div>
-                    <div style={{ fontSize: 11, color: "var(--mf-text-muted)" }}>ID: {s.id}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--mf-bg-deep)", border: "1px solid var(--mf-border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <FileText size={20} color="var(--mf-text-muted)" />
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)", marginBottom: 2 }}>{displayText(s.title, "Untitled Submission")}</div>
+                      <div style={{ fontSize: 11, color: "var(--mf-text-muted)" }}>{formatDateTime(s.submittedAt)}</div>
+                    </div>
                   </div>
                   {/* Submitted By Email */}
                   <div style={{ paddingRight: 16 }}>

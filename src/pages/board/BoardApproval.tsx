@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { getProjects, type ProjectUI } from "../../services/projectApi";
 import { getPlannings, getSubmissions, getSubmissionReviews, type SubmissionApi, type SubmissionReviewApi } from "../../services/workflowApi";
+import { getAccountProfile } from "../../services/accountApi";
 
 const BOARD_STATUSES = ["PENDING_BOARD_REVIEW", "ON_GOING", "APPROVED", "REJECTED"];
 
@@ -66,6 +67,7 @@ function isImage(f: NonNullable<SubmissionApi["files"]>[number]): boolean {
 function PendingApprovalsView() {
   const [submissions, setSubmissions] = useState<SubmissionApi[]>([]);
   const [allReviews, setAllReviews] = useState<SubmissionReviewApi[]>([]);
+  const [reviewerNames, setReviewerNames] = useState<Record<number, string>>({});
   const [selected, setSelected] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -92,8 +94,31 @@ function PendingApprovalsView() {
 
   useEffect(() => { void load(); }, [load]);
 
+  useEffect(() => {
+    const reviewerIds = Array.from(new Set(
+      allReviews
+        .map(r => r.reviewerId)
+        .filter((id): id is number => typeof id === "number")
+    ));
+
+    reviewerIds.forEach(id => {
+      if (!reviewerNames[id]) {
+        getAccountProfile(id)
+          .then(profile => {
+            const name = `${profile.firstName || ""} ${profile.lastName || ""}`.trim() || profile.email;
+            setReviewerNames(prev => ({ ...prev, [id]: name }));
+          })
+          .catch(() => {
+            // fallback
+            const fallbackVal = allReviews.find(r => r.reviewerId === id)?.reviewerEmail || `Tantou Editor #${id}`;
+            setReviewerNames(prev => ({ ...prev, [id]: fallbackVal }));
+          });
+      }
+    });
+  }, [allReviews, reviewerNames]);
+
   const submission = submissions.find(s => s.id === selected) ?? null;
-  const reviews = allReviews.filter(r => r.submissionId === selected && r.stage === "EDITORIAL_BOARD");
+  const reviews = allReviews.filter(r => Number(r.submissionId) === Number(selected) && r.stage?.toUpperCase() === "EDITORIAL_BOARD");
   const files = submission?.files ?? [];
 
   if (loading) {
@@ -232,6 +257,29 @@ function PendingApprovalsView() {
                 </div>
               </div>
 
+              {/* Escalated by info */}
+              {allReviews.find(r => Number(r.submissionId) === Number(selected) && r.stage?.toUpperCase() === "EDITORIAL") && (() => {
+                const tantouReview = allReviews.find(r => Number(r.submissionId) === Number(selected) && r.stage?.toUpperCase() === "EDITORIAL");
+                return (
+                  <div style={{ padding: 16, background: "var(--mf-bg-surface)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.07em", marginBottom: 12 }}>ESCALATED BY</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <div style={{ width: 38, height: 38, borderRadius: "50%", background: "rgba(0,230,230,0.12)", border: "1px solid rgba(0,230,230,0.3)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <User size={16} color="var(--mf-cyan)" />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)" }}>
+                          {tantouReview?.reviewerId ? (reviewerNames[Number(tantouReview.reviewerId)] || tantouReview.reviewerEmail || `Tantou Editor #${tantouReview.reviewerId}`) : "—"}
+                        </div>
+                        <div style={{ fontSize: 10, color: "var(--mf-cyan)", fontWeight: 700, marginTop: 2 }}>
+                          Tantou Editor
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Files */}
               {files.length > 0 ? (
                 <div>
@@ -300,7 +348,7 @@ function PendingApprovalsView() {
                       {/* Reviewer email + decision */}
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
                         <span style={{ fontSize: 11, fontWeight: 700, color: "var(--mf-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 140 }}>
-                          {r.reviewerEmail ?? `Reviewer #${r.reviewerId}`}
+                          {r.reviewerId ? (reviewerNames[Number(r.reviewerId)] || r.reviewerEmail || `Reviewer #${r.reviewerId}`) : (r.reviewerEmail ?? "—")}
                         </span>
                         <span style={{
                           padding: "2px 8px", borderRadius: 100, fontSize: 9, fontWeight: 800,

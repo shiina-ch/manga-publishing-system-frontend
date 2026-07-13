@@ -15,6 +15,7 @@ export interface ChapterApi {
 export interface SubmissionApi {
   id: number;
   title?: string | null;
+  description?: string | null;
   taskId?: number | null;
   subTaskId?: number | null;
   submissionType?: string | null;
@@ -24,6 +25,7 @@ export interface SubmissionApi {
   contentUrl?: string | null;
   submittedById?: number | null;
   submittedByName?: string | null;
+  submittedBy?: AccountSummaryApi | null;
   submittedAt?: string | null;
   reviewerId?: number | null;
   reviewerName?: string | null;
@@ -189,32 +191,19 @@ export function getSubmissions(): Promise<SubmissionApi[]> {
   return apiRequest<SubmissionApi[]>("/submissions");
 }
 
-export async function getMangakaSubmissions(userId: number): Promise<SubmissionApi[]> {
+export async function getMangakaSubmissions(userId?: number): Promise<SubmissionApi[]> {
   const submissions = await apiRequest<SubmissionApi[]>("/submissions");
 
   if (!Array.isArray(submissions)) {
     return [];
   }
 
-  return submissions
-    .filter((submission) => {
-      const rawSubmittedById: unknown = submission.submittedById;
-      const submittedById = Number(rawSubmittedById);
+  return submissions.sort((a, b) => {
+    const aTime = a.submittedAt ? new Date(a.submittedAt).getTime() : 0;
+    const bTime = b.submittedAt ? new Date(b.submittedAt).getTime() : 0;
 
-      return (
-        rawSubmittedById !== null
-        && rawSubmittedById !== undefined
-        && rawSubmittedById !== ""
-        && Number.isFinite(submittedById)
-        && submittedById === Number(userId)
-      );
-    })
-    .sort((a, b) => {
-      const aTime = a.submittedAt ? new Date(a.submittedAt).getTime() : 0;
-      const bTime = b.submittedAt ? new Date(b.submittedAt).getTime() : 0;
-
-      return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
-    });
+    return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+  });
 }
 
 export function submitToBoard(submissionId: number, tantouId: number): Promise<SubmissionApi> {
