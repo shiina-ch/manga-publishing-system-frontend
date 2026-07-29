@@ -8,6 +8,7 @@ import { UserProfile } from "../pages/profile/UserProfile";
 import { AdminDashboard } from "../pages/admin/AdminDashboard";
 import { EditorDashboard } from "../pages/editor/EditorDashboard";
 import { BoardApproval } from "../pages/board/BoardApproval";
+import { BoardProposalsPage } from "../pages/board/BoardProposalsPage";
 import { MangakaStudio } from "../pages/mangaka/MangakaStudio";
 import { AssistantPortal } from "../pages/assistant/AssistantPortal";
 import { VotingRoom } from "../pages/board/VotingRoom";
@@ -37,10 +38,11 @@ export const router = createBrowserRouter([
         children: [{ path: "editor", Component: EditorDashboard }],
       },
       {
-        element: createElement(ProtectedRoute, { allowedRoles: ["EDITORIAL_BOARD_MEMBER"] }),
+        element: createElement(ProtectedRoute, { allowedRoles: ["EDITORIAL_BOARD_MEMBER", "LEADER_BOARD"] }),
         children: [
           { path: "board", Component: BoardApproval },
           { path: "board/voting", Component: VotingRoom },
+          { path: "board/proposals", Component: BoardProposalsPage },
         ],
       },
       {

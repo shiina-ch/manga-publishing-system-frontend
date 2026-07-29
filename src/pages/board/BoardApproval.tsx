@@ -89,13 +89,13 @@ function PendingApprovalsView() {
       
       const updatedSubs = subs.map(s => {
         const rejectCount = reviewMap.get(s.id) || 0;
-        if (rejectCount >= 2 && s.status !== "APPROVED") {
-          return { ...s, status: "REJECTED" };
+        if (rejectCount >= 2 && (s.nameStatus ?? s.status) !== "APPROVED") {
+          return { ...s, nameStatus: "REJECTED", status: "REJECTED" };
         }
         return s;
       });
 
-      const filtered = updatedSubs.filter(s => BOARD_STATUSES.includes(normalizeStatus(s.status)));
+      const filtered = updatedSubs.filter(s => BOARD_STATUSES.includes(normalizeStatus(s.nameStatus ?? s.status)));
       setSubmissions(filtered);
       setAllReviews(revs);
       setSelected(prev => {
@@ -220,11 +220,11 @@ function PendingApprovalsView() {
                 </span>
                 <span style={{
                   padding: "2px 7px", borderRadius: 100, fontSize: 9, fontWeight: 800,
-                  background: `${statusColor(s.status)}18`,
-                  color: statusColor(s.status),
-                  border: `1px solid ${statusColor(s.status)}40`,
+                  background: `${statusColor(s.nameStatus ?? s.status)}18`,
+                  color: statusColor(s.nameStatus ?? s.status),
+                  border: `1px solid ${statusColor(s.nameStatus ?? s.status)}40`,
                 }}>
-                  {normalizeStatusLabel(s.status)}
+                  {normalizeStatusLabel(s.nameStatus ?? s.status)}
                 </span>
               </div>
             </button>
@@ -248,11 +248,11 @@ function PendingApprovalsView() {
                 </span>
                 <span style={{
                   padding: "2px 9px", borderRadius: 100, fontSize: 10, fontWeight: 800,
-                  background: `${statusColor(submission.status)}18`,
-                  color: statusColor(submission.status),
-                  border: `1px solid ${statusColor(submission.status)}40`,
+                  background: `${statusColor(submission.nameStatus ?? submission.status)}18`,
+                  color: statusColor(submission.nameStatus ?? submission.status),
+                  border: `1px solid ${statusColor(submission.nameStatus ?? submission.status)}40`,
                 }}>
-                  {normalizeStatusLabel(submission.status)}
+                  {normalizeStatusLabel(submission.nameStatus ?? submission.status)}
                 </span>
                 <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   <Clock size={11} /> {formatDT(submission.submittedAt)}

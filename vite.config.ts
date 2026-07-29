@@ -26,5 +26,13 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    proxy: {
+      '/uploads': {
+        target: 'http://127.0.0.1:8386',
+        changeOrigin: true,
+      }
+    }
+  },
   assetsInclude: ['**/*.svg', '**/*.csv'],
 })

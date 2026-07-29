@@ -2,6 +2,7 @@ import type { ActiveRole } from "../types/account";
 
 export const ROLE_ROUTE_MAP: Record<ActiveRole, string> = {
   ADMIN: "/admin",
+  LEADER_BOARD: "/board/voting",
   MANAGER: "/account-requests",
   TANTOU_EDITOR: "/editor",
   EDITORIAL_BOARD_MEMBER: "/board/voting",
@@ -11,6 +12,7 @@ export const ROLE_ROUTE_MAP: Record<ActiveRole, string> = {
 
 export const ROLE_PRIORITY: readonly ActiveRole[] = [
   "ADMIN",
+  "LEADER_BOARD",
   "MANAGER",
   "TANTOU_EDITOR",
   "EDITORIAL_BOARD_MEMBER",

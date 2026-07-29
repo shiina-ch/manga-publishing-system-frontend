@@ -8,7 +8,7 @@ export const PUBLIC_REQUESTED_ROLES = [
 
 export type PublicRequestedRole = (typeof PUBLIC_REQUESTED_ROLES)[number];
 
-export const ACTIVE_ROLES = ["ADMIN", ...PUBLIC_REQUESTED_ROLES] as const;
+export const ACTIVE_ROLES = ["ADMIN", "LEADER_BOARD", ...PUBLIC_REQUESTED_ROLES] as const;
 
 export type ActiveRole = (typeof ACTIVE_ROLES)[number];
 

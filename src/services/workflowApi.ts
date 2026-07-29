@@ -23,6 +23,8 @@ export interface SubmissionApi {
   submissionType?: string | null;
   parentSubmissionId?: number | null;
   status?: string | null;
+  nameStatus?: string | null;
+  productionStatus?: string | null;
   note?: string | null;
   contentUrl?: string | null;
   submittedById?: number | null;

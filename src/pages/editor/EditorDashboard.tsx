@@ -23,6 +23,7 @@ import { getAllAccounts, type AdminAccount } from "../../services/adminApi";
 import { getProjects, getProjectById, getProductionPlans, assignMangakaToProject, type ProjectFromApi } from "../../services/projectApi";
 import { ProductionPlanDialog } from "./ProductionPlanDialog";
 import { CreateChapterDialog } from "./CreateChapterDialog";
+import { Dialog, DialogContent, DialogTitle } from "../../components/ui/dialog";
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
   pending: { label: "Pending", color: "var(--mf-cyan)", bg: "var(--mf-cyan-dim)" },
@@ -301,29 +302,123 @@ function FileCard({ file }: { file: SubmissionFileApi }) {
   const canOpen = Boolean(path && isBrowserUrl(path));
   const canPreview = Boolean(path && canOpen && isImageFile(file));
   const isPsd = isPsdFile(file);
+  const isPdf = fileContentType(file).toLowerCase().includes("pdf") || fileName(file).toLowerCase().endsWith(".pdf");
+  
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!previewOpen || !path) {
+      if (objectUrl && objectUrl.startsWith("blob:")) URL.revokeObjectURL(objectUrl);
+      setObjectUrl(null);
+      setFetchError(null);
+      return;
+    }
+    
+    // Strip backend origin to use Vite proxy and bypass CORS
+    const fetchPath = path.replace(/https?:\/\/[^\/]+(\/uploads\/)/, "$1");
+    
+    let active = true;
+    const loadBlob = async () => {
+      setLoadingPreview(true);
+      setFetchError(null);
+      try {
+        const token = tokenStorage.getToken();
+        const res = await fetch(fetchPath, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
+        const blob = await res.blob();
+        
+        const displayBlob = (isPdf && blob.type !== "application/pdf") 
+            ? new Blob([blob], { type: "application/pdf" }) 
+            : blob;
+            
+        const url = URL.createObjectURL(displayBlob);
+        if (active) setObjectUrl(url);
+      } catch (err) {
+        if (active) {
+           console.error("Preview fetch error", err);
+           setFetchError(err instanceof Error ? err.message : String(err));
+           setObjectUrl(path); 
+        }
+      } finally {
+        if (active) setLoadingPreview(false);
+      }
+    };
+    
+    if (path.startsWith("http") || path.startsWith("/")) {
+       loadBlob();
+    } else {
+       setObjectUrl(path);
+    }
+    
+    return () => { active = false; };
+  }, [previewOpen, path, isPdf]);
 
   return (
-    <div style={{ background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", borderRadius: 12, overflow: "hidden", display: "flex", flexDirection: "column", transition: "transform 0.2s, box-shadow 0.2s" }}
-      onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.3)"; }}
-      onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}>
-      <div style={{ width: "100%", aspectRatio: "3/4", background: "var(--mf-bg-deep)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
-        {canPreview ? (
-          <img src={path || ""} alt={fileName(file)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-        ) : (
-          <FileText size={40} color="var(--mf-text-muted)" />
-        )}
-        {canOpen && (
-          <a href={path || undefined} target="_blank" rel="noreferrer" title="Open File" style={{ position: "absolute", bottom: 8, right: 8, width: 32, height: 32, borderRadius: "50%", background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none", border: "1px solid rgba(255,255,255,0.2)" }}>
-            <ArrowUpRight size={16} />
-          </a>
-        )}
+    <>
+      <div 
+        onClick={() => { if (canOpen && !isPsd) setPreviewOpen(true); }}
+        style={{ background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", borderRadius: 12, overflow: "hidden", display: "flex", flexDirection: "column", transition: "transform 0.2s, box-shadow 0.2s", cursor: (canOpen && !isPsd) ? "pointer" : "default" }}
+        onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.3)"; }}
+        onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "none"; }}>
+        <div style={{ width: "100%", aspectRatio: "3/4", background: "var(--mf-bg-deep)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
+          {canPreview ? (
+            <img src={path || ""} alt={fileName(file)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          ) : (
+            <FileText size={40} color="var(--mf-text-muted)" />
+          )}
+          {canOpen && (
+            <a href={path || undefined} target="_blank" rel="noreferrer" title="Open in new tab" onClick={e => e.stopPropagation()} style={{ position: "absolute", bottom: 8, right: 8, width: 32, height: 32, borderRadius: "50%", background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none", border: "1px solid rgba(255,255,255,0.2)" }}>
+              <ArrowUpRight size={16} />
+            </a>
+          )}
+        </div>
+        <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)", wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{fileName(file)}</div>
+          <div style={{ fontSize: 11, color: "var(--mf-text-muted)", fontWeight: 700 }}>{formatBytes(fileSize(file))} • {fileContentType(file).split("/").pop()?.toUpperCase()}</div>
+          {isPsd && <div style={{ fontSize: 10, color: "var(--mf-magenta)", fontWeight: 800, marginTop: 4 }}>NO PREVIEW</div>}
+        </div>
       </div>
-      <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 4 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)", wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{fileName(file)}</div>
-        <div style={{ fontSize: 11, color: "var(--mf-text-muted)", fontWeight: 700 }}>{formatBytes(fileSize(file))} • {fileContentType(file).split("/").pop()?.toUpperCase()}</div>
-        {isPsd && <div style={{ fontSize: 10, color: "var(--mf-magenta)", fontWeight: 800, marginTop: 4 }}>NO PREVIEW</div>}
-      </div>
-    </div>
+      
+      {previewOpen && (
+        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+          <DialogContent style={{ maxWidth: "90vw", height: "90vh", padding: 0, overflow: "hidden", backgroundColor: "#0a0a0a", borderColor: "#222" }}>
+            <DialogTitle className="sr-only">Preview {fileName(file)}</DialogTitle>
+            {loadingPreview ? (
+              <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-text-muted)" }}>
+                 <Loader2 size={32} style={{ animation: "spin 1s linear infinite" }} />
+              </div>
+            ) : isPdf ? (
+              <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", backgroundColor: "#fff" }}>
+                 {fetchError && (
+                   <div style={{ padding: 10, background: "#fff3f3", color: "#d32f2f", fontSize: 12, borderBottom: "1px solid #ffcdd2" }}>
+                     Warning: Failed to load file securely ({fetchError}). The preview below might be empty or blocked by the browser. 
+                     <a href={path || ""} target="_blank" rel="noreferrer" style={{ marginLeft: 8, textDecoration: "underline", fontWeight: "bold" }}>Open File Manually</a>
+                   </div>
+                 )}
+                 <object data={objectUrl || ""} type="application/pdf" style={{ width: "100%", flex: 1, border: "none" }}>
+                   <embed src={objectUrl || ""} type="application/pdf" style={{ width: "100%", height: "100%", border: "none" }} />
+                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: 20 }}>
+                     <p style={{ color: "#000", marginBottom: 12 }}>Trình duyệt của bạn không hỗ trợ hiển thị PDF trực tiếp.</p>
+                     <a href={path || ""} target="_blank" rel="noreferrer" style={{ padding: "8px 16px", background: "var(--mf-cyan)", color: "#000", borderRadius: 8, textDecoration: "none", fontWeight: 800 }}>Tải xuống / Mở trong Tab mới</a>
+                   </div>
+                 </object>
+              </div>
+            ) : canPreview ? (
+              <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+                <img src={objectUrl || ""} alt={fileName(file)} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+              </div>
+            ) : (
+              <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-text-muted)" }}>Preview not available for this file type.</div>
+            )}
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
   );
 }
 

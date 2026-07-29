@@ -39,6 +39,7 @@ const activeRoleToLayoutRole: Record<ActiveRole, LayoutRole> = {
   MANAGER: "manager",
   TANTOU_EDITOR: "editor",
   EDITORIAL_BOARD_MEMBER: "board",
+  LEADER_BOARD: "board",
   MANGAKA: "mangaka",
   ASSISTANT: "assistant",
 };
@@ -47,7 +48,6 @@ const roleConfig: Record<LayoutRole, RoleConfig> = {
   editor: {
     label: "Tantou Editor", color: "var(--mf-cyan)", icon: Edit3,
     nav: [
-      { icon: Inbox, label: "New Proposals" },
       { icon: Clock, label: "In Revision" },
       { icon: AlertTriangle, label: "Escalated to Board", badgeColor: "var(--mf-orange)" },
       { icon: CheckCircle, label: "Approved" },
@@ -59,7 +59,8 @@ const roleConfig: Record<LayoutRole, RoleConfig> = {
   board: {
     label: "Editorial Board Member", color: "var(--mf-orange)", icon: Users,
     nav: [
-      { icon: Inbox, label: "Pending Approvals", path: "/board/voting" },
+      { icon: Inbox, label: "New Proposals", path: "/board/proposals" },
+      { icon: CheckSquare, label: "Pending Approvals", path: "/board/voting" },
       { icon: Star, label: "Active Projects", path: "/board?tab=active-projects" },
       { icon: FileText, label: "Publishing Calendar", path: "/board?tab=publishing-calendar" },
       { icon: BarChart3, label: "Budget Overview", path: "/board?tab=budget-overview" },
