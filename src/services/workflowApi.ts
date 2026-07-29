@@ -110,6 +110,8 @@ export interface TaskApi {
   status: string | null;
   deadline: string | null;
   taskType?: string | null;
+  assigneeId?: number | null;
+  assigneeName?: string | null;
 }
 
 export interface SketchTaskApi {

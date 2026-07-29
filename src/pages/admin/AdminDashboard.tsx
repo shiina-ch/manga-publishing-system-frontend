@@ -6,11 +6,18 @@ import {
   Eye, RefreshCw, UserPlus, FileText,
   Shield, Activity, TrendingUp,
   Search, Inbox,
-  Globe,
+  Globe, CheckSquare, Layers,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { getAllAccounts, activateAccount, deactivateAccount, type AdminAccount } from "../../services/adminApi";
-import { getChapters, getSubmissions, getSubmissionReviews, getVotes, type ChapterApi, type SubmissionApi, type SubmissionReviewApi, type VoteApi } from "../../services/workflowApi";
+import {
+  getChapters, getSubmissions, getSubmissionReviews, getVotes,
+  getTasks, getSketchTasks, getSketchPages, getPlannings, getSubTasksForTask,
+  type ChapterApi, type SubmissionApi, type SubmissionReviewApi, type VoteApi,
+  type TaskApi, type SketchTaskApi, type SketchPageApi, type PlanningApi, type SubTaskApi
+} from "../../services/workflowApi";
+import { tokenStorage } from "../../storage/tokenStorage";
+import { getProjects, type ProjectFromApi } from "../../services/projectApi";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -171,10 +178,59 @@ function TableHeader({ columns }: { columns: { label: string; width?: string | n
   );
 }
 
+const formatSafeDate = (dateStr: string | null | undefined, options?: Intl.DateTimeFormatOptions): string => {
+  if (!dateStr || dateStr === "From API" || dateStr === "Unknown") return "—";
+  const parsed = new Date(dateStr);
+  if (Number.isNaN(parsed.getTime())) return dateStr;
+  return parsed.toLocaleDateString(undefined, options);
+};
+
+const statusTaskConfig: Record<string, { label: string; color: string; bg: string }> = {
+  pending: { label: "Pending", color: "var(--mf-orange)", bg: "rgba(255,140,66,0.14)" },
+  in_progress: { label: "In Progress", color: "var(--mf-cyan)", bg: "var(--mf-cyan-dim)" },
+  completed: { label: "Completed", color: "var(--mf-green)", bg: "var(--mf-green-dim)" },
+  failed: { label: "Failed", color: "var(--mf-magenta)", bg: "var(--mf-magenta-dim)" },
+};
+
+const normalizeStatusStr = (s: string | null | undefined) => {
+  if (!s) return "pending";
+  const lower = s.toLowerCase();
+  if (lower === "active" || lower === "in_progress") return "in_progress";
+  if (lower === "completed" || lower === "success" || lower === "approved" || lower === "submitted") return "completed";
+  if (lower === "failed" || lower === "rejected") return "failed";
+  return lower;
+};
+
+function TaskStatusBadge({ status }: { status: string | null | undefined }) {
+  const norm = normalizeStatusStr(status);
+  const cfg = statusTaskConfig[norm] || { label: status || "Pending", color: "var(--mf-orange)", bg: "rgba(255,140,66,0.14)" };
+  return <StatusBadge label={cfg.label} color={cfg.color} bg={cfg.bg} />;
+}
+
 // ─── Tab 1: System Overview ──────────────────────────────────────────────────
 
-function OverviewTab({ onlineUsers, chapters, registrations, activities, submissions, submissionReviews, votes }: {
-  onlineUsers: OnlineUser[]; chapters: ChapterStatus[]; registrations: AdminAccount[]; activities: ActivityEvent[]; submissions: SubmissionApi[]; submissionReviews: SubmissionReviewApi[]; votes: VoteApi[];
+function OverviewTab({
+  onlineUsers,
+  chapters,
+  registrations,
+  activities,
+  submissions,
+  submissionReviews,
+  votes,
+  tasks = [],
+  sketchPages = [],
+  plannings = []
+}: {
+  onlineUsers: OnlineUser[];
+  chapters: ChapterStatus[];
+  registrations: AdminAccount[];
+  activities: ActivityEvent[];
+  submissions: SubmissionApi[];
+  submissionReviews: SubmissionReviewApi[];
+  votes: VoteApi[];
+  tasks?: TaskApi[];
+  sketchPages?: SketchPageApi[];
+  plannings?: PlanningApi[];
 }) {
   const [selectedSubId, setSelectedSubId] = useState<number | null>(null);
   const [selectedVoteId, setSelectedVoteId] = useState<number | null>(null);
@@ -227,7 +283,7 @@ function OverviewTab({ onlineUsers, chapters, registrations, activities, submiss
               const total = Math.max(approveCount + rejectCount, 1);
               const approvePct = (approveCount / total) * 100;
               const rejectPct = (rejectCount / total) * 100;
-              const mangaTitle = sub.project?.name || sub.project?.title || "Unknown Manga";
+              const mangaTitle = sub.title || sub.project?.name || sub.project?.title || "Untitled";
               const mColor = ["#FF2A7A", "#39FF8A", "#00F0FF", "#FF8C42"][sub.id % 4] || "var(--mf-cyan)";
               const isSelected = selectedVoteId === review.id;
 
@@ -363,6 +419,83 @@ function OverviewTab({ onlineUsers, chapters, registrations, activities, submiss
         </div>
       </div>
 
+      {/* System Workflow Overview: Tasks & Plannings */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+        {/* Active Tasks Summary Monitor */}
+        <div style={{
+          background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
+          borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column",
+        }}>
+          <SectionHeader title="Active Tasks Monitor" subtitle="Latest tasks in the system" />
+          <TableHeader columns={[
+            { label: "ID", width: "15%" },
+            { label: "Task Title", width: "50%" },
+            { label: "Status", width: "35%", align: "right" },
+          ]} />
+          <div style={{ flex: 1, overflowY: "auto", maxHeight: 250 }}>
+            {tasks.slice(0, 5).map(task => (
+              <div key={task.id} style={{ display: "flex", alignItems: "center", padding: "12px 24px", borderBottom: "1px solid var(--mf-border)" }}>
+                <span style={{ flex: "0 0 15%", fontSize: 12, fontWeight: 700, color: "var(--mf-cyan)" }}>#{task.id}</span>
+                <span style={{ flex: "0 0 50%", fontSize: 13, fontWeight: 600, color: "var(--mf-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={task.title || ""}>
+                  {task.title || "Untitled Task"}
+                </span>
+                <div style={{ flex: "0 0 35%", textAlign: "right" }}>
+                  <TaskStatusBadge status={task.status} />
+                </div>
+              </div>
+            ))}
+            {tasks.length === 0 && (
+              <div style={{ padding: 24, textAlign: "center", color: "var(--mf-text-muted)", fontSize: 12 }}>No active tasks.</div>
+            )}
+          </div>
+        </div>
+
+        {/* Production Progress Summary */}
+        <div style={{
+          background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
+          borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column",
+        }}>
+          <SectionHeader title="Production Plans & Sketches" subtitle="Overview of plannings and sketch pages" />
+          <div style={{ flex: 1, padding: "16px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
+            {/* Sketch Pages Progress */}
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", marginBottom: 8 }}>
+                <span>Sketch Pages Status</span>
+                <span>{sketchPages.filter(p => p.status === "COMPLETED" || p.status === "completed").length}/{Math.max(sketchPages.length, 1)} Completed</span>
+              </div>
+              <div style={{ width: "100%", height: 8, background: "var(--mf-bg-elevated)", borderRadius: 4, overflow: "hidden", display: "flex" }}>
+                <div style={{
+                  width: `${(sketchPages.filter(p => p.status === "COMPLETED" || p.status === "completed").length / Math.max(sketchPages.length, 1)) * 100}%`,
+                  background: "var(--mf-green)"
+                }} />
+                <div style={{
+                  width: `${(sketchPages.filter(p => p.status === "IN_PROGRESS" || p.status === "in_progress").length / Math.max(sketchPages.length, 1)) * 100}%`,
+                  background: "var(--mf-cyan)"
+                }} />
+              </div>
+            </div>
+
+            {/* Plannings list */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.06em", textTransform: "uppercase" }}>Active Production Plans</div>
+              {plannings.slice(0, 3).map(plan => (
+                <div key={plan.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "6px 10px", background: "var(--mf-bg-elevated)", borderRadius: 6, border: "1px solid var(--mf-border)" }}>
+                  <span style={{ fontWeight: 600, color: "var(--mf-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "70%" }}>{plan.title || "Untitled Plan"}</span>
+                  <StatusBadge
+                    label={(plan.status || "ACTIVE").toUpperCase()}
+                    color={plan.status === "ACTIVE" || plan.status === "COMPLETED" ? "var(--mf-green)" : "var(--mf-orange)"}
+                    bg="transparent"
+                  />
+                </div>
+              ))}
+              {plannings.length === 0 && (
+                <div style={{ fontSize: 11, color: "var(--mf-text-muted)", fontStyle: "italic" }}>No active plans.</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Recent Submissions Frame */}
       <div style={{
         background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
@@ -377,7 +510,7 @@ function OverviewTab({ onlineUsers, chapters, registrations, activities, submiss
         ]} />
         <div className="hide-scroll" style={{ maxHeight: 400, overflowY: "auto" }}>
           {submissions.slice(0, 10).map(sub => {
-            const mangaTitle = "Unknown Manga";
+            const mangaTitle = sub.title || sub.project?.name || sub.project?.title || "Untitled";
             const mColor = ["#FF2A7A", "#39FF8A", "#00F0FF", "#FF8C42"][sub.id % 4] || "var(--mf-cyan)";
             const statusLower = (sub.status || "draft").toLowerCase();
             const isSelected = selectedSubId === sub.id;
@@ -419,7 +552,7 @@ function OverviewTab({ onlineUsers, chapters, registrations, activities, submiss
                     <span style={{
                       whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                       fontWeight: 600, fontSize: 13, color: "var(--mf-text)", opacity: 0.95
-                    }} title={sub.submissionType || ""}>{sub.submissionType || "—"}</span>
+                    }} title={sub.title || sub.submissionType || "Untitled"}>{sub.title || sub.submissionType || "Untitled"}</span>
                   </div>
                   <div style={{ flex: "0 0 20%" }}>
                     {statusChapterConfig[statusLower] ? <ChapterStatusBadge status={statusLower} /> : (
@@ -427,7 +560,7 @@ function OverviewTab({ onlineUsers, chapters, registrations, activities, submiss
                     )}
                   </div>
                   <div style={{ flex: "0 0 30%", fontSize: 12, color: "var(--mf-text-muted)", textAlign: "right" }}>
-                    {sub.submittedAt ? new Date(sub.submittedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : "—"}
+                    {formatSafeDate(sub.submittedAt, { month: 'short', day: 'numeric', year: 'numeric' })}
                   </div>
                 </div>
                 {/* Expanded Details */}
@@ -1173,6 +1306,372 @@ function SubmissionsTab({ chapters }: { chapters: ChapterStatus[] }) {
   );
 }
 
+// ─── Tab 5: Process Monitor ──────────────────────────────────────────────────
+
+function ProcessMonitorTab({
+  tasks,
+  sketchTasks,
+  sketchPages,
+  plannings,
+  managedUsers
+}: {
+  tasks: TaskApi[];
+  sketchTasks: SketchTaskApi[];
+  sketchPages: SketchPageApi[];
+  plannings: PlanningApi[];
+  managedUsers: ManagedUser[];
+}) {
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [subtasks, setSubtasks] = useState<Record<number, SubTaskApi[]>>({});
+  const [subtasksLoading, setSubtasksLoading] = useState<Record<number, boolean>>({});
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [activeRightTab, setActiveRightTab] = useState<"sketches" | "sketchTasks" | "plannings">("sketches");
+
+  const handleTaskClick = async (taskId: number) => {
+    if (selectedTaskId === taskId) {
+      setSelectedTaskId(null);
+      return;
+    }
+    setSelectedTaskId(taskId);
+    if (!subtasks[taskId]) {
+      setSubtasksLoading(prev => ({ ...prev, [taskId]: true }));
+      try {
+        const adminId = tokenStorage.getAccount()?.id || 1;
+        const result = await getSubTasksForTask(taskId, adminId);
+        setSubtasks(prev => ({ ...prev, [taskId]: result || [] }));
+      } catch (err) {
+        console.error("Failed to load subtasks:", err);
+      } finally {
+        setSubtasksLoading(prev => ({ ...prev, [taskId]: false }));
+      }
+    }
+  };
+
+  const filteredTasks = tasks.filter(t => {
+    const matchSearch = !search ||
+      (t.title && t.title.toLowerCase().includes(search.toLowerCase())) ||
+      (t.description && t.description.toLowerCase().includes(search.toLowerCase()));
+
+    const norm = normalizeStatusStr(t.status);
+    const matchStatus = statusFilter === "all" || norm === statusFilter;
+    return matchSearch && matchStatus;
+  });
+
+  const totalTasks = tasks.length;
+  const completedTasks = tasks.filter(t => normalizeStatusStr(t.status) === "completed").length;
+  const inProgressTasks = tasks.filter(t => normalizeStatusStr(t.status) === "in_progress").length;
+  const activePlansCount = plannings.filter(p => p.status === "ACTIVE" || p.status === "active" || p.status === "IN_PROGRESS").length;
+
+  const tantouTasks = filteredTasks.filter(t => {
+    if (!t.assigneeId) return false;
+    const u = managedUsers.find(u => u.id === t.assigneeId);
+    return u?.roles.includes("TANTOU_EDITOR") || u?.roles.includes("EDITORIAL_BOARD_MEMBER");
+  });
+
+  const mangakaTasks = filteredTasks.filter(t => {
+    if (!t.assigneeId) return false;
+    const u = managedUsers.find(u => u.id === t.assigneeId);
+    return u?.roles.includes("MANGAKA");
+  });
+
+  const otherTasks = filteredTasks.filter(t => {
+    if (!t.assigneeId) return true;
+    const u = managedUsers.find(u => u.id === t.assigneeId);
+    return !u?.roles.includes("TANTOU_EDITOR") && !u?.roles.includes("EDITORIAL_BOARD_MEMBER") && !u?.roles.includes("MANGAKA");
+  });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      {/* Stats Cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 20 }}>
+        <StatCard icon={CheckSquare} label="Total Tasks" value={totalTasks} color="var(--mf-cyan)" />
+        <StatCard icon={Clock} label="In Progress Tasks" value={inProgressTasks} color="var(--mf-orange)" />
+        <StatCard icon={CheckCircle} label="Completed Tasks" value={completedTasks} color="var(--mf-green)" />
+        <StatCard icon={Layers} label="Active Plannings" value={plannings.length} color="var(--mf-magenta)" subtitle={`${activePlansCount} in progress`} />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 20, alignItems: "start" }}>
+
+        {/* Left Side: Tasks & Subtasks */}
+        <div style={{ background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <SectionHeader title="Tasks & Subtasks" subtitle="Track tasks assigned to Mangakas and delegated subtasks" />
+
+          {/* Toolbar */}
+          <div style={{ padding: "14px 20px 12px", borderBottom: "1px solid var(--mf-border)", display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{
+              display: "flex", alignItems: "center", gap: 6, padding: "7px 12px",
+              background: "var(--mf-bg-elevated)", borderRadius: 8, border: "1px solid var(--mf-border)", flex: "0 0 220px",
+            }}>
+              <Search size={12} color="var(--mf-text-muted)" />
+              <input
+                value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Search tasks..."
+                style={{ flex: 1, background: "none", border: "none", outline: "none", color: "var(--mf-text)", fontSize: 12 }}
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap", flex: 1 }}>
+              {[
+                { key: "all", label: "All" },
+                { key: "pending", label: "Pending" },
+                { key: "in_progress", label: "In Progress" },
+                { key: "completed", label: "Completed" },
+              ].map(f => (
+                <button
+                  key={f.key}
+                  onClick={() => setStatusFilter(f.key)}
+                  style={{
+                    padding: "4px 10px", fontSize: 10, fontWeight: 700, borderRadius: 7, cursor: "pointer",
+                    border: "1px solid",
+                    background: statusFilter === f.key ? (statusTaskConfig[f.key]?.bg || "var(--mf-bg-elevated)") : "transparent",
+                    borderColor: statusFilter === f.key ? (statusTaskConfig[f.key]?.color || "var(--mf-border-bright)") + "50" : "var(--mf-border)",
+                    color: statusFilter === f.key ? (statusTaskConfig[f.key]?.color || "var(--mf-text)") : "var(--mf-text-muted)",
+                    transition: "all 0.12s",
+                  }}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <TableHeader columns={[
+            { label: "Task ID", width: "15%" },
+            { label: "Title & Type", width: "45%" },
+            { label: "Status", width: "20%" },
+            { label: "Deadline", width: "20%", align: "right" }
+          ]} />
+
+          <div style={{ maxHeight: 500, overflowY: "auto" }}>
+            {filteredTasks.length === 0 ? (
+              <div style={{ padding: 40, textAlign: "center", color: "var(--mf-text-muted)", fontSize: 13 }}>No tasks found.</div>
+            ) : (
+              [
+                { title: "Tier 1: Board ➔ Tantou", list: tantouTasks, color: "var(--mf-cyan)" },
+                { title: "Tier 2: Tantou ➔ Mangaka", list: mangakaTasks, color: "var(--mf-magenta)" },
+                { title: "Other / Unassigned Tasks", list: otherTasks, color: "var(--mf-text-muted)" },
+              ].map(group => {
+                if (group.list.length === 0) return null;
+                return (
+                  <div key={group.title} style={{ marginBottom: 0 }}>
+                    <div style={{ padding: "8px 24px", background: `linear-gradient(90deg, ${group.color}15, transparent)`, borderLeft: `3px solid ${group.color}`, borderBottom: "1px solid var(--mf-border)", fontSize: 11, fontWeight: 800, color: group.color, letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                      {group.title}
+                    </div>
+                    {group.list.map(task => {
+                      const isSelected = selectedTaskId === task.id;
+                      const taskSubtasks = subtasks[task.id] || [];
+                      const isLoadingSubtasks = subtasksLoading[task.id];
+
+                      return (
+                        <div key={task.id} style={{ borderBottom: "1px solid var(--mf-border)", display: "flex", flexDirection: "column" }}>
+                          <div
+                            onClick={() => handleTaskClick(task.id)}
+                            style={{
+                              display: "flex", alignItems: "center", padding: "14px 24px", cursor: "pointer",
+                              background: isSelected ? "var(--mf-bg-elevated)" : "transparent", transition: "background 0.2s"
+                            }}
+                            onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "var(--mf-bg-elevated)" }}
+                            onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "transparent" }}
+                          >
+                            <div style={{ flex: "0 0 15%", fontWeight: 700, color: "var(--mf-cyan)", fontSize: 13 }}>
+                              #{task.id}
+                            </div>
+                            <div style={{ flex: "0 0 45%", paddingRight: 10, display: "flex", flexDirection: "column" }}>
+                              <span style={{ fontSize: 14, fontWeight: 700, color: "var(--mf-text)", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                                {task.title || "Untitled Task"}
+                              </span>
+                              <span style={{ fontSize: 11, color: "var(--mf-text-muted)", fontWeight: 500, marginTop: 2 }}>
+                                Type: {task.taskType || "General"}
+                              </span>
+                            </div>
+                            <div style={{ flex: "0 0 20%" }}>
+                              <TaskStatusBadge status={task.status} />
+                            </div>
+                            <div style={{ flex: "0 0 20%", fontSize: 12, color: "var(--mf-text-muted)", textAlign: "right" }}>
+                              {task.deadline ? formatSafeDate(task.deadline) : "No Deadline"}
+                            </div>
+                          </div>
+
+                          {/* Subtasks Expanded Panel */}
+                          {isSelected && (
+                            <div style={{ padding: "16px 24px", background: "var(--mf-bg-base)", borderTop: "1px dashed var(--mf-border)" }}>
+                              <div style={{ fontSize: 12, fontWeight: 800, color: "var(--mf-green)", marginBottom: 12, letterSpacing: "0.06em" }}>
+                                TIER 3: MANGAKA ➔ ASSISTANT (SUB-TASKS)
+                              </div>
+
+                              {isLoadingSubtasks ? (
+                                <div style={{ fontSize: 12, color: "var(--mf-text-muted)", padding: "10px 0" }}>Loading subtasks...</div>
+                              ) : taskSubtasks.length === 0 ? (
+                                <div style={{ fontSize: 12, color: "var(--mf-text-muted)", fontStyle: "italic", padding: "10px 0" }}>
+                                  No sub-tasks delegated to assistants yet.
+                                </div>
+                              ) : (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                  <div style={{ display: "flex", paddingBottom: 6, borderBottom: "1px solid var(--mf-border)", fontSize: 11, fontWeight: 700, color: "var(--mf-text-muted)" }}>
+                                    <div style={{ flex: 2 }}>Subtask Title</div>
+                                    <div style={{ flex: 1.5 }}>Assignee</div>
+                                    <div style={{ flex: 1.2 }}>Status</div>
+                                    <div style={{ flex: 1.2, textAlign: "right" }}>Deadline</div>
+                                  </div>
+                                  {taskSubtasks.map(st => (
+                                    <div key={st.id} style={{ display: "flex", alignItems: "center", fontSize: 12, borderBottom: "1px solid rgba(255,255,255,0.03)", padding: "6px 0" }}>
+                                      <div style={{ flex: 2, fontWeight: 600, color: "var(--mf-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                        {st.title}
+                                      </div>
+                                      <div style={{ flex: 1.5, color: "var(--mf-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                        {st.assigneeName || `Assistant #${st.assigneeId}`}
+                                      </div>
+                                      <div style={{ flex: 1.2 }}>
+                                        <StatusBadge
+                                          label={(st.status || "CREATED").toUpperCase()}
+                                          color={st.status === "COMPLETED" ? "var(--mf-green)" : st.status === "NEEDS_REVISION" ? "var(--mf-magenta)" : "var(--mf-orange)"}
+                                          bg="transparent"
+                                        />
+                                      </div>
+                                      <div style={{ flex: 1.2, textAlign: "right", color: "var(--mf-text-muted)" }}>
+                                        {st.deadline ? formatSafeDate(st.deadline) : "No Deadline"}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              }))}
+          </div>
+        </div>
+
+        {/* Right Side: Production Details (Sketches, Sketch Tasks, Plannings) */}
+        <div style={{ background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+
+          {/* Tabs header */}
+          <div style={{ display: "flex", background: "var(--mf-bg-elevated)", borderBottom: "1px solid var(--mf-border)" }}>
+            {[
+              { key: "sketches", label: "Sketch Pages" },
+              { key: "sketchTasks", label: "Sketch Tasks" },
+              { key: "plannings", label: "Plannings" },
+            ].map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveRightTab(tab.key as any)}
+                style={{
+                  flex: 1, padding: "16px 12px", border: "none", background: "none", cursor: "pointer",
+                  fontSize: 12, fontWeight: 800, color: activeRightTab === tab.key ? "var(--mf-cyan)" : "var(--mf-text-muted)",
+                  borderBottom: activeRightTab === tab.key ? "2px solid var(--mf-cyan)" : "2px solid transparent",
+                  transition: "all 0.2s",
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ padding: 20, maxHeight: 570, overflowY: "auto" }}>
+
+            {/* 1. Sketches */}
+            {activeRightTab === "sketches" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {sketchPages.length === 0 ? (
+                  <div style={{ padding: 20, textAlign: "center", color: "var(--mf-text-muted)", fontSize: 12 }}>No sketch pages loaded.</div>
+                ) : (
+                  sketchPages.map(page => (
+                    <div key={page.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 12, background: "var(--mf-bg-elevated)", borderRadius: 10, border: "1px solid var(--mf-border)" }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)" }}>Page {page.pageNumber || "N/A"}</div>
+                        <div style={{ fontSize: 10, color: "var(--mf-text-muted)", marginTop: 4 }}>ID: #{page.id}</div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <StatusBadge
+                          label={(page.status || "DRAFT").toUpperCase()}
+                          color={page.status === "COMPLETED" ? "var(--mf-green)" : page.status === "IN_PROGRESS" ? "var(--mf-cyan)" : "var(--mf-orange)"}
+                          bg="transparent"
+                        />
+                        {page.initialSketchUrl && (
+                          <a href={page.initialSketchUrl} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--mf-cyan)", textDecoration: "none", fontWeight: 700 }}>
+                            View ↗
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* 2. Sketch Tasks */}
+            {activeRightTab === "sketchTasks" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {sketchTasks.length === 0 ? (
+                  <div style={{ padding: 20, textAlign: "center", color: "var(--mf-text-muted)", fontSize: 12 }}>No sketch tasks loaded.</div>
+                ) : (
+                  sketchTasks.map(st => (
+                    <div key={st.id} style={{ display: "flex", flexDirection: "column", gap: 8, padding: 12, background: "var(--mf-bg-elevated)", borderRadius: 10, border: "1px solid var(--mf-border)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-cyan)", textTransform: "uppercase" }}>
+                          {st.taskType || "Sketch Task"}
+                        </span>
+                        <StatusBadge
+                          label={(st.status || "PENDING").toUpperCase()}
+                          color={st.status === "COMPLETED" ? "var(--mf-green)" : "var(--mf-orange)"}
+                          bg="transparent"
+                        />
+                      </div>
+                      <p style={{ fontSize: 12, color: "var(--mf-text)", margin: 0 }}>{st.description || "No description provided."}</p>
+                      {st.completedUrl && (
+                        <div style={{ marginTop: 4, fontSize: 11 }}>
+                          <span style={{ color: "var(--mf-text-muted)" }}>Output: </span>
+                          <a href={st.completedUrl} target="_blank" rel="noreferrer" style={{ color: "var(--mf-cyan)", textDecoration: "none", fontWeight: 700 }}>View Result ↗</a>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* 3. Plannings */}
+            {activeRightTab === "plannings" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {plannings.length === 0 ? (
+                  <div style={{ padding: 20, textAlign: "center", color: "var(--mf-text-muted)", fontSize: 12 }}>No plannings found.</div>
+                ) : (
+                  plannings.map(plan => (
+                    <div key={plan.id} style={{ display: "flex", flexDirection: "column", gap: 6, padding: 12, background: "var(--mf-bg-elevated)", borderRadius: 10, border: "1px solid var(--mf-border)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)" }}>
+                          {plan.title || "Untitled Plan"}
+                        </span>
+                        <StatusBadge
+                          label={(plan.status || "ACTIVE").toUpperCase()}
+                          color={plan.status === "ACTIVE" || plan.status === "COMPLETED" ? "var(--mf-green)" : "var(--mf-orange)"}
+                          bg="transparent"
+                        />
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--mf-text-muted)", marginTop: 4 }}>
+                        <span>Start: {plan.startDate ? formatSafeDate(plan.startDate) : "—"}</span>
+                        <span>End: {plan.endDate ? formatSafeDate(plan.endDate) : "—"}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Admin Dashboard ─────────────────────────────────────────────────────
 
 export function AdminDashboard() {
@@ -1185,6 +1684,11 @@ export function AdminDashboard() {
   const [submissionReviews, setSubmissionReviews] = useState<SubmissionReviewApi[]>([]);
   const [votes, setVotes] = useState<VoteApi[]>([]);
   const [managedUsers, setManagedUsers] = useState<ManagedUser[]>([]);
+  const [tasks, setTasks] = useState<TaskApi[]>([]);
+  const [sketchTasks, setSketchTasks] = useState<SketchTaskApi[]>([]);
+  const [sketchPages, setSketchPages] = useState<SketchPageApi[]>([]);
+  const [plannings, setPlannings] = useState<PlanningApi[]>([]);
+  const [projects, setProjects] = useState<ProjectFromApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
@@ -1220,23 +1724,7 @@ export function AdminDashboard() {
     };
   }, [formatJoinedDate]);
 
-  const mapChapter = useCallback((chapter: ChapterApi, index: number): ChapterStatus => {
-    const rawStatus = (chapter.chapterStatus || "draft").toLowerCase();
-    const allowed = ["draft", "in_review", "approved", "published", "rejected"];
-    const status = (allowed.includes(rawStatus) ? rawStatus : "draft") as ChapterStatus["status"];
-    return {
-      id: chapter.id,
-      manga: "Database Project",
-      chapter: chapter.chapterNumber ?? index + 1,
-      title: chapter.title || `Chapter #${chapter.id}`,
-      status,
-      author: chapter.ownerName || "Unassigned",
-      updatedAt: chapter.publishDate || "From API",
-      progress: status === "published" ? 100 : 0,
-      pages: chapter.targetPageCount || 0,
-      mangaColor: ["#FF2A7A", "#39FF8A", "#00F0FF", "#FF8C42"][index % 4],
-    };
-  }, []);
+
 
   const buildActivities = useCallback((accounts: AdminAccount[], chapterRows: ChapterStatus[]): ActivityEvent[] => {
     const accountEvents = accounts.filter(account => account.status !== "ACTIVE").slice(0, 4).map((account, index) => ({
@@ -1259,8 +1747,19 @@ export function AdminDashboard() {
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([getAllAccounts(), getChapters(), getSubmissions(), getSubmissionReviews(), getVotes()])
-      .then(([accounts, chapterRows, subRows, reviewRows, voteRows]) => {
+    Promise.all([
+      getAllAccounts().catch(() => []),
+      getChapters().catch(() => []),
+      getSubmissions().catch(() => []),
+      getSubmissionReviews().catch(() => []),
+      getVotes().catch(() => []),
+      getTasks().catch(() => []),
+      getSketchTasks().catch(() => []),
+      getSketchPages().catch(() => []),
+      getPlannings().catch(() => []),
+      getProjects().catch(() => [])
+    ])
+      .then(([accounts, chapterRows, subRows, reviewRows, voteRows, taskRows, sketchTaskRows, sketchPageRows, planningRows, projectRows]) => {
         if (cancelled) return;
         const nonAdminAccounts = accounts.filter(a => {
           const hasAdminSystem = a.systemRole?.some(r => r.roleName === "ADMIN" || r.roleName === "MANAGER");
@@ -1268,13 +1767,41 @@ export function AdminDashboard() {
           return !hasAdminSystem && !hasAdminReq;
         });
         const users = nonAdminAccounts.map(mapAccountToOnlineUser);
-        const mappedChapters = chapterRows.map(mapChapter);
+
+        const projectsList = projectRows || [];
+        const mappedChapters = chapterRows.map((chapter, index) => {
+          const rawStatus = (chapter.chapterStatus || "draft").toLowerCase();
+          const allowed = ["draft", "in_review", "approved", "published", "rejected"];
+          const status = (allowed.includes(rawStatus) ? rawStatus : "draft") as ChapterStatus["status"];
+
+          const foundProj = projectsList.find(p => p.id === chapter.projectId);
+          const mangaName = foundProj?.title || foundProj?.name || "Unknown Manga";
+
+          return {
+            id: chapter.id,
+            manga: mangaName,
+            chapter: chapter.chapterNumber ?? index + 1,
+            title: chapter.title || `Chapter #${chapter.id}`,
+            status,
+            author: chapter.ownerName || "Unassigned",
+            updatedAt: chapter.publishDate || "From API",
+            progress: status === "published" ? 100 : 0,
+            pages: chapter.targetPageCount || 0,
+            mangaColor: ["#FF2A7A", "#39FF8A", "#00F0FF", "#FF8C42"][index % 4] || "var(--mf-cyan)",
+          };
+        });
+
         setRegistrations(nonAdminAccounts);
         setOnlineUsers(users);
         setChapters(mappedChapters);
         setSystemSubmissions(subRows);
         setSubmissionReviews(reviewRows);
         setVotes(voteRows);
+        setTasks(taskRows || []);
+        setSketchTasks(sketchTaskRows || []);
+        setSketchPages(sketchPageRows || []);
+        setPlannings(planningRows || []);
+        setProjects(projectsList);
         setManagedUsers(users.map(user => ({
           id: user.id,
           name: user.name,
@@ -1297,7 +1824,7 @@ export function AdminDashboard() {
       });
 
     return () => { cancelled = true; };
-  }, [buildActivities, mapAccountToOnlineUser, mapChapter]);
+  }, [buildActivities, mapAccountToOnlineUser]);
 
   const handleAddRole = useCallback((userId: number, newRole: string) => {
     setManagedUsers(prev => prev.map(u => {
@@ -1335,14 +1862,16 @@ export function AdminDashboard() {
   }, []);
 
   const requestedTab = searchParams.get("tab");
-  const currentTab = requestedTab === "chapters" || requestedTab === "users" || requestedTab === "submissions" ? requestedTab : "overview";
+  const currentTab = requestedTab === "chapters" || requestedTab === "users" || requestedTab === "submissions" || requestedTab === "processes" ? requestedTab : "overview";
   const activeNav = currentTab === "chapters"
     ? "Chapter Monitor"
     : currentTab === "users"
       ? "User Management"
       : currentTab === "submissions"
         ? "All Submissions"
-        : "System Overview";
+        : currentTab === "processes"
+          ? "Process Monitor"
+          : "System Overview";
 
   return (
     <AppLayout role="admin" activeNav={activeNav}>
@@ -1354,7 +1883,8 @@ export function AdminDashboard() {
               width: 8, height: 8, borderRadius: "50%",
               background: activeNav === "Chapter Monitor" ? "var(--mf-magenta)"
                 : activeNav === "User Management" ? "var(--mf-green)"
-                  : "var(--mf-cyan)",
+                  : activeNav === "Process Monitor" ? "var(--mf-cyan)"
+                    : "var(--mf-cyan)",
             }} />
             <span style={{ fontSize: 15, fontWeight: 900, letterSpacing: "-0.01em" }}>{activeNav}</span>
             {activeNav === "User Management" && managedUsers.filter(u => u.roles.length === 0).length > 0 && (
@@ -1395,6 +1925,9 @@ export function AdminDashboard() {
               submissions={systemSubmissions}
               submissionReviews={submissionReviews}
               votes={votes}
+              tasks={tasks}
+              sketchPages={sketchPages}
+              plannings={plannings}
             />
           )}
           {!loading && !error && currentTab === "chapters" && (
@@ -1402,6 +1935,15 @@ export function AdminDashboard() {
           )}
           {!loading && !error && currentTab === "submissions" && (
             <SubmissionsTab chapters={chapters} />
+          )}
+          {!loading && !error && currentTab === "processes" && (
+            <ProcessMonitorTab
+              tasks={tasks}
+              sketchTasks={sketchTasks}
+              sketchPages={sketchPages}
+              plannings={plannings}
+              managedUsers={managedUsers}
+            />
           )}
           {!loading && !error && currentTab === "users" && (
             <UserManagementTab managedUsers={managedUsers} onAddRole={handleAddRole} onRemoveRole={handleRemoveRole} onToggleStatus={handleToggleStatus} />

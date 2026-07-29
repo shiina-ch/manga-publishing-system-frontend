@@ -96,6 +96,7 @@ const roleConfig: Record<LayoutRole, RoleConfig> = {
       { icon: UserPlus, label: "Account Requests", path: "/account-requests", badgeColor: "var(--mf-orange)" },
       { icon: Eye, label: "Chapter Monitor", path: "/admin?tab=chapters" },
       { icon: Users, label: "User Management", path: "/admin?tab=users" },
+      { icon: CheckSquare, label: "Process Monitor", path: "/admin?tab=processes" },
     ],
     channels: ["system-alerts", "admin-logs", "moderation", "announcements"],
     dms: ["Chief Editor Yamamoto", "Director Tanaka", "Support Team"],
