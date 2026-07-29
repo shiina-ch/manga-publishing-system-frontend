@@ -21,7 +21,7 @@ import { tokenStorage } from "../../storage/tokenStorage";
 import { getAccountProfile, type AccountProfile } from "../../services/accountApi";
 import { getAllAccounts, type AdminAccount } from "../../services/adminApi";
 import { Edit3 as EditIcon, Eye as EyeIcon, ListChecks, Plus, BookOpen } from "lucide-react";
-import { getProjects, getProjectById, getProductionPlans, assignMangakaToProject, getProjectsByTantou, updateProjectDetailsByTantou, getProductionPlansByProject, createProductionPlan, createChapter, type ProjectFromApi, type ProductionPlanResponse } from "../../services/projectApi";
+import { getProjects, getProjectById, getProductionPlans, assignMangakaToProject, assignChapterToMangaka, getProjectsByTantou, updateProjectDetailsByTantou, getProductionPlansByProject, createProductionPlan, createChapter, type ProjectFromApi, type ProductionPlanResponse } from "../../services/projectApi";
 import { ProductionPlanDialog } from "./ProductionPlanDialog";
 import { CreateChapterDialog } from "./CreateChapterDialog";
 import { Dialog, DialogContent, DialogTitle } from "../../components/ui/dialog";
@@ -50,6 +50,11 @@ function AssignedProjectsList() {
   const [chaptersForPlan, setChaptersForPlan] = useState<any[]>([]);
   const [loadingChapters, setLoadingChapters] = useState(false);
   const [chaptersError, setChaptersError] = useState<string | null>(null);
+
+  // Chapter Detail Modal & Mangaka List State
+  const [selectedChapterDetail, setSelectedChapterDetail] = useState<any | null>(null);
+  const [mangakaList, setMangakaList] = useState<AdminAccount[]>([]);
+  const [assigningMangaka, setAssigningMangaka] = useState(false);
 
   // Create Chapter Dialog State
   const [showCreateChapterDialog, setShowCreateChapterDialog] = useState(false);
@@ -128,6 +133,23 @@ function AssignedProjectsList() {
     }
   };
 
+  const fetchMangakas = useCallback(async () => {
+    try {
+      const accounts = await getAllAccounts();
+      const mangakas = accounts.filter(acc => 
+        acc.systemRole?.some(role => role.roleName?.toUpperCase() === "MANGAKA") ||
+        acc.requestedRole?.toUpperCase() === "MANGAKA"
+      );
+      setMangakaList(mangakas);
+    } catch {
+      setMangakaList([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchMangakas();
+  }, [fetchMangakas]);
+
   const handleFetchCreatedChapters = async (plan: ProductionPlanResponse) => {
     setSelectedPlanForChapters(plan);
     setLoadingChapters(true);
@@ -145,6 +167,35 @@ function AssignedProjectsList() {
       setChaptersForPlan(plan.chapters || []);
     } finally {
       setLoadingChapters(false);
+    }
+  };
+
+  const handleOpenChapterDetail = (ch: any) => {
+    setSelectedChapterDetail(ch);
+  };
+
+  const handleAssignMangakaToChapter = async (chapterId: number, mangakaIdStr: string) => {
+    if (!mangakaIdStr) return;
+    const mangakaId = Number(mangakaIdStr);
+    setAssigningMangaka(true);
+    try {
+      await assignChapterToMangaka(chapterId, mangakaId);
+      toast.success("Mangaka assigned to chapter successfully!");
+      // Refresh chapters
+      if (selectedPlanForChapters) {
+        await handleFetchCreatedChapters(selectedPlanForChapters);
+      }
+      if (activeProjectForPlans) {
+        await handleOpenPlansPage(activeProjectForPlans);
+      }
+      // Update local chapter detail
+      const selectedMangaka = mangakaList.find(m => m.id === mangakaId);
+      const fullName = selectedMangaka ? `${selectedMangaka.firstName} ${selectedMangaka.lastName}`.trim() : `Mangaka #${mangakaId}`;
+      setSelectedChapterDetail((prev: any) => prev ? { ...prev, assigneeId: mangakaId, assigneeName: fullName } : null);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to assign Mangaka to chapter.");
+    } finally {
+      setAssigningMangaka(false);
     }
   };
   const handleOpenCreateChapterModal = (plan: ProductionPlanResponse) => {
@@ -642,7 +693,22 @@ function AssignedProjectsList() {
               {!loadingChapters && !chaptersError && chaptersForPlan.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {chaptersForPlan.map((ch: any) => (
-                    <div key={ch.id} style={{ background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div
+                      key={ch.id}
+                      onClick={() => handleOpenChapterDetail(ch)}
+                      style={{
+                        background: "var(--mf-bg-base)",
+                        border: "1px solid var(--mf-border)",
+                        borderRadius: 10,
+                        padding: 14,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 6,
+                        cursor: "pointer",
+                        transition: "all 0.15s ease",
+                      }}
+                      className="hover:border-[var(--mf-cyan-border)]"
+                    >
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <span style={{ fontSize: 14, fontWeight: 800, color: "var(--mf-text)" }}>
                           Chapter {ch.chapterNumber}: {ch.title}
@@ -652,6 +718,7 @@ function AssignedProjectsList() {
                         </span>
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12, color: "var(--mf-text-secondary)", marginTop: 4 }}>
+                        <div>Mangaka: <strong style={{ color: ch.assigneeName ? "var(--mf-cyan)" : "var(--mf-text-muted)" }}>{ch.assigneeName || "None"}</strong></div>
                         {ch.targetPageCount != null && <div>Target Pages: <strong>{ch.targetPageCount}</strong></div>}
                         {ch.priority && <div>Priority: <strong>{ch.priority}</strong></div>}
                         {ch.publishDate && <div>Publish Date: <strong>{new Date(ch.publishDate).toLocaleDateString()}</strong></div>}
@@ -664,6 +731,66 @@ function AssignedProjectsList() {
                 </div>
               )}
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Chapter Details & Mangaka Assignment Dialog */}
+        <Dialog open={Boolean(selectedChapterDetail)} onOpenChange={(open) => !open && setSelectedChapterDetail(null)}>
+          <DialogContent className="max-w-md bg-[var(--mf-bg-surface)] text-[var(--mf-text)] border-[var(--mf-border)]">
+            <DialogTitle className="text-lg font-bold text-[var(--mf-text)] border-b border-[var(--mf-border)] pb-3">
+              Chapter Details — Ch.{selectedChapterDetail?.chapterNumber}: {selectedChapterDetail?.title}
+            </DialogTitle>
+            {selectedChapterDetail && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, background: "var(--mf-bg-base)", padding: 12, borderRadius: 10, border: "1px solid var(--mf-border)", fontSize: 13 }}>
+                  <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>STATUS</span> <strong>{selectedChapterDetail.status || selectedChapterDetail.chapterStatus || "BACKLOG"}</strong></div>
+                  <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>PRIORITY</span> <strong>{selectedChapterDetail.priority || "Medium"}</strong></div>
+                  <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>TARGET PAGES</span> <strong>{selectedChapterDetail.targetPageCount ?? "N/A"}</strong></div>
+                  <div>
+                    <span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>MANGAKA</span>
+                    <strong style={{ color: selectedChapterDetail.assigneeName ? "var(--mf-cyan)" : "var(--mf-text-muted)" }}>
+                      {selectedChapterDetail.assigneeName || "None"}
+                    </strong>
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 12, color: "var(--mf-text-secondary)" }}>
+                  {selectedChapterDetail.startDate && <div>Start Date: <strong>{new Date(selectedChapterDetail.startDate).toLocaleDateString()}</strong></div>}
+                  {selectedChapterDetail.endDate && <div>End Date: <strong>{new Date(selectedChapterDetail.endDate).toLocaleDateString()}</strong></div>}
+                  {selectedChapterDetail.deadline && <div>Deadline: <strong>{new Date(selectedChapterDetail.deadline).toLocaleDateString()}</strong></div>}
+                  {selectedChapterDetail.publishDate && <div>Publish Date: <strong>{new Date(selectedChapterDetail.publishDate).toLocaleDateString()}</strong></div>}
+                </div>
+
+                {/* Mangaka Assignment Dropdown */}
+                <div style={{ borderTop: "1px dashed var(--mf-border)", paddingTop: 14 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-cyan)", display: "block", marginBottom: 6 }}>
+                    Assign Responsibility to Mangaka
+                  </label>
+                  <select
+                    disabled={assigningMangaka}
+                    value={selectedChapterDetail.assigneeId || ""}
+                    onChange={(e) => void handleAssignMangakaToChapter(selectedChapterDetail.id, e.target.value)}
+                    style={{ width: "100%", padding: "9px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-cyan-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13, cursor: "pointer" }}
+                  >
+                    <option value="">-- None (No Mangaka Assigned) --</option>
+                    {mangakaList.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.firstName} {m.lastName} ({m.email})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                  <button
+                    onClick={() => setSelectedChapterDetail(null)}
+                    style={{ padding: "8px 16px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
 
