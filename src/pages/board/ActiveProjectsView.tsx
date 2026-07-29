@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, Calendar, CheckCircle, Edit3, FileText, Loader2, Package, RefreshCw, Save, UserPlus, X } from "lucide-react";
+import { AlertCircle, Calendar, CheckCircle, Edit3, FileText, Loader2, Package, Plus, RefreshCw, Save, UserPlus, X } from "lucide-react";
 import { toast } from "react-toastify";
-import type { AdminAccount } from "../../services/adminApi";
+import { tokenStorage } from "../../storage/tokenStorage";
+import { getAllAccounts, type AdminAccount } from "../../services/adminApi";
 import { searchAccountByEmail } from "../../services/accountApi";
 import {
   assignTantouToProject,
+  createProject,
   getProjectById,
   getProjects,
   updateProject,
+  type CreateProjectPayload,
   type ProjectAccountSummary,
   type ProjectFromApi,
   type UpdateProjectPayload,
@@ -152,20 +155,22 @@ function accountName(account?: ProjectAccountSummary | null): string {
 }
 
 function hasAssignedTantou(project: ProjectFromApi): boolean {
-  return positiveInteger(project.tantou?.id) !== null;
+  return positiveInteger(project.tantou?.id) !== null || positiveInteger(project.tantouId) !== null || Boolean(project.ownerName) || Boolean(project.tantouName);
 }
 
 function resolveProjectAssignment(
   project: ProjectFromApi,
   cache: ProjectAssignmentCache,
 ): ResolvedProjectAssignment {
-  const backendTantouId = positiveInteger(project.tantou?.id);
-  if (backendTantouId) {
-    const identity = readableAccountName(project.tantou);
+  const backendTantouId = positiveInteger(project.tantou?.id) || positiveInteger(project.tantouId) || positiveInteger(project.ownerId);
+  const backendTantouName = readableAccountName(project.tantou) || project.tantouName || project.ownerName;
+
+  if (backendTantouId || backendTantouName) {
+    const identity = backendTantouName || (backendTantouId ? `Tantou #${backendTantouId}` : undefined);
     return {
       assigned: true,
       displayText: identity ? `Assigned to ${identity}` : `Assigned to Tantou #${backendTantouId}`,
-      tantouId: backendTantouId,
+      tantouId: backendTantouId ?? undefined,
     };
   }
 
@@ -186,18 +191,15 @@ function backendCachedAssignment(
   project: ProjectFromApi,
   previous?: CachedProjectAssignment,
 ): CachedProjectAssignment | null {
-  const tantouId = positiveInteger(project.tantou?.id);
-  if (!tantouId) return null;
+  const tantouId = positiveInteger(project.tantou?.id) || positiveInteger(project.tantouId) || positiveInteger(project.ownerId);
+  const displayName = readableAccountName(project.tantou) || project.tantouName || project.ownerName || previous?.displayName;
 
-  const tantou = project.tantou;
-  const fullName = `${tantou?.firstName ?? ""} ${tantou?.lastName ?? ""}`.trim();
-  const displayName = fullName || tantou?.name?.trim() || tantou?.username?.trim() || previous?.displayName;
-  const email = tantou?.email?.trim() || previous?.email;
+  if (!tantouId && !displayName) return null;
+
   return {
     projectId: project.id,
-    tantouId,
+    ...(tantouId ? { tantouId } : {}),
     ...(displayName ? { displayName } : {}),
-    ...(email ? { email } : {}),
     assignedAt: previous?.assignedAt ?? new Date().toISOString(),
     source: "backend",
   };
@@ -308,9 +310,9 @@ function ProjectDetailsDialog({ project, assignmentCache, loading, error, saving
     ["Target audience", project.targetAudience || "—"],
     ["Format", project.format || "—"],
     ["Workflow status", project.projectWorkflowStatus || "—"],
-    ["Tantou", assignment?.assigned ? (assignment.displayText?.replace(/^Assigned to /, "") ?? "Tantou Assigned") : "—"],
-    ["Mangaka", accountName(project.mangaka)],
-  ] : [];
+    ["Tantou", assignment?.assigned ? (assignment.displayText?.replace(/^Assigned to /, "") ?? "Tantou Assigned") : (project.ownerName || "—")],
+    ["Mangaka", accountName(project.mangaka) !== "—" ? accountName(project.mangaka) : (project.mangakaName || "—")],
+  ].filter(([_, val]) => Boolean(val) && val !== "—") : [];
 
   const fieldStyle = {
     width: "100%",
@@ -375,8 +377,12 @@ function ProjectDetailsDialog({ project, assignmentCache, loading, error, saving
                 <>
                   <div style={{ marginBottom: 24, paddingBottom: 24, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
                     <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 8, color: "#fff" }}>{project.title || "—"}</div>
-                    <div style={{ fontSize: 14, color: "var(--mf-text-secondary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{project.description || "—"}</div>
-                    <div style={{ display: "inline-flex", marginTop: 14, padding: "6px 12px", borderRadius: 8, background: "rgba(255,140,66,0.1)", border: "1px solid rgba(255,140,66,0.25)", color: "var(--mf-orange)", fontSize: 11, fontWeight: 800 }}>{project.status || "—"}</div>
+                    {project.description && project.description !== "—" && (
+                      <div style={{ fontSize: 14, color: "var(--mf-text-secondary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{project.description}</div>
+                    )}
+                    {project.status && project.status !== "—" && (
+                      <div style={{ display: "inline-flex", marginTop: 14, padding: "6px 12px", borderRadius: 8, background: "rgba(255,140,66,0.1)", border: "1px solid rgba(255,140,66,0.25)", color: "var(--mf-orange)", fontSize: 11, fontWeight: 800 }}>{project.status}</div>
+                    )}
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }}>
                     {rows.map(([label, value]) => (
@@ -527,6 +533,183 @@ function AssignmentDialog({ accounts, loading, accountsError, assignmentError, a
   );
 }
 
+function useTantouAccounts() {
+  const [tantouAccounts, setTantouAccounts] = useState<AdminAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    getAllAccounts()
+      .then(accounts => {
+        if (!active) return;
+        const tantous = accounts.filter(a =>
+          a.systemRole?.some(r => r.roleName === "TANTOU_EDITOR")
+        );
+        setTantouAccounts(tantous);
+      })
+      .catch(() => {
+        if (active) setTantouAccounts([]);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  return { tantouAccounts, loading };
+}
+
+interface CreateProjectDialogProps {
+  creating: boolean;
+  onClose: () => void;
+  onConfirm: (payload: CreateProjectPayload) => Promise<boolean>;
+}
+
+function CreateProjectDialog({ creating, onClose, onConfirm }: CreateProjectDialogProps) {
+  const { tantouAccounts, loading: loadingTantous } = useTantouAccounts();
+  const [title, setTitle] = useState("");
+  const [genre, setGenre] = useState("");
+  const [targetAudience, setTargetAudience] = useState("");
+  const [format, setFormat] = useState("WEEKLY_SHONEN");
+  const [tantouId, setTantouId] = useState<string>("");
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) {
+      setError("Title is required.");
+      return;
+    }
+    setError(null);
+    const success = await onConfirm({
+      title: title.trim(),
+      genre: genre.trim() || undefined,
+      targetAudience: targetAudience.trim() || undefined,
+      format: format.trim() || undefined,
+      tantouId: tantouId ? Number(tantouId) : 0,
+    });
+    if (success) {
+      onClose();
+    }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)", padding: 20 }}>
+      <div style={{ width: "100%", maxWidth: 500, background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 16, overflow: "hidden", boxShadow: "0 20px 40px rgba(0,0,0,0.5)" }}>
+        <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--mf-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <h3 style={{ fontSize: 16, fontWeight: 900, display: "flex", alignItems: "center", gap: 8 }}>
+            <Plus size={18} style={{ color: "var(--mf-cyan)" }} /> Create New Project
+          </h3>
+          <button onClick={onClose} disabled={creating} style={{ background: "transparent", border: "none", color: "var(--mf-text-muted)", cursor: creating ? "not-allowed" : "pointer" }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 6, letterSpacing: "0.05em" }}>TITLE *</label>
+            <input
+              type="text"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              disabled={creating}
+              placeholder="e.g. Solo Leveling"
+              style={fieldStyle}
+              required
+            />
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 6, letterSpacing: "0.05em" }}>GENRE</label>
+            <input
+              type="text"
+              value={genre}
+              onChange={e => setGenre(e.target.value)}
+              disabled={creating}
+              placeholder="e.g. Action, Fantasy"
+              style={fieldStyle}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 6, letterSpacing: "0.05em" }}>TARGET AUDIENCE</label>
+            <input
+              type="text"
+              value={targetAudience}
+              onChange={e => setTargetAudience(e.target.value)}
+              disabled={creating}
+              placeholder="e.g. Teens, Young Adults"
+              style={fieldStyle}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 6, letterSpacing: "0.05em" }}>FORMAT</label>
+            <select
+              value={format}
+              onChange={e => setFormat(e.target.value)}
+              disabled={creating}
+              style={fieldStyle}
+            >
+              <option value="WEEKLY_SHONEN">WEEKLY_SHONEN</option>
+              <option value="MONTHLY_SEINEN">MONTHLY_SEINEN</option>
+              <option value="WEBTOON">WEBTOON</option>
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 6, letterSpacing: "0.05em" }}>ASSIGN TANTOU EDITOR</label>
+            <select
+              value={tantouId}
+              onChange={e => setTantouId(e.target.value)}
+              disabled={creating || loadingTantous}
+              style={fieldStyle}
+            >
+              <option value="">{loadingTantous ? "Loading Tantou editors..." : "-- Select Tantou --"}</option>
+              {tantouAccounts.map(account => {
+                const name = [account.firstName, account.lastName].filter(Boolean).join(" ") || account.username || account.email;
+                return (
+                  <option key={account.id} value={account.id}>
+                    {name} ({account.email})
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
+          {error && (
+            <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(255,42,122,0.1)", border: "1px solid rgba(255,42,122,0.3)", color: "var(--mf-magenta)", fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
+              <AlertCircle size={14} /> {error}
+            </div>
+          )}
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8, paddingTop: 16, borderTop: "1px solid var(--mf-border)" }}>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={creating}
+              style={{ padding: "8px 16px", background: "transparent", color: "var(--mf-text)", border: "1px solid var(--mf-border)", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: creating ? "not-allowed" : "pointer" }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={creating}
+              style={{ ...actionButtonStyle, background: "var(--mf-cyan)", color: "#000", cursor: creating ? "not-allowed" : "pointer", opacity: creating ? 0.7 : 1 }}
+            >
+              {creating ? <Loader2 size={13} className="mf-spin" /> : <Plus size={13} />}
+              {creating ? "Creating…" : "Create Project"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export function ActiveProjectsView() {
   const [projects, setProjects] = useState<ProjectFromApi[]>([]);
   const [loading, setLoading] = useState(true);
@@ -542,11 +725,34 @@ export function ActiveProjectsView() {
   const [accountsError, setAccountsError] = useState<string | null>(null);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [assigning, setAssigning] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [creatingProject, setCreatingProject] = useState(false);
   const [assignmentCache, setAssignmentCache] = useState<ProjectAssignmentCache>(() => readAssignmentCache());
   const mounted = useRef(true);
   const listRequest = useRef(0);
   const detailRequest = useRef(0);
   const accountRequest = useRef(0);
+
+  const handleCreateProject = async (payload: CreateProjectPayload): Promise<boolean> => {
+    const loggedInAccount = tokenStorage.getAccount();
+    if (!loggedInAccount?.id) {
+      toast.error("User session not found. Please log in again.");
+      return false;
+    }
+
+    setCreatingProject(true);
+    try {
+      await createProject(payload, loggedInAccount.id);
+      toast.success("Project created successfully.");
+      await loadProjects();
+      return true;
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, "Failed to create project."));
+      return false;
+    } finally {
+      if (mounted.current) setCreatingProject(false);
+    }
+  };
 
   const persistCachedAssignment = useCallback((assignment: CachedProjectAssignment) => {
     saveCachedAssignment(assignment);
@@ -763,7 +969,21 @@ export function ActiveProjectsView() {
   return (
     <div style={{ padding: "24px 28px", overflowY: "auto", flex: 1 }}>
       <style>{`@keyframes mf-project-spin { to { transform: rotate(360deg); } } .mf-spin { animation: mf-project-spin 1s linear infinite; }`}</style>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 22, flexWrap: "wrap" }}><div><h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em" }}>Active Projects</h2><p style={{ fontSize: 13, color: "var(--mf-text-muted)", marginTop: 3 }}>{loading ? "Loading…" : `${projects.length} project${projects.length === 1 ? "" : "s"}`}</p></div><button onClick={() => void loadProjects()} disabled={loading} style={{ ...actionButtonStyle, background: "var(--mf-bg-surface)", color: "var(--mf-text)", border: "1px solid var(--mf-border)", cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.65 : 1 }}><RefreshCw size={13} /> Refresh</button></div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 22, flexWrap: "wrap" }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em" }}>Active Projects</h2>
+          <p style={{ fontSize: 13, color: "var(--mf-text-muted)", marginTop: 3 }}>{loading ? "Loading…" : `${projects.length} project${projects.length === 1 ? "" : "s"}`}</p>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            onClick={() => setIsCreateOpen(true)}
+            style={{ ...actionButtonStyle, background: "var(--mf-cyan)", color: "#000", cursor: "pointer" }}
+          >
+            <Plus size={14} /> Create Project
+          </button>
+          <button onClick={() => void loadProjects()} disabled={loading} style={{ ...actionButtonStyle, background: "var(--mf-bg-surface)", color: "var(--mf-text)", border: "1px solid var(--mf-border)", cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.65 : 1 }}><RefreshCw size={13} /> Refresh</button>
+        </div>
+      </div>
       {loading && <div style={{ padding: "60px 0", display: "flex", alignItems: "center", justifyContent: "center", gap: 9, color: "var(--mf-text-muted)" }}><Loader2 size={20} className="mf-spin" /> Loading projects…</div>}
       {!loading && error && <div style={{ padding: 24, borderRadius: 12, background: "rgba(255,42,122,0.08)", border: "1px solid rgba(255,42,122,0.25)", color: "var(--mf-magenta)", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}><AlertCircle size={24} /><span>{error}</span><button onClick={() => void loadProjects()} style={{ ...actionButtonStyle, background: "var(--mf-bg-surface)", color: "var(--mf-text)", border: "1px solid var(--mf-border)", cursor: "pointer" }}><RefreshCw size={12} /> Retry</button></div>}
       {!loading && !error && projects.length === 0 && <div style={{ padding: "60px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, color: "var(--mf-text-muted)", textAlign: "center" }}><Package size={40} style={{ opacity: 0.35 }} /><div style={{ fontSize: 14, fontWeight: 700 }}>No active projects were returned by the backend.</div><div style={{ fontSize: 12 }}>If a submission was approved after the final vote, this indicates a backend or data issue.</div></div>}
@@ -784,7 +1004,7 @@ export function ActiveProjectsView() {
                 }}
                 style={{ padding: "16px 20px", borderRadius: 12, background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", cursor: "pointer", display: "grid", gridTemplateColumns: "260px 1fr 100px 140px", alignItems: "center", gap: 20, transition: "border-color 0.15s, background 0.15s" }}
                 onMouseEnter={event => { event.currentTarget.style.borderColor = color; event.currentTarget.style.background = "var(--mf-bg-elevated)"; }}
-                onMouseLeave={event => { event.currentTarget.style.borderColor = "var(--mf-border)"; event.currentTarget.style.background = "var(--mf-bg-surface)"; }}
+                onMouseLeave={event => { event.currentTarget.style.borderColor = "var(--mf-border)"; event.currentTarget.style.background = "var(--mf-surface)"; }}
               >
                 {/* Column 1: Title & Date */}
                 <div style={{ minWidth: 0 }}>
@@ -841,6 +1061,7 @@ export function ActiveProjectsView() {
       )}
       {selectedProjectId !== null && <ProjectDetailsDialog key={`${selectedProjectId}-${details?.id ?? "loading"}`} project={details} assignmentCache={assignmentCache} loading={detailsLoading} error={detailsError} saving={saving} onClose={() => { if (!saving) { detailRequest.current += 1; setSelectedProjectId(null); setDetails(null); } }} onRetry={() => void loadDetails(selectedProjectId)} onSave={saveProject} />}
       {assignProjectId !== null && <AssignmentDialog key={assignProjectId} accounts={accounts} loading={accountsLoading} accountsError={accountsError} assignmentError={assignmentError} assigning={assigning} onClose={() => { if (!assigning) { accountRequest.current += 1; setAssignProjectId(null); setAssignmentError(null); } }} onConfirm={assign} />}
+      {isCreateOpen && <CreateProjectDialog creating={creatingProject} onClose={() => setIsCreateOpen(false)} onConfirm={handleCreateProject} />}
     </div>
   );
 }

@@ -61,7 +61,7 @@ const roleConfig: Record<LayoutRole, RoleConfig> = {
     nav: [
       { icon: Inbox, label: "New Proposals", path: "/board/proposals" },
       { icon: CheckSquare, label: "Pending Approvals", path: "/board/voting" },
-      { icon: Star, label: "Active Projects", path: "/board?tab=active-projects" },
+      { icon: Star, label: "Projects", path: "/board?tab=active-projects" },
       { icon: FileText, label: "Publishing Calendar", path: "/board?tab=publishing-calendar" },
       { icon: BarChart3, label: "Budget Overview", path: "/board?tab=budget-overview" },
     ],

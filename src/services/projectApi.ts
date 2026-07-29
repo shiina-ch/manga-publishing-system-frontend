@@ -46,8 +46,27 @@ export interface ProjectFromApi {
   productionPlan?: ProductionPlan | null;
   tantou?: ProjectAccountSummary | null;
   mangaka?: ProjectAccountSummary | null;
+  tantouId?: number | null;
+  tantouName?: string | null;
+  mangakaId?: number | null;
+  mangakaName?: string | null;
   budget?: number | null;
   allocated?: number | null;
+}
+
+export interface CreateProjectPayload {
+  title: string;
+  genre?: string;
+  targetAudience?: string;
+  format?: string;
+  tantouId?: number | null;
+}
+
+export function createProject(payload: CreateProjectPayload, editorId: number): Promise<ProjectFromApi> {
+  return apiRequest<ProjectFromApi>(`/workflow/projects?editorId=${editorId}`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export interface UpdateProjectPayload {

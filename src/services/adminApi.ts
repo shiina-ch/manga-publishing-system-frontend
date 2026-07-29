@@ -171,7 +171,7 @@ export function logout(): void {
 }
 
 export async function getAllAccounts(): Promise<AdminAccount[]> {
-  const res = await fetch(`${API_BASE_URL}/admin/accounts`, {
+  const res = await fetch(`${API_BASE_URL}/accounts`, {
     method: "GET",
     headers: getAuthHeaders(),
   });
