@@ -20,10 +20,686 @@ import {
 import { tokenStorage } from "../../storage/tokenStorage";
 import { getAccountProfile, type AccountProfile } from "../../services/accountApi";
 import { getAllAccounts, type AdminAccount } from "../../services/adminApi";
-import { getProjects, getProjectById, getProductionPlans, assignMangakaToProject, type ProjectFromApi } from "../../services/projectApi";
+import { Edit3 as EditIcon, Eye as EyeIcon, ListChecks, Plus } from "lucide-react";
+import { getProjects, getProjectById, getProductionPlans, assignMangakaToProject, getProjectsByTantou, updateProjectDetailsByTantou, getProductionPlansByProject, createProductionPlan, type ProjectFromApi, type ProductionPlanResponse } from "../../services/projectApi";
 import { ProductionPlanDialog } from "./ProductionPlanDialog";
 import { CreateChapterDialog } from "./CreateChapterDialog";
 import { Dialog, DialogContent, DialogTitle } from "../../components/ui/dialog";
+
+function AssignedProjectsList() {
+  const [projects, setProjects] = useState<ProjectFromApi[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Edit Modal State
+  const [editingProject, setEditingProject] = useState<ProjectFromApi | null>(null);
+  const [editGenre, setEditGenre] = useState("");
+  const [editTargetAudience, setEditTargetAudience] = useState("");
+  const [editFormat, setEditFormat] = useState("");
+  const [updating, setUpdating] = useState(false);
+
+  // Detail Modal & Production Plans State
+  const [detailProject, setDetailProject] = useState<ProjectFromApi | null>(null);
+  const [showPlansView, setShowPlansView] = useState(false);
+  const [productionPlans, setProductionPlans] = useState<ProductionPlanResponse[]>([]);
+  const [loadingPlans, setLoadingPlans] = useState(false);
+  const [plansError, setPlansError] = useState<string | null>(null);
+
+  // New Production Plan Dialog State
+  const [showCreatePlanDialog, setShowCreatePlanDialog] = useState(false);
+  const [planTitle, setPlanTitle] = useState("");
+  const [planStartDate, setPlanStartDate] = useState("");
+  const [planEndDate, setPlanEndDate] = useState("");
+  const [planDeadlineDate, setPlanDeadlineDate] = useState("");
+  const [planPublishDate, setPlanPublishDate] = useState("");
+  const [creatingPlan, setCreatingPlan] = useState(false);
+
+  const fetchAssignedProjects = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const account = tokenStorage.getAccount();
+      const tantouId = account?.id;
+      if (!tantouId) {
+        setError("Tantou ID not found in localStorage account.");
+        setProjects([]);
+        return;
+      }
+      const data = await getProjectsByTantou(tantouId);
+      setProjects(data);
+    } catch (err: any) {
+      setError(err?.message || "Failed to fetch assigned projects.");
+      setProjects([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchAssignedProjects();
+  }, [fetchAssignedProjects]);
+
+  const handleOpenEdit = (e: React.MouseEvent, project: ProjectFromApi) => {
+    e.stopPropagation();
+    setEditingProject(project);
+    setEditGenre(project.genre || "");
+    setEditTargetAudience(project.targetAudience || "");
+    setEditFormat(project.format || "WEBTOON");
+  };
+
+  const handleOpenDetail = (project: ProjectFromApi) => {
+    setDetailProject(project);
+    setShowPlansView(false);
+    setProductionPlans([]);
+    setPlansError(null);
+  };
+
+  const handleFetchPlans = async (projectId: number) => {
+    setShowPlansView(true);
+    setLoadingPlans(true);
+    setPlansError(null);
+    try {
+      const plans = await getProductionPlansByProject(projectId);
+      setProductionPlans(plans);
+    } catch (err: any) {
+      setPlansError(err?.message || "Failed to fetch production plans for this project.");
+      setProductionPlans([]);
+    } finally {
+      setLoadingPlans(false);
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingProject) return;
+    const account = tokenStorage.getAccount();
+    const tantouId = account?.id;
+    if (!tantouId) {
+      toast.error("Tantou account ID missing.");
+      return;
+    }
+
+    setUpdating(true);
+    try {
+      await updateProjectDetailsByTantou(editingProject.id, tantouId, {
+        genre: editGenre,
+        targetAudience: editTargetAudience,
+        format: editFormat,
+      });
+      toast.success("Project details updated successfully!");
+      setEditingProject(null);
+      await fetchAssignedProjects();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update project details");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  // Active Project for Dedicated Full-Page View of Production Plans
+  const [activeProjectForPlans, setActiveProjectForPlans] = useState<ProjectFromApi | null>(null);
+
+  const handleOpenPlansPage = async (project: ProjectFromApi) => {
+    setActiveProjectForPlans(project);
+    setLoadingPlans(true);
+    setPlansError(null);
+    try {
+      const plans = await getProductionPlansByProject(project.id);
+      setProductionPlans(plans);
+    } catch (err: any) {
+      setPlansError(err?.message || "Failed to fetch production plans for this project.");
+      setProductionPlans([]);
+    } finally {
+      setLoadingPlans(false);
+    }
+  };
+
+  const handleCreatePlan = async () => {
+    if (!activeProjectForPlans) return;
+    if (!planTitle.trim()) {
+      toast.error("Plan title is required.");
+      return;
+    }
+
+    setCreatingPlan(true);
+    try {
+      await createProductionPlan(activeProjectForPlans.id, {
+        title: planTitle,
+        startDate: planStartDate || undefined,
+        endDate: planEndDate || undefined,
+        deadlineDate: planDeadlineDate || undefined,
+        publishDate: planPublishDate || undefined,
+      });
+      toast.success("Production plan created successfully!");
+      setShowCreatePlanDialog(false);
+      setPlanTitle("");
+      setPlanStartDate("");
+      setPlanEndDate("");
+      setPlanDeadlineDate("");
+      setPlanPublishDate("");
+      await handleOpenPlansPage(activeProjectForPlans);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to create production plan.");
+    } finally {
+      setCreatingPlan(false);
+    }
+  };
+
+  // Dedicated Production Plans Full-Screen Dynamic Page
+  if (activeProjectForPlans) {
+    return (
+      <div style={{ flex: 1, overflowY: "auto", padding: 24, display: "flex", flexDirection: "column", gap: 20 }} className="editor-minimal-scrollbar">
+        {/* Dynamic Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--mf-border)", paddingBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <button
+              onClick={() => setActiveProjectForPlans(null)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "8px 14px",
+                background: "var(--mf-bg-surface)",
+                border: "1px solid var(--mf-border)",
+                borderRadius: 8,
+                color: "var(--mf-text)",
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              ← Back to Projects
+            </button>
+            <div>
+              <h2 style={{ fontSize: 20, fontWeight: 900, margin: 0, color: "var(--mf-text)" }}>
+                Production Plans — {activeProjectForPlans.title || `Project #${activeProjectForPlans.id}`}
+              </h2>
+              <p style={{ fontSize: 12, color: "var(--mf-text-muted)", margin: "4px 0 0" }}>
+                Dedicated production plan timeline and chapter workflow breakdown
+              </p>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <button
+              onClick={() => setShowCreatePlanDialog(true)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "8px 14px",
+                background: "var(--mf-cyan)",
+                border: "none",
+                borderRadius: 8,
+                color: "#000",
+                fontSize: 12,
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              <Plus size={15} /> New Plan
+            </button>
+            <button
+              onClick={() => void handleOpenPlansPage(activeProjectForPlans)}
+              disabled={loadingPlans}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text-secondary)", fontSize: 12, fontWeight: 800, cursor: loadingPlans ? "default" : "pointer", opacity: loadingPlans ? 0.65 : 1 }}
+            >
+              <RefreshCw size={13} /> Refresh Plans
+            </button>
+          </div>
+        </div>
+
+        {/* Loading state */}
+        {loadingPlans && (
+          <div style={{ padding: 60, textAlign: "center", color: "var(--mf-text-muted)", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+            <Loader2 size={20} style={{ animation: "editor-spin 1s linear infinite" }} />
+            Loading project production plans...
+          </div>
+        )}
+
+        {/* Error state */}
+        {!loadingPlans && plansError && (
+          <div style={{ padding: 24, background: "rgba(255,42,122,0.1)", border: "1px solid rgba(255,42,122,0.3)", borderRadius: 12, color: "var(--mf-red)", display: "flex", alignItems: "center", gap: 10 }}>
+            <AlertTriangle size={20} />
+            <span style={{ fontSize: 14, fontWeight: 700 }}>{plansError}</span>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!loadingPlans && !plansError && productionPlans.length === 0 && (
+          <div style={{ padding: 60, textAlign: "center", color: "var(--mf-text-muted)", background: "var(--mf-bg-surface)", borderRadius: 12, border: "1px dashed var(--mf-border)" }}>
+            <Inbox size={40} style={{ opacity: 0.4, marginBottom: 12 }} />
+            <p style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>No production plans found for this project.</p>
+          </div>
+        )}
+
+        {/* Production Plans Content Grid */}
+        {!loadingPlans && !plansError && productionPlans.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            {productionPlans.map((plan) => (
+              <div key={plan.id} style={{ background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 14, padding: 20, display: "flex", flexDirection: "column", gap: 14, boxShadow: "0 4px 16px rgba(0,0,0,0.2)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--mf-border)", paddingBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: "var(--mf-cyan)" }}>Production Plan #{plan.id}</span>
+                  </div>
+                  {plan.approvalStatus && (
+                    <span style={{ fontSize: 11, fontWeight: 800, padding: "4px 10px", background: "var(--mf-cyan-dim)", color: "var(--mf-cyan)", borderRadius: 6, border: "1px solid var(--mf-cyan-border)" }}>
+                      {plan.approvalStatus}
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, background: "var(--mf-bg-base)", padding: 14, borderRadius: 10, border: "1px solid var(--mf-border)" }}>
+                  {plan.priority && <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>PRIORITY</span> <strong style={{ fontSize: 13 }}>{plan.priority}</strong></div>}
+                  {plan.budget != null && <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>BUDGET</span> <strong style={{ fontSize: 13 }}>${plan.budget}</strong></div>}
+                  {plan.startDate && <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>START DATE</span> <strong style={{ fontSize: 13 }}>{new Date(plan.startDate).toLocaleString()}</strong></div>}
+                  {plan.endDate && <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>END DATE</span> <strong style={{ fontSize: 13 }}>{new Date(plan.endDate).toLocaleString()}</strong></div>}
+                  {plan.deadline && <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>DEADLINE</span> <strong style={{ fontSize: 13 }}>{new Date(plan.deadline).toLocaleString()}</strong></div>}
+                  {plan.risk && <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>RISK ASSESSMENT</span> <strong style={{ fontSize: 13 }}>{plan.risk}</strong></div>}
+                </div>
+
+                {plan.milestones && (
+                  <div style={{ fontSize: 13, background: "var(--mf-bg-base)", padding: 12, borderRadius: 8 }}>
+                    <strong style={{ color: "var(--mf-cyan)", display: "block", marginBottom: 4, fontSize: 11 }}>MILESTONES</strong>
+                    {plan.milestones}
+                  </div>
+                )}
+                {plan.schedule && (
+                  <div style={{ fontSize: 13, background: "var(--mf-bg-base)", padding: 12, borderRadius: 8 }}>
+                    <strong style={{ color: "var(--mf-cyan)", display: "block", marginBottom: 4, fontSize: 11 }}>SCHEDULE</strong>
+                    {plan.schedule}
+                  </div>
+                )}
+                {plan.chapterTimeline && (
+                  <div style={{ fontSize: 13, background: "var(--mf-bg-base)", padding: 12, borderRadius: 8 }}>
+                    <strong style={{ color: "var(--mf-cyan)", display: "block", marginBottom: 4, fontSize: 11 }}>CHAPTER TIMELINE</strong>
+                    {plan.chapterTimeline}
+                  </div>
+                )}
+                {plan.resources && (
+                  <div style={{ fontSize: 13, background: "var(--mf-bg-base)", padding: 12, borderRadius: 8 }}>
+                    <strong style={{ color: "var(--mf-cyan)", display: "block", marginBottom: 4, fontSize: 11 }}>RESOURCES</strong>
+                    {plan.resources}
+                  </div>
+                )}
+                {plan.assistantAllocation && (
+                  <div style={{ fontSize: 13, background: "var(--mf-bg-base)", padding: 12, borderRadius: 8 }}>
+                    <strong style={{ color: "var(--mf-cyan)", display: "block", marginBottom: 4, fontSize: 11 }}>ASSISTANT ALLOCATION</strong>
+                    {plan.assistantAllocation}
+                  </div>
+                )}
+
+                {plan.chapters && plan.chapters.length > 0 && (
+                  <div style={{ marginTop: 8, paddingTop: 10, borderTop: "1px dashed var(--mf-border)" }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: "var(--mf-cyan)", marginBottom: 8 }}>CHAPTER WORKFLOW ({plan.chapters.length})</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8 }}>
+                      {plan.chapters.map(c => (
+                        <div key={c.id} style={{ fontSize: 12, background: "var(--mf-bg-base)", padding: "10px 12px", borderRadius: 8, border: "1px solid var(--mf-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div>
+                            <span style={{ fontWeight: 800, display: "block", color: "var(--mf-text)" }}>Ch.{c.chapterNumber}: {c.title}</span>
+                          </div>
+                          <span style={{ color: "var(--mf-cyan)", fontWeight: 800, fontSize: 11, background: "var(--mf-cyan-dim)", padding: "2px 8px", borderRadius: 4 }}>
+                            {c.status || "ACTIVE"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Create Production Plan Dialog */}
+        <Dialog open={showCreatePlanDialog} onOpenChange={(open) => !open && setShowCreatePlanDialog(false)}>
+          <DialogContent className="max-w-md bg-[var(--mf-bg-surface)] text-[var(--mf-text)] border-[var(--mf-border)]">
+            <DialogTitle className="text-lg font-bold text-[var(--mf-text)]">
+              Create Production Plan
+            </DialogTitle>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Plan Title *</label>
+                <input
+                  type="text"
+                  value={planTitle}
+                  onChange={(e) => setPlanTitle(e.target.value)}
+                  placeholder="e.g. Production Plan 2026"
+                  style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13 }}
+                />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Start Date</label>
+                  <input
+                    type="date"
+                    value={planStartDate}
+                    onChange={(e) => setPlanStartDate(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-cyan-border)", borderRadius: 8, color: "#fff", colorScheme: "dark", fontSize: 13 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>End Date</label>
+                  <input
+                    type="date"
+                    value={planEndDate}
+                    onChange={(e) => setPlanEndDate(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-cyan-border)", borderRadius: 8, color: "#fff", colorScheme: "dark", fontSize: 13 }}
+                  />
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Deadline Date</label>
+                  <input
+                    type="date"
+                    value={planDeadlineDate}
+                    onChange={(e) => setPlanDeadlineDate(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-cyan-border)", borderRadius: 8, color: "#fff", colorScheme: "dark", fontSize: 13 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Publish Date</label>
+                  <input
+                    type="date"
+                    value={planPublishDate}
+                    onChange={(e) => setPlanPublishDate(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-cyan-border)", borderRadius: 8, color: "#fff", colorScheme: "dark", fontSize: 13 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 10 }}>
+                <button
+                  onClick={() => setShowCreatePlanDialog(false)}
+                  disabled={creatingPlan}
+                  style={{ padding: "8px 16px", background: "transparent", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text-muted)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => void handleCreatePlan()}
+                  disabled={creatingPlan}
+                  style={{ padding: "8px 16px", background: "var(--mf-cyan)", border: "none", borderRadius: 8, color: "#000", fontSize: 12, fontWeight: 800, cursor: creatingPlan ? "default" : "pointer", opacity: creatingPlan ? 0.7 : 1 }}
+                >
+                  {creatingPlan ? "Creating..." : "Create Plan"}
+                </button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: 24, display: "flex", flexDirection: "column", gap: 16 }} className="editor-minimal-scrollbar">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <h2 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: "var(--mf-text)" }}>Assigned Projects</h2>
+          <p style={{ fontSize: 12, color: "var(--mf-text-muted)", margin: "4px 0 0" }}>Projects currently assigned to you as Tantou editor</p>
+        </div>
+        <button
+          onClick={() => void fetchAssignedProjects()}
+          disabled={loading}
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text-secondary)", fontSize: 12, fontWeight: 800, cursor: loading ? "default" : "pointer", opacity: loading ? 0.65 : 1 }}
+        >
+          <RefreshCw size={13} /> Refresh
+        </button>
+      </div>
+
+      {loading && (
+        <div style={{ padding: 40, textAlign: "center", color: "var(--mf-text-muted)", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+          <Loader2 size={18} style={{ animation: "editor-spin 1s linear infinite" }} />
+          Loading assigned projects...
+        </div>
+      )}
+
+      {!loading && error && (
+        <div style={{ padding: 24, background: "rgba(255,42,122,0.1)", border: "1px solid rgba(255,42,122,0.3)", borderRadius: 12, color: "var(--mf-red)", display: "flex", alignItems: "center", gap: 10 }}>
+          <AlertTriangle size={18} />
+          <span style={{ fontSize: 13, fontWeight: 700 }}>{error}</span>
+        </div>
+      )}
+
+      {!loading && !error && projects.length === 0 && (
+        <div style={{ padding: 40, textAlign: "center", color: "var(--mf-text-muted)", background: "var(--mf-bg-surface)", borderRadius: 12, border: "1px dashed var(--mf-border)" }}>
+          <Inbox size={36} style={{ opacity: 0.4, marginBottom: 8 }} />
+          <p style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>No projects assigned to you yet.</p>
+        </div>
+      )}
+
+      {!loading && !error && projects.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
+          {projects.map((project) => {
+            const renderField = (label: string, value: any) => {
+              if (value === null || value === undefined || value === "") return null;
+              let displayValue = String(value);
+              if (typeof value === "string" && !isNaN(Date.parse(value)) && (label.toLowerCase().includes("date") || label.toLowerCase().includes("at"))) {
+                displayValue = new Date(value).toLocaleString();
+              }
+              return (
+                <div key={label} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "4px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                  <span style={{ color: "var(--mf-text-muted)", fontWeight: 600 }}>{label}:</span>
+                  <span style={{ color: "var(--mf-text)", fontWeight: 700, textAlign: "right" }}>{displayValue}</span>
+                </div>
+              );
+            };
+
+            return (
+              <div
+                key={project.id}
+                onClick={() => handleOpenDetail(project)}
+                style={{
+                  background: "var(--mf-bg-surface)",
+                  border: "1px solid var(--mf-border)",
+                  borderRadius: 12,
+                  padding: 16,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                  cursor: "pointer",
+                  transition: "border-color 0.2s, transform 0.15s",
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = "var(--mf-cyan)";
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = "var(--mf-border)";
+                  e.currentTarget.style.transform = "none";
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "1px solid var(--mf-border)", paddingBottom: 10 }}>
+                  <div>
+                    <span style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-cyan)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Project #{project.id}</span>
+                    <h3 style={{ margin: "2px 0 0", fontSize: 16, fontWeight: 800, color: "var(--mf-text)" }}>{project.title || `Project #${project.id}`}</h3>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {project.projectWorkflowStatus && (
+                      <span style={{ padding: "3px 8px", background: "var(--mf-cyan-dim)", color: "var(--mf-cyan)", borderRadius: 6, fontSize: 10, fontWeight: 800, border: "1px solid var(--mf-cyan-border)" }}>
+                        {project.projectWorkflowStatus}
+                      </span>
+                    )}
+                    <button
+                      onClick={(e) => handleOpenEdit(e, project)}
+                      title="Edit project details"
+                      style={{
+                        background: "rgba(0,210,255,0.1)",
+                        border: "1px solid rgba(0,210,255,0.3)",
+                        borderRadius: 6,
+                        padding: "4px 8px",
+                        color: "var(--mf-cyan)",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 4,
+                        fontSize: 11,
+                        fontWeight: 700,
+                      }}
+                    >
+                      <EditIcon size={12} /> Edit
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  {renderField("Format", project.format)}
+                  {renderField("Genre", project.genre)}
+                  {renderField("Target Audience", project.targetAudience)}
+                  {renderField("Current Phase", project.currentPhase)}
+                  {renderField("Status", project.status)}
+                  {renderField("Tantou Editor", project.tantouName)}
+                  {renderField("Mangaka", project.mangakaName)}
+                  {renderField("Owner", project.ownerName)}
+                  {renderField("Start Date", project.startDate)}
+                  {renderField("Expected End Date", project.expectedEndDate)}
+                  {renderField("Created At", project.createdAt)}
+                  {renderField("Description", project.description)}
+                </div>
+
+                <div style={{ marginTop: 4, paddingTop: 8, borderTop: "1px solid var(--mf-border)", display: "flex", justifyContent: "flex-end", alignItems: "center" }}>
+                  <span style={{ fontSize: 11, color: "var(--mf-cyan)", fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                    <EyeIcon size={12} /> Click to view details
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Project Details Modal */}
+      <Dialog open={Boolean(detailProject)} onOpenChange={(open) => !open && setDetailProject(null)}>
+        <DialogContent className="max-w-2xl bg-[var(--mf-bg-surface)] text-[var(--mf-text)] border-[var(--mf-border)] max-h-[85vh] overflow-y-auto">
+          <DialogTitle className="text-xl font-bold text-[var(--mf-text)] flex items-center justify-between border-b border-[var(--mf-border)] pb-3">
+            <span>Project Details: {detailProject?.title || `Project`}</span>
+          </DialogTitle>
+
+          {detailProject && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 12 }}>
+              {/* Header Info */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--mf-bg-base)", padding: 12, borderRadius: 8, border: "1px solid var(--mf-border)" }}>
+                <div>
+                  <div style={{ fontSize: 16, fontWeight: 800 }}>{detailProject.title}</div>
+                </div>
+                <button
+                  onClick={() => {
+                    const prj = detailProject;
+                    setDetailProject(null);
+                    void handleOpenPlansPage(prj);
+                  }}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "8px 14px",
+                    background: "var(--mf-cyan)",
+                    border: "none",
+                    borderRadius: 8,
+                    color: "#000",
+                    fontSize: 12,
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                >
+                  <ListChecks size={15} /> Open Production Plans Page
+                </button>
+              </div>
+
+              {/* Detail fields list */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, background: "var(--mf-bg-base)", padding: 16, borderRadius: 8, border: "1px solid var(--mf-border)" }}>
+                <h4 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 800, color: "var(--mf-cyan)" }}>Project Specifications</h4>
+                {[
+                  ["Title", detailProject.title],
+                  ["Format", detailProject.format],
+                  ["Genre", detailProject.genre],
+                  ["Target Audience", detailProject.targetAudience],
+                  ["Current Phase", detailProject.currentPhase],
+                  ["Workflow Status", detailProject.projectWorkflowStatus],
+                  ["Status", detailProject.status],
+                  ["Tantou Editor", detailProject.tantouName],
+                  ["Mangaka", detailProject.mangakaName],
+                  ["Owner", detailProject.ownerName],
+                  ["Start Date", detailProject.startDate ? new Date(detailProject.startDate).toLocaleString() : null],
+                  ["Expected End Date", detailProject.expectedEndDate ? new Date(detailProject.expectedEndDate).toLocaleString() : null],
+                  ["Created At", detailProject.createdAt ? new Date(detailProject.createdAt).toLocaleString() : null],
+                  ["Description", detailProject.description],
+                ].map(([label, value]) => {
+                  if (value === null || value === undefined || value === "") return null;
+                  return (
+                    <div key={String(label)} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                      <span style={{ color: "var(--mf-text-muted)", fontWeight: 600 }}>{label}:</span>
+                      <span style={{ color: "var(--mf-text)", fontWeight: 700, textAlign: "right" }}>{String(value)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Details Dialog */}
+      <Dialog open={Boolean(editingProject)} onOpenChange={(open) => !open && setEditingProject(null)}>
+        <DialogContent className="max-w-md bg-[var(--mf-bg-surface)] text-[var(--mf-text)] border-[var(--mf-border)]">
+          <DialogTitle className="text-lg font-bold text-[var(--mf-text)]">
+            Update Project Details ({editingProject?.title || `#${editingProject?.id}`})
+          </DialogTitle>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 14 }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Genre</label>
+              <input
+                type="text"
+                value={editGenre}
+                onChange={(e) => setEditGenre(e.target.value)}
+                placeholder="e.g. comedy, action"
+                style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13 }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Target Audience</label>
+              <input
+                type="text"
+                value={editTargetAudience}
+                onChange={(e) => setEditTargetAudience(e.target.value)}
+                placeholder="e.g. kids, shonen, seinen"
+                style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13 }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Format</label>
+              <select
+                value={editFormat}
+                onChange={(e) => setEditFormat(e.target.value)}
+                style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13 }}
+              >
+                <option value="WEBTOON">WEBTOON</option>
+                <option value="WEEKLY_SHONEN">WEEKLY_SHONEN</option>
+                <option value="MONTHLY_SEINEN">MONTHLY_SEINEN</option>
+              </select>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 10 }}>
+              <button
+                onClick={() => setEditingProject(null)}
+                disabled={updating}
+                style={{ padding: "8px 16px", background: "transparent", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text-muted)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void handleSaveEdit()}
+                disabled={updating}
+                style={{ padding: "8px 16px", background: "var(--mf-cyan)", border: "none", borderRadius: 8, color: "#000", fontSize: 12, fontWeight: 800, cursor: updating ? "default" : "pointer", opacity: updating ? 0.7 : 1 }}
+              >
+                {updating ? "Saving..." : "Save Changes"}
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
   pending: { label: "Pending", color: "var(--mf-cyan)", bg: "var(--mf-cyan-dim)" },
@@ -1724,7 +2400,7 @@ function ProductionPlanList() {
 
 // ─── Main EditorDashboard ───────────────────────────────────────────────────
 export function EditorDashboard() {
-  const [activeNav, setActiveNav] = useState("New Proposals");
+  const [activeNav, setActiveNav] = useState("Notifications");
   const [submissions, setSubmissions] = useState<SubmissionApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1743,6 +2419,9 @@ export function EditorDashboard() {
     setError(null);
     setActionError(null);
     try {
+      const tantouAccount = tokenStorage.getAccount();
+      const currentTantouId = tantouAccount?.id;
+
       const [rows, reviews] = await Promise.all([
         getSubmissions(),
         import("../../services/workflowApi").then(m => m.getSubmissionReviews())
@@ -1756,13 +2435,19 @@ export function EditorDashboard() {
         }
       }
 
-      const updatedRows = rows.map(s => {
-        const rejectCount = reviewMap.get(s.id) || 0;
-        if (rejectCount >= 2 && s.status !== "APPROVED") {
-          return { ...s, status: "REJECTED" };
-        }
-        return s;
-      });
+      const updatedRows = rows
+        .filter(s => {
+          if (!currentTantouId) return false;
+          const assignedId = (s as any).tantouId ?? s.tantou?.id ?? (s as any).editorId ?? (s as any).project?.tantouId ?? (s as any).project?.tantou?.id;
+          return Number(assignedId) === Number(currentTantouId);
+        })
+        .map(s => {
+          const rejectCount = reviewMap.get(s.id) || 0;
+          if (rejectCount >= 2 && s.status !== "APPROVED") {
+            return { ...s, status: "REJECTED" };
+          }
+          return s;
+        });
 
       setSubmissions(updatedRows);
     } catch (err) {
@@ -1905,6 +2590,7 @@ export function EditorDashboard() {
     }
   }
 
+  const isNotificationsView = activeNav === "Notifications";
   const isProductionPlanView = activeNav === "Production Plan";
   const isApprovedView = activeNav === "Approved";
 
@@ -1930,8 +2616,8 @@ export function EditorDashboard() {
         }
       `}</style>
       <div style={{ display: "flex", height: "100%", overflow: "hidden", flexDirection: "column" }}>
-        {/* Top bar — hidden for the Production Plan view (it has its own header) */}
-        {!isProductionPlanView && (
+        {/* Top bar — hidden for Production Plan & Notifications view */}
+        {!isProductionPlanView && !isNotificationsView && (
           <div style={{ flexShrink: 0, borderBottom: "1px solid var(--mf-border)", background: "var(--mf-bg-base)", display: "flex", alignItems: "center", gap: 10, padding: "14px 22px" }}>
             <div style={{ width: 8, height: 8, borderRadius: "50%", background: activeNav === "Approved" ? "var(--mf-magenta)" : activeNav === "Escalated to Board" ? "var(--mf-green)" : activeNav === "In Revision" ? "var(--mf-orange)" : "var(--mf-cyan)" }} />
             <span style={{ fontSize: 15, fontWeight: 900, letterSpacing: "-0.01em" }}>{activeNav}</span>
@@ -1944,6 +2630,9 @@ export function EditorDashboard() {
             </button>
           </div>
         )}
+
+        {/* Notifications view */}
+        {isNotificationsView && <AssignedProjectsList />}
 
         {/* Production Plan view */}
         {isProductionPlanView && <ProductionPlanList />}
@@ -1964,8 +2653,8 @@ export function EditorDashboard() {
           </div>
         )}
 
-        {/* Regular ProposalFeed views (all except Approved & Production Plan) */}
-        {!isProductionPlanView && !isApprovedView && (
+        {/* Regular ProposalFeed views (all except Approved, Production Plan & Notifications) */}
+        {!isProductionPlanView && !isApprovedView && !isNotificationsView && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             {loading && (
               <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "var(--mf-text-muted)" }}>

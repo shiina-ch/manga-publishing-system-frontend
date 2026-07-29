@@ -79,6 +79,23 @@ export function getProjects(): Promise<ProjectFromApi[]> {
   return apiRequest<ProjectFromApi[]>("/projects");
 }
 
+export function getProjectsByTantou(tantouId: number): Promise<ProjectFromApi[]> {
+  return apiRequest<ProjectFromApi[]>(`/projects/tantou/${tantouId}`);
+}
+
+export interface UpdateProjectDetailsTantouPayload {
+  genre?: string;
+  targetAudience?: string;
+  format?: string;
+}
+
+export function updateProjectDetailsByTantou(projectId: number, tantouId: number, payload: UpdateProjectDetailsTantouPayload): Promise<ProjectFromApi> {
+  return apiRequest<ProjectFromApi>(`/workflow/projects/${projectId}/details?tantouId=${tantouId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getProjectById(projectId: number): Promise<ProjectFromApi> {
   return apiRequest<ProjectFromApi>(`/projects/${projectId}`);
 }
@@ -167,8 +184,19 @@ export async function updateChapter(chapterId: number, payload: CreateChapterPay
   });
 }
 
-export function createProductionPlan(projectId: number, payload: ProductionPlanPayload): Promise<any> {
-  return apiRequest<any>(`/projects/${projectId}/production-plans`, {
+export interface CreateProductionPlanPayload {
+  title: string;
+  startDate?: string;
+  endDate?: string;
+  deadlineDate?: string;
+  publishDate?: string;
+}
+
+export function createProductionPlan(projectId: number, payload: CreateProductionPlanPayload, requesterId?: number): Promise<any> {
+  const accountId = requesterId || tokenStorage.getAccount()?.id;
+  if (!accountId) throw new Error("Authentication required to create a production plan");
+
+  return apiRequest<any>(`/v1/projects/${projectId}/production-plans?requesterId=${accountId}`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -181,4 +209,8 @@ export interface ProductionPlanResponse extends ProductionPlan {
 
 export function getProductionPlans(): Promise<ProductionPlanResponse[]> {
   return apiRequest<ProductionPlanResponse[]>("/production-plans");
+}
+
+export function getProductionPlansByProject(projectId: number): Promise<ProductionPlanResponse[]> {
+  return apiRequest<ProductionPlanResponse[]>(`/v1/projects/${projectId}/production-plans`);
 }
