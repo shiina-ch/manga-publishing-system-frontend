@@ -161,14 +161,17 @@ export interface CreateChapterPayload {
   planId: number;
   chapterNumber: number;
   title: string;
+  chapterStatus?: string;
   targetPageCount: number;
-  startDate: string;
-  endDate: string;
-  publishDate: string;
+  startDate?: string;
+  endDate?: string;
+  publishDate?: string;
+  deadline?: string;
+  priority?: string;
 }
 
-export async function createChapter(projectId: number, payload: CreateChapterPayload): Promise<ChapterApi> {
-  const accountId = tokenStorage.getAccount()?.id;
+export async function createChapter(projectId: number, payload: CreateChapterPayload, requesterId?: number): Promise<ChapterApi> {
+  const accountId = requesterId || tokenStorage.getAccount()?.id;
   if (!accountId) throw new Error("Authentication required to create a chapter");
 
   return apiRequest<ChapterApi>(`/workflow/chapters?requesterId=${accountId}`, {
@@ -208,7 +211,7 @@ export interface ProductionPlanResponse extends ProductionPlan {
 }
 
 export function getProductionPlans(): Promise<ProductionPlanResponse[]> {
-  return apiRequest<ProductionPlanResponse[]>("/production-plans");
+  return apiRequest<ProductionPlanResponse[]>("/v1/production-plans");
 }
 
 export function getProductionPlansByProject(projectId: number): Promise<ProductionPlanResponse[]> {

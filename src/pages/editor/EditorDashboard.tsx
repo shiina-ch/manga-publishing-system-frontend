@@ -20,8 +20,8 @@ import {
 import { tokenStorage } from "../../storage/tokenStorage";
 import { getAccountProfile, type AccountProfile } from "../../services/accountApi";
 import { getAllAccounts, type AdminAccount } from "../../services/adminApi";
-import { Edit3 as EditIcon, Eye as EyeIcon, ListChecks, Plus } from "lucide-react";
-import { getProjects, getProjectById, getProductionPlans, assignMangakaToProject, getProjectsByTantou, updateProjectDetailsByTantou, getProductionPlansByProject, createProductionPlan, type ProjectFromApi, type ProductionPlanResponse } from "../../services/projectApi";
+import { Edit3 as EditIcon, Eye as EyeIcon, ListChecks, Plus, BookOpen } from "lucide-react";
+import { getProjects, getProjectById, getProductionPlans, assignMangakaToProject, getProjectsByTantou, updateProjectDetailsByTantou, getProductionPlansByProject, createProductionPlan, createChapter, type ProjectFromApi, type ProductionPlanResponse } from "../../services/projectApi";
 import { ProductionPlanDialog } from "./ProductionPlanDialog";
 import { CreateChapterDialog } from "./CreateChapterDialog";
 import { Dialog, DialogContent, DialogTitle } from "../../components/ui/dialog";
@@ -44,6 +44,25 @@ function AssignedProjectsList() {
   const [productionPlans, setProductionPlans] = useState<ProductionPlanResponse[]>([]);
   const [loadingPlans, setLoadingPlans] = useState(false);
   const [plansError, setPlansError] = useState<string | null>(null);
+
+  // Created Chapters Modal State
+  const [selectedPlanForChapters, setSelectedPlanForChapters] = useState<ProductionPlanResponse | null>(null);
+  const [chaptersForPlan, setChaptersForPlan] = useState<any[]>([]);
+  const [loadingChapters, setLoadingChapters] = useState(false);
+  const [chaptersError, setChaptersError] = useState<string | null>(null);
+
+  // Create Chapter Dialog State
+  const [showCreateChapterDialog, setShowCreateChapterDialog] = useState(false);
+  const [chNumber, setChNumber] = useState(1);
+  const [chTitle, setChTitle] = useState("");
+  const [chStatus, setChStatus] = useState("BACKLOG");
+  const [chTargetPageCount, setChTargetPageCount] = useState(1);
+  const [chStartDate, setChStartDate] = useState("");
+  const [chEndDate, setChEndDate] = useState("");
+  const [chPublishDate, setChPublishDate] = useState("");
+  const [chDeadline, setChDeadline] = useState("");
+  const [chPriority, setChPriority] = useState("Medium");
+  const [creatingChapter, setCreatingChapter] = useState(false);
 
   // New Production Plan Dialog State
   const [showCreatePlanDialog, setShowCreatePlanDialog] = useState(false);
@@ -109,6 +128,110 @@ function AssignedProjectsList() {
     }
   };
 
+  const handleFetchCreatedChapters = async (plan: ProductionPlanResponse) => {
+    setSelectedPlanForChapters(plan);
+    setLoadingChapters(true);
+    setChaptersError(null);
+    try {
+      const allPlans = await getProductionPlans();
+      const matchedPlan = allPlans.find((p: any) => p.id === plan.id);
+      if (matchedPlan && Array.isArray(matchedPlan.chapters)) {
+        setChaptersForPlan(matchedPlan.chapters);
+      } else {
+        setChaptersForPlan(plan.chapters || []);
+      }
+    } catch (err: any) {
+      setChaptersError(err?.message || "Failed to fetch chapters for this plan.");
+      setChaptersForPlan(plan.chapters || []);
+    } finally {
+      setLoadingChapters(false);
+    }
+  };
+  const handleOpenCreateChapterModal = (plan: ProductionPlanResponse) => {
+    // Pre-fill chapter dates within plan range if available
+    setChNumber((chaptersForPlan.length || 0) + 1);
+    setChTitle("");
+    setChStatus("BACKLOG");
+    setChTargetPageCount(1);
+    setChStartDate(plan.startDate ? plan.startDate.slice(0, 10) : "");
+    setChEndDate(plan.endDate ? plan.endDate.slice(0, 10) : "");
+    setChPublishDate(plan.publishDate ? plan.publishDate.slice(0, 10) : "");
+    setChDeadline(plan.deadline ? plan.deadline.slice(0, 10) : "");
+    setChPriority("Medium");
+    setShowCreateChapterDialog(true);
+  };
+
+  const handleCreateChapterSubmit = async () => {
+    if (!selectedPlanForChapters || !activeProjectForPlans) return;
+    if (!chTitle.trim()) {
+      toast.error("Chapter title is required.");
+      return;
+    }
+
+    const account = tokenStorage.getAccount();
+    const tantouId = account?.id;
+    if (!tantouId) {
+      toast.error("Tantou account ID not found.");
+      return;
+    }
+
+    // FE Validation for Chapter Dates:
+    // production plan startDate <= chapter date <= production plan publishDate / endDate
+    const pStartStr = selectedPlanForChapters.startDate ? selectedPlanForChapters.startDate.slice(0, 10) : null;
+    const pEndStr = selectedPlanForChapters.publishDate || selectedPlanForChapters.endDate
+      ? (selectedPlanForChapters.publishDate || selectedPlanForChapters.endDate)!.slice(0, 10)
+      : null;
+
+    const chapterDates = [
+      { name: "Start Date", val: chStartDate },
+      { name: "End Date", val: chEndDate },
+      { name: "Publish Date", val: chPublishDate },
+      { name: "Deadline", val: chDeadline },
+    ];
+
+    for (const d of chapterDates) {
+      if (d.val) {
+        if (pStartStr && d.val < pStartStr) {
+          toast.error(`Chapter ${d.name} (${d.val}) cannot be earlier than plan start date (${pStartStr}).`);
+          return;
+        }
+        if (pEndStr && d.val > pEndStr) {
+          toast.error(`Chapter ${d.name} (${d.val}) cannot be later than plan publish/end date (${pEndStr}).`);
+          return;
+        }
+      }
+    }
+
+    setCreatingChapter(true);
+    try {
+      await createChapter(
+        activeProjectForPlans.id,
+        {
+          planId: selectedPlanForChapters.id,
+          chapterNumber: chNumber,
+          title: chTitle,
+          chapterStatus: chStatus,
+          targetPageCount: chTargetPageCount,
+          startDate: chStartDate || undefined,
+          endDate: chEndDate || undefined,
+          publishDate: chPublishDate || undefined,
+          deadline: chDeadline ? `${chDeadline}T23:59:59.000Z` : undefined,
+          priority: chPriority,
+        },
+        tantouId
+      );
+
+      toast.success(`Chapter ${chNumber} created successfully!`);
+      setShowCreateChapterDialog(false);
+      await handleFetchCreatedChapters(selectedPlanForChapters);
+      await handleOpenPlansPage(activeProjectForPlans);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to create chapter.");
+    } finally {
+      setCreatingChapter(false);
+    }
+  };
+
   const handleSaveEdit = async () => {
     if (!editingProject) return;
     const account = tokenStorage.getAccount();
@@ -157,6 +280,21 @@ function AssignedProjectsList() {
     if (!activeProjectForPlans) return;
     if (!planTitle.trim()) {
       toast.error("Plan title is required.");
+      return;
+    }
+
+    // FE Validation for Production Plan Dates following BE rules:
+    // startDate <= deadlineDate < endDate <= publishDate
+    if (planStartDate && planDeadlineDate && planStartDate > planDeadlineDate) {
+      toast.error("Start date must be on or before deadline date.");
+      return;
+    }
+    if (planDeadlineDate && planEndDate && planDeadlineDate >= planEndDate) {
+      toast.error("Deadline date must be strictly before end date (needs at least 1 day buffer).");
+      return;
+    }
+    if (planEndDate && planPublishDate && planEndDate > planPublishDate) {
+      toast.error("End date must be on or before publish date.");
       return;
     }
 
@@ -278,13 +416,33 @@ function AssignedProjectsList() {
               <div key={plan.id} style={{ background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 14, padding: 20, display: "flex", flexDirection: "column", gap: 14, boxShadow: "0 4px 16px rgba(0,0,0,0.2)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--mf-border)", paddingBottom: 10 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: "var(--mf-cyan)" }}>Production Plan #{plan.id}</span>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: "var(--mf-cyan)" }}>{plan.title || `Production Plan #${plan.id}`}</span>
                   </div>
-                  {plan.approvalStatus && (
-                    <span style={{ fontSize: 11, fontWeight: 800, padding: "4px 10px", background: "var(--mf-cyan-dim)", color: "var(--mf-cyan)", borderRadius: 6, border: "1px solid var(--mf-cyan-border)" }}>
-                      {plan.approvalStatus}
-                    </span>
-                  )}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {plan.approvalStatus && (
+                      <span style={{ fontSize: 11, fontWeight: 800, padding: "4px 10px", background: "var(--mf-cyan-dim)", color: "var(--mf-cyan)", borderRadius: 6, border: "1px solid var(--mf-cyan-border)" }}>
+                        {plan.approvalStatus}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => void handleFetchCreatedChapters(plan)}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "6px 12px",
+                        background: "rgba(0,210,255,0.1)",
+                        border: "1px solid rgba(0,210,255,0.3)",
+                        borderRadius: 6,
+                        color: "var(--mf-cyan)",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <BookOpen size={14} /> Created Chapter
+                    </button>
+                  </div>
                 </div>
 
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, background: "var(--mf-bg-base)", padding: 14, borderRadius: 10, border: "1px solid var(--mf-border)" }}>
@@ -372,27 +530,32 @@ function AssignedProjectsList() {
                   <input
                     type="date"
                     value={planStartDate}
+                    max={planDeadlineDate || planEndDate || planPublishDate || undefined}
                     onChange={(e) => setPlanStartDate(e.target.value)}
                     style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-cyan-border)", borderRadius: 8, color: "#fff", colorScheme: "dark", fontSize: 13 }}
                   />
                 </div>
                 <div>
-                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>End Date</label>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Deadline Date * (Strict &lt; End Date)</label>
                   <input
                     type="date"
-                    value={planEndDate}
-                    onChange={(e) => setPlanEndDate(e.target.value)}
+                    value={planDeadlineDate}
+                    min={planStartDate || undefined}
+                    max={planEndDate || planPublishDate || undefined}
+                    onChange={(e) => setPlanDeadlineDate(e.target.value)}
                     style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-cyan-border)", borderRadius: 8, color: "#fff", colorScheme: "dark", fontSize: 13 }}
                   />
                 </div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div>
-                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Deadline Date</label>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>End Date (Plan Close)</label>
                   <input
                     type="date"
-                    value={planDeadlineDate}
-                    onChange={(e) => setPlanDeadlineDate(e.target.value)}
+                    value={planEndDate}
+                    min={planDeadlineDate || planStartDate || undefined}
+                    max={planPublishDate || undefined}
+                    onChange={(e) => setPlanEndDate(e.target.value)}
                     style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-cyan-border)", borderRadius: 8, color: "#fff", colorScheme: "dark", fontSize: 13 }}
                   />
                 </div>
@@ -401,6 +564,7 @@ function AssignedProjectsList() {
                   <input
                     type="date"
                     value={planPublishDate}
+                    min={planEndDate || planDeadlineDate || planStartDate || undefined}
                     onChange={(e) => setPlanPublishDate(e.target.value)}
                     style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-cyan-border)", borderRadius: 8, color: "#fff", colorScheme: "dark", fontSize: 13 }}
                   />
@@ -421,6 +585,229 @@ function AssignedProjectsList() {
                   style={{ padding: "8px 16px", background: "var(--mf-cyan)", border: "none", borderRadius: 8, color: "#000", fontSize: 12, fontWeight: 800, cursor: creatingPlan ? "default" : "pointer", opacity: creatingPlan ? 0.7 : 1 }}
                 >
                   {creatingPlan ? "Creating..." : "Create Plan"}
+                </button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Created Chapters Modal */}
+        <Dialog open={Boolean(selectedPlanForChapters)} onOpenChange={(open) => !open && setSelectedPlanForChapters(null)}>
+          <DialogContent className="max-w-xl bg-[var(--mf-bg-surface)] text-[var(--mf-text)] border-[var(--mf-border)] max-h-[80vh] overflow-y-auto">
+            <DialogTitle className="text-lg font-bold text-[var(--mf-text)] border-b border-[var(--mf-border)] pb-3 flex items-center justify-between">
+              <span>Created Chapters for: {selectedPlanForChapters?.title || `Plan #${selectedPlanForChapters?.id}`}</span>
+              {selectedPlanForChapters && (
+                <button
+                  onClick={() => handleOpenCreateChapterModal(selectedPlanForChapters)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "6px 12px",
+                    marginRight: 24,
+                    background: "var(--mf-cyan)",
+                    border: "none",
+                    borderRadius: 8,
+                    color: "#000",
+                    fontSize: 12,
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                >
+                  <Plus size={14} /> Create Chapter
+                </button>
+              )}
+            </DialogTitle>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+              {loadingChapters && (
+                <div style={{ padding: 30, textAlign: "center", color: "var(--mf-text-muted)", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+                  <Loader2 size={18} style={{ animation: "editor-spin 1s linear infinite" }} />
+                  Loading created chapters...
+                </div>
+              )}
+
+              {!loadingChapters && chaptersError && (
+                <div style={{ padding: 14, background: "rgba(255,42,122,0.1)", border: "1px solid rgba(255,42,122,0.3)", borderRadius: 8, color: "var(--mf-red)", fontSize: 12, fontWeight: 700 }}>
+                  {chaptersError}
+                </div>
+              )}
+
+              {!loadingChapters && !chaptersError && chaptersForPlan.length === 0 && (
+                <div style={{ padding: 30, textAlign: "center", color: "var(--mf-text-muted)", background: "var(--mf-bg-base)", borderRadius: 8, border: "1px dashed var(--mf-border)" }}>
+                  <Inbox size={32} style={{ opacity: 0.4, marginBottom: 8 }} />
+                  <p style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>No chapters created for this production plan yet.</p>
+                </div>
+              )}
+
+              {!loadingChapters && !chaptersError && chaptersForPlan.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {chaptersForPlan.map((ch: any) => (
+                    <div key={ch.id} style={{ background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 6 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: "var(--mf-text)" }}>
+                          Chapter {ch.chapterNumber}: {ch.title}
+                        </span>
+                        <span style={{ fontSize: 11, fontWeight: 800, padding: "2px 8px", background: "var(--mf-cyan-dim)", color: "var(--mf-cyan)", borderRadius: 4 }}>
+                          {ch.status || ch.chapterStatus || "ACTIVE"}
+                        </span>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12, color: "var(--mf-text-secondary)", marginTop: 4 }}>
+                        {ch.targetPageCount != null && <div>Target Pages: <strong>{ch.targetPageCount}</strong></div>}
+                        {ch.priority && <div>Priority: <strong>{ch.priority}</strong></div>}
+                        {ch.publishDate && <div>Publish Date: <strong>{new Date(ch.publishDate).toLocaleDateString()}</strong></div>}
+                        {ch.startDate && <div>Start Date: <strong>{new Date(ch.startDate).toLocaleDateString()}</strong></div>}
+                        {ch.endDate && <div>End Date: <strong>{new Date(ch.endDate).toLocaleDateString()}</strong></div>}
+                        {ch.deadline && <div>Deadline: <strong>{new Date(ch.deadline).toLocaleDateString()}</strong></div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Create Chapter Form Dialog */}
+        <Dialog open={showCreateChapterDialog} onOpenChange={(open) => !open && setShowCreateChapterDialog(false)}>
+          <DialogContent className="max-w-md bg-[var(--mf-bg-surface)] text-[var(--mf-text)] border-[var(--mf-border)] max-h-[85vh] overflow-y-auto">
+            <DialogTitle className="text-lg font-bold text-[var(--mf-text)]">
+              Create New Chapter
+            </DialogTitle>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Chapter # *</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={chNumber}
+                    onChange={(e) => setChNumber(Number(e.target.value))}
+                    style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Title *</label>
+                  <input
+                    type="text"
+                    value={chTitle}
+                    onChange={(e) => setChTitle(e.target.value)}
+                    placeholder="e.g. The Beginning"
+                    style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Chapter Status</label>
+                  <select
+                    value={chStatus}
+                    onChange={(e) => setChStatus(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13 }}
+                  >
+                    <option value="BACKLOG">BACKLOG</option>
+                    <option value="IN_PRODUCTION">IN_PRODUCTION</option>
+                    <option value="COMPLETED">COMPLETED</option>
+                    <option value="COMPLETED_NEEDS_REVIEW">COMPLETED_NEEDS_REVIEW</option>
+                    <option value="SCHEDULED">SCHEDULED</option>
+                    <option value="PUBLISHED">PUBLISHED</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Target Page Count</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={chTargetPageCount}
+                    onChange={(e) => setChTargetPageCount(Math.max(1, Number(e.target.value)))}
+                    style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13 }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Priority</label>
+                <select
+                  value={chPriority}
+                  onChange={(e) => setChPriority(e.target.value)}
+                  style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13 }}
+                >
+                  <option value="High">High</option>
+                  <option value="Medium">Medium/Moderate</option>
+                  <option value="Low">Low</option>
+                </select>
+              </div>
+
+              {selectedPlanForChapters && (selectedPlanForChapters.startDate || selectedPlanForChapters.endDate) && (
+                <div style={{ fontSize: 11, color: "var(--mf-cyan)", background: "var(--mf-cyan-dim)", padding: 8, borderRadius: 6 }}>
+                  Plan range: {selectedPlanForChapters.startDate ? selectedPlanForChapters.startDate.slice(0, 10) : "N/A"} to {selectedPlanForChapters.endDate ? selectedPlanForChapters.endDate.slice(0, 10) : "N/A"}
+                </div>
+              )}
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Start Date</label>
+                  <input
+                    type="date"
+                    value={chStartDate}
+                    min={selectedPlanForChapters?.startDate ? selectedPlanForChapters.startDate.slice(0, 10) : undefined}
+                    max={selectedPlanForChapters?.publishDate || selectedPlanForChapters?.endDate ? (selectedPlanForChapters.publishDate || selectedPlanForChapters.endDate)!.slice(0, 10) : undefined}
+                    onChange={(e) => setChStartDate(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-cyan-border)", borderRadius: 8, color: "#fff", colorScheme: "dark", fontSize: 13 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>End Date</label>
+                  <input
+                    type="date"
+                    value={chEndDate}
+                    min={selectedPlanForChapters?.startDate ? selectedPlanForChapters.startDate.slice(0, 10) : undefined}
+                    max={selectedPlanForChapters?.publishDate || selectedPlanForChapters?.endDate ? (selectedPlanForChapters.publishDate || selectedPlanForChapters.endDate)!.slice(0, 10) : undefined}
+                    onChange={(e) => setChEndDate(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-cyan-border)", borderRadius: 8, color: "#fff", colorScheme: "dark", fontSize: 13 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Publish Date</label>
+                  <input
+                    type="date"
+                    value={chPublishDate}
+                    min={selectedPlanForChapters?.startDate ? selectedPlanForChapters.startDate.slice(0, 10) : undefined}
+                    max={selectedPlanForChapters?.publishDate || selectedPlanForChapters?.endDate ? (selectedPlanForChapters.publishDate || selectedPlanForChapters.endDate)!.slice(0, 10) : undefined}
+                    onChange={(e) => setChPublishDate(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-cyan-border)", borderRadius: 8, color: "#fff", colorScheme: "dark", fontSize: 13 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Deadline</label>
+                  <input
+                    type="date"
+                    value={chDeadline}
+                    min={selectedPlanForChapters?.startDate ? selectedPlanForChapters.startDate.slice(0, 10) : undefined}
+                    max={selectedPlanForChapters?.publishDate || selectedPlanForChapters?.endDate ? (selectedPlanForChapters.publishDate || selectedPlanForChapters.endDate)!.slice(0, 10) : undefined}
+                    onChange={(e) => setChDeadline(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-cyan-border)", borderRadius: 8, color: "#fff", colorScheme: "dark", fontSize: 13 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 10 }}>
+                <button
+                  onClick={() => setShowCreateChapterDialog(false)}
+                  disabled={creatingChapter}
+                  style={{ padding: "8px 16px", background: "transparent", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text-muted)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => void handleCreateChapterSubmit()}
+                  disabled={creatingChapter}
+                  style={{ padding: "8px 16px", background: "var(--mf-cyan)", border: "none", borderRadius: 8, color: "#000", fontSize: 12, fontWeight: 800, cursor: creatingChapter ? "default" : "pointer", opacity: creatingChapter ? 0.7 : 1 }}
+                >
+                  {creatingChapter ? "Creating..." : "Create Chapter"}
                 </button>
               </div>
             </div>
