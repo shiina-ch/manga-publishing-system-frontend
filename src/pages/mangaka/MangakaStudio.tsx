@@ -17,7 +17,7 @@ import {
   Loader2
 } from "lucide-react";
 import { toast } from "react-toastify";
-import { getMangakaSubmissions, getChapters, type SubmissionApi, type ChapterApi, type TaskApi, submitIdea, type SubmissionReviewApi } from "../../services/workflowApi";
+import { getMangakaSubmissions, getSubmissionById, getChapters, type SubmissionApi, type ChapterApi, type TaskApi, submitIdea, type SubmissionReviewApi } from "../../services/workflowApi";
 import { tokenStorage } from "../../storage/tokenStorage";
 
 function submissionTitle(submission: SubmissionApi): string {
@@ -37,6 +37,10 @@ function formatSubmissionDate(value?: string | null): string {
 const chapterStatusMap: Record<string, { label: string; color: string }> = {
   approved: { label: "Approved", color: "var(--mf-green)" },
   "in-revision": { label: "In Revision", color: "var(--mf-orange)" },
+  in_revision: { label: "In Revision", color: "var(--mf-orange)" },
+  revision: { label: "In Revision", color: "var(--mf-orange)" },
+  request_revision: { label: "In Revision", color: "var(--mf-orange)" },
+  requested_revision: { label: "In Revision", color: "var(--mf-orange)" },
   "under-review": { label: "Under Review", color: "var(--mf-cyan)" },
   pending_board_review: { label: "Under Preview", color: "var(--mf-cyan)" },
   pending: { label: "SUBMITTED · PENDING EDITOR REVIEW", color: "var(--mf-orange)" },
@@ -576,7 +580,7 @@ function SubmittedChaptersList({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {submissions.map(submission => {
-        const rawStatus = submission.status || "PENDING";
+        const rawStatus = submission.nameStatus || submission.status || "PENDING";
         const statusKey = rawStatus.toLowerCase();
         const status = chapterStatusMap[statusKey] || { label: rawStatus, color: "var(--mf-cyan)" };
         const fileLabel = typeof submission.fileCount === "number"
@@ -931,10 +935,27 @@ function SubmissionDetailsModal({
   reviews?: SubmissionReviewApi[];
   onClose: () => void;
 }) {
-  const rawStatus = submission.status || "PENDING";
+  const [details, setDetails] = useState<SubmissionApi | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    getSubmissionById(submission.id)
+      .then((data: any) => {
+        if (active && data) {
+          setDetails(data);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [submission.id]);
+
+  const activeSubmission = details || submission;
+  const rawStatus = activeSubmission.nameStatus || activeSubmission.status || "PENDING";
   const statusKey = rawStatus.toLowerCase();
   const status = chapterStatusMap[statusKey] || { label: rawStatus, color: "var(--mf-cyan)" };
-  const files = submission.files || [];
+  const files = activeSubmission.files || [];
   const isImageFile = (file: any) => {
     const name = (file.originalName || file.originalFilename || file.fileName || file.filename || "").toLowerCase();
     return name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".gif") || name.endsWith(".webp");
@@ -949,10 +970,7 @@ function SubmissionDetailsModal({
   const firstImageSize = firstImageFile ? (typeof firstImageFile.size === "number" ? firstImageFile.size : firstImageFile.fileSize) : 0;
   const firstImageSizeStr = firstImageSize ? `${(firstImageSize / 1024).toFixed(1)} KB` : "";
 
-  const latestReviewWithComment = [...reviews]
-    .reverse()
-    .find(r => r.comment && r.comment.trim() !== "");
-  const reviewCommentText = latestReviewWithComment?.comment || null;
+  const allReviews: SubmissionReviewApi[] = (details?.reviews as any[]) || activeSubmission.reviews || reviews || [];
 
   return (
     <div style={{
@@ -986,11 +1004,11 @@ function SubmissionDetailsModal({
               <FileText size={20} />
             </div>
             <div>
-              <div style={{ fontSize: 20, fontWeight: 900, color: "#fff", letterSpacing: "-0.01em" }}>{submissionTitle(submission)}</div>
+              <div style={{ fontSize: 20, fontWeight: 900, color: "#fff", letterSpacing: "-0.01em" }}>{submissionTitle(activeSubmission)}</div>
               <div style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
-                <User size={13} color="var(--mf-text-muted)" /> {submission.submittedByName || "Unknown"}
+                <User size={13} color="var(--mf-text-muted)" /> {activeSubmission.submittedByName || "Unknown"}
                 <span style={{ color: "rgba(255,255,255,0.15)" }}>·</span>
-                <Clock size={13} color="var(--mf-text-muted)" /> {formatSubmissionDate(submission.submittedAt)}
+                <Clock size={13} color="var(--mf-text-muted)" /> {formatSubmissionDate(activeSubmission.submittedAt)}
               </div>
             </div>
           </div>
@@ -1062,12 +1080,12 @@ function SubmissionDetailsModal({
               <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>DATE</div>
               <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
                 <Clock size={14} color="var(--mf-text-muted)" />
-                {formatSubmissionDate(submission.submittedAt)}
+                {formatSubmissionDate(activeSubmission.submittedAt)}
               </div>
             </div>
 
             {/* Synopsis Card */}
-            {(submission.note || submission.description) && (
+            {(activeSubmission.note || activeSubmission.description) && (
               <div style={{
                 background: "rgba(255, 255, 255, 0.02)",
                 border: "1px solid rgba(255, 255, 255, 0.05)",
@@ -1076,22 +1094,49 @@ function SubmissionDetailsModal({
               }}>
                 <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>SYNOPSIS</div>
                 <div style={{ fontSize: 13, color: "rgba(255, 255, 255, 0.7)", lineHeight: 1.6 }}>
-                  {submission.note || submission.description}
+                  {activeSubmission.note || activeSubmission.description}
                 </div>
               </div>
             )}
 
-            {/* Feedback / Review Comment Card */}
-            {reviewCommentText && (
+            {/* Reviews & Feedback List Card */}
+            {allReviews.length > 0 && (
               <div style={{
                 background: "rgba(255, 255, 255, 0.02)",
                 border: "1px solid rgba(255, 255, 255, 0.05)",
                 borderRadius: 12,
                 padding: "16px 20px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 12
               }}>
-                <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>EDITOR / BOARD COMMENT</div>
-                <div style={{ fontSize: 13, color: "rgba(255, 255, 255, 0.7)", lineHeight: 1.6 }}>
-                  {reviewCommentText}
+                <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.08em" }}>REVIEWS & FEEDBACK ({allReviews.length})</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {allReviews.map((r, idx) => {
+                    const dec = (r.decision || "").toUpperCase();
+                    const color = dec === "APPROVED" ? "var(--mf-green)" : dec === "REJECTED" ? "var(--mf-red)" : "var(--mf-orange)";
+                    const reviewerName = r.reviewerName || r.reviewerEmail || (r.reviewerId ? `Reviewer #${r.reviewerId}` : "Reviewer");
+                    return (
+                      <div key={r.id || idx} style={{ padding: "10px 14px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>{reviewerName}</span>
+                          <span style={{ fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 4, background: `${color}20`, color, border: `1px solid ${color}40` }}>
+                            {r.decision || "REVIEWED"}
+                          </span>
+                        </div>
+                        {r.comment && (
+                          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.75)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                            {r.comment}
+                          </div>
+                        )}
+                        {r.reviewedAt && (
+                          <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 6 }}>
+                            {formatSubmissionDate(r.reviewedAt)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}

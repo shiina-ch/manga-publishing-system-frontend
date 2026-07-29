@@ -38,6 +38,7 @@ export interface SubmissionApi {
   fileCount?: number | null;
   project?: ProjectSummaryApi | null;
   planning?: PlanningSummaryApi | null;
+  reviews?: SubmissionReviewApi[] | null;
 }
 
 export interface SubmissionReviewApi {
@@ -45,6 +46,7 @@ export interface SubmissionReviewApi {
   submissionId?: number | null;
   reviewerId?: number | null;
   reviewerEmail?: string | null;
+  reviewerName?: string | null;
   stage?: string | null;
   decision: string | null;
   comment: string | null;
@@ -98,7 +100,7 @@ export interface SubmissionFileApi {
 export interface ReviewRequest {
   submissionId: number;
   reviewerId: number;
-  decision: "APPROVE" | "REJECT";
+  decision: "APPROVE" | "REJECT" | "REVISION" | string;
   comment: string;
   pacingPass: boolean;
   structurePass: boolean;
@@ -287,6 +289,14 @@ export function reviewSubmissionByBoard(payload: ReviewRequest): Promise<Submiss
     method: "POST",
     body: JSON.stringify(payload),
   }, [200, 201]);
+}
+
+export function requestRevisionByLeader(submissionId: number, leaderId: number, comment: string): Promise<unknown> {
+  return apiRequest<unknown>(
+    `/workflow/name/${submissionId}/request-revision?leaderId=${leaderId}&comment=${encodeURIComponent(comment)}`,
+    { method: "POST" },
+    [200, 201]
+  );
 }
 
 export function submitIdea(userId: number, formData: FormData): Promise<SubmissionApi> {
