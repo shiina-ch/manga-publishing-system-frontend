@@ -57,10 +57,10 @@ const roleConfig: Record<LayoutRole, RoleConfig> = {
   board: {
     label: "Editorial Board Member", color: "var(--mf-orange)", icon: Users,
     nav: [
-      { icon: Inbox, label: "Pending Approvals", badge: 5 },
-      { icon: Star, label: "Active Projects", badge: 12 },
-      { icon: FileText, label: "Publishing Calendar" },
-      { icon: BarChart3, label: "Budget Overview" },
+      { icon: Inbox, label: "Pending Approvals", path: "/board/voting" },
+      { icon: Star, label: "Active Projects", path: "/board?tab=active-projects" },
+      { icon: FileText, label: "Publishing Calendar", path: "/board?tab=publishing-calendar" },
+      { icon: BarChart3, label: "Budget Overview", path: "/board?tab=budget-overview" },
     ],
     channels: ["editorial-strategy", "publishing-ops", "finance-review", "board-announcements"],
     dms: ["Chief Editor Yamamoto", "Legal: Sato-san", "Marketing Lead"],

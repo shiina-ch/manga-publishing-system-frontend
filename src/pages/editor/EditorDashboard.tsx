@@ -334,7 +334,7 @@ function ProposalFeed({
   }
 
   const selectedStatus = normalizeStatus(selectedSubmission?.status);
-  const canTantouEscalate = false;
+  const canTantouEscalate = filter === "New Proposals" && ["pending", "pending_tantou_review", "submitted"].includes(selectedStatus);
   const canSubmitToBoard = filter === "Escalated to Board" && selectedStatus === "on_going";
   const canRunPrimaryAction = canTantouEscalate || canSubmitToBoard;
   const resolvedSelectedSubmission = selectedSubmission ? submissionForAuthorResolution(selectedSubmission, authorLookup) : selectedSubmission;

@@ -1,12 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "react-router";
 import { AppLayout } from "../../components/layout/AppLayout";
 import {
-  DollarSign, Calendar, FileText,
-  User, Clock, CheckCircle, Edit3, TrendingUp,
+  DollarSign,
+  User, Clock, TrendingUp,
   Star, Package, AlertCircle, Loader2, Image, RefreshCw, FileX,
 } from "lucide-react";
-import { getProjects, type ProjectUI } from "../../services/projectApi";
+import { getProjects } from "../../services/projectApi";
 import { getPlannings, getSubmissions, getSubmissionReviews, type SubmissionApi, type SubmissionReviewApi } from "../../services/workflowApi";
+import { ActiveProjectsView } from "./ActiveProjectsView";
 import { getAccountProfile } from "../../services/accountApi";
 
 const BOARD_STATUSES = ["PENDING_BOARD_REVIEW", "ON_GOING", "APPROVED", "REJECTED"];
@@ -391,123 +393,6 @@ function PendingApprovalsView() {
 }
 
 
-// --- Active Projects View ---
-function ActiveProjectsView() {
-  const [projects, setProjects] = useState<ProjectUI[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    getProjects()
-      .then((data) => {
-        if (!cancelled) setProjects(data);
-      })
-      .catch((err: { message?: string }) => {
-        if (!cancelled) setError(err.message ?? "Không thể tải danh sách project.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => { cancelled = true; };
-  }, []);
-
-  return (
-    <div style={{ padding: "24px 28px", overflowY: "auto", flex: 1 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
-        <div>
-          <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em" }}>Active Projects</h2>
-          <p style={{ fontSize: 13, color: "var(--mf-text-muted)", marginTop: 3 }}>
-            {loading ? "Loading…" : `${projects.length} series in production`}
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          {["All", "Production", "Review", "Scripting"].map((f, i) => (
-            <button key={f} style={{ padding: "5px 12px", background: i === 0 ? "var(--mf-orange)" : "var(--mf-bg-surface)", border: "none", borderRadius: 7, fontSize: 11, fontWeight: 700, color: i === 0 ? "#000" : "var(--mf-text-muted)", cursor: "pointer" }}>{f}</button>
-          ))}
-        </div>
-      </div>
-
-      {/* Loading state */}
-      {loading && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "60px 0", color: "var(--mf-text-muted)" }}>
-          <Loader2 size={20} style={{ animation: "spin 1s linear infinite" }} />
-          <span style={{ fontSize: 14 }}>Loading projects…</span>
-        </div>
-      )}
-
-      {/* Error state */}
-      {!loading && error && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "20px 24px", background: "rgba(255,42,122,0.08)", border: "1px solid rgba(255,42,122,0.25)", borderRadius: 12, color: "#ff4d6d" }}>
-          <AlertCircle size={16} />
-          <span style={{ fontSize: 13, fontWeight: 600 }}>{error}</span>
-        </div>
-      )}
-
-      {/* Empty state */}
-      {!loading && !error && projects.length === 0 && (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: "60px 0", color: "var(--mf-text-muted)" }}>
-          <Package size={40} style={{ opacity: 0.35 }} />
-          <p style={{ fontSize: 14, fontWeight: 600 }}>No projects found. Please create a project first.</p>
-        </div>
-      )}
-
-      {/* Project cards */}
-      {!loading && !error && projects.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
-          {projects.map(p => (
-            <div key={p.id} style={{ padding: 18, background: "var(--mf-bg-surface)", borderRadius: 16, border: "1px solid var(--mf-border)", transition: "border-color 0.15s" }}
-              onMouseEnter={e => (e.currentTarget.style.borderColor = `${p.color}50`)}
-              onMouseLeave={e => (e.currentTarget.style.borderColor = "var(--mf-border)")}
-            >
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 }}>
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 900, color: "var(--mf-text)", marginBottom: 3 }}>{p.title}</div>
-                  <div style={{ fontSize: 11, color: "var(--mf-text-muted)", display: "flex", gap: 8 }}>
-                    <span style={{ display: "flex", alignItems: "center", gap: 4 }}><User size={10} />{p.mangaka}</span>
-                    <span style={{ display: "flex", alignItems: "center", gap: 4 }}><FileText size={10} />{p.chapter}</span>
-                  </div>
-                </div>
-                <div style={{ padding: "4px 10px", background: `${p.color}18`, border: `1px solid ${p.color}40`, borderRadius: 7, fontSize: 10, color: p.color, fontWeight: 800 }}>{p.status}</div>
-              </div>
-              <div style={{ marginBottom: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                  <span style={{ fontSize: 11, color: "var(--mf-text-muted)" }}>Production Progress</span>
-                  <span style={{ fontSize: 12, fontWeight: 800, color: p.color }}>{p.progress}%</span>
-                </div>
-                <div style={{ height: 6, background: "var(--mf-bg-elevated)", borderRadius: 100, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${p.progress}%`, background: `linear-gradient(90deg, ${p.color}, ${p.color}90)`, borderRadius: 100, transition: "width 0.6s" }} />
-                </div>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                <div style={{ padding: "9px 12px", background: "var(--mf-bg-elevated)", borderRadius: 9 }}>
-                  <div style={{ fontSize: 9, color: "var(--mf-text-muted)", marginBottom: 3 }}>BUDGET SPENT</div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-green)" }}>${p.budget.toLocaleString()}</div>
-                  <div style={{ fontSize: 9, color: "var(--mf-text-muted)" }}>of ${p.allocated.toLocaleString()}</div>
-                </div>
-                <div style={{ padding: "9px 12px", background: "var(--mf-bg-elevated)", borderRadius: 9 }}>
-                  <div style={{ fontSize: 9, color: "var(--mf-text-muted)", marginBottom: 3 }}>NEXT DEADLINE</div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-orange)" }}>{p.nextDeadline}</div>
-                  <div style={{ fontSize: 9, color: "var(--mf-text-muted)" }}>{p.genre}</div>
-                </div>
-              </div>
-              {p.description && (
-                <div style={{ marginTop: 10, padding: "8px 10px", background: "var(--mf-bg-elevated)", borderRadius: 8 }}>
-                  <div style={{ fontSize: 11, color: "var(--mf-text-muted)", lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{p.description}</div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // --- Publishing Calendar View ---
 function PublishingCalendarView() {
   const daysInJuly = 31;
@@ -610,12 +495,16 @@ function BudgetOverviewView() {
     getProjects()
       .then(projects => {
         if (cancelled) return;
-        setItems(projects.map(project => ({
-          project: project.title,
-          allocated: project.allocated,
-          spent: project.budget,
-          color: project.color,
-        })));
+        setItems(projects.flatMap((project, index) => {
+          if (typeof project.allocated !== "number" || typeof project.budget !== "number" || project.allocated <= 0) return [];
+          const colors = ["var(--mf-cyan)", "var(--mf-orange)", "var(--mf-magenta)", "var(--mf-green)"];
+          return [{
+            project: project.title || `Project ID ${project.id}`,
+            allocated: project.allocated,
+            spent: project.budget,
+            color: colors[index % colors.length],
+          }];
+        }));
       })
       .catch((err: { message?: string }) => {
         if (!cancelled) setError(err.message || "Failed to load project budget data.");
@@ -686,10 +575,18 @@ function BudgetOverviewView() {
 }
 
 export function BoardApproval() {
-  const [activeNav, setActiveNav] = useState("Pending Approvals");
+  const [searchParams] = useSearchParams();
+  const activeNav = (() => {
+    switch (searchParams.get("tab")) {
+      case "active-projects": return "Active Projects";
+      case "publishing-calendar": return "Publishing Calendar";
+      case "budget-overview": return "Budget Overview";
+      default: return "Pending Approvals";
+    }
+  })();
 
   return (
-    <AppLayout role="board" activeNav={activeNav} onNavClick={setActiveNav}>
+    <AppLayout role="board" activeNav={activeNav}>
       <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
         <div style={{ padding: "14px 22px", borderBottom: "1px solid var(--mf-border)", background: "var(--mf-bg-base)", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--mf-orange)" }} />

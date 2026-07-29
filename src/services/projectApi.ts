@@ -1,63 +1,60 @@
 import { apiRequest } from "./api";
 
+export interface ProjectAccountSummary {
+  id?: number | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  name?: string | null;
+  username?: string | null;
+  email?: string | null;
+}
+
 export interface ProjectFromApi {
   id: number;
-  title: string | null;
-  description: string | null;
-  status: string | null;
-  createdAt: string | null;
+  title?: string | null;
+  description?: string | null;
+  status?: string | null;
+  createdAt?: string | null;
+  startDate?: string | null;
+  expectedEndDate?: string | null;
+  currentPhase?: string | null;
+  genre?: string | null;
+  targetAudience?: string | null;
+  format?: string | null;
+  projectWorkflowStatus?: string | null;
+  tantou?: ProjectAccountSummary | null;
+  mangaka?: ProjectAccountSummary | null;
+  budget?: number | null;
+  allocated?: number | null;
 }
 
-export interface ProjectUI extends ProjectFromApi {
+export interface UpdateProjectPayload {
   title: string;
-  description: string;
-  status: string;
-  chapter: string;
-  mangaka: string;
-  progress: number;
-  budget: number;
-  allocated: number;
-  nextDeadline: string;
-  genre: string;
-  color: string;
-}
-
-const UI_COLORS = [
-  "var(--mf-cyan)",
-  "var(--mf-orange)",
-  "var(--mf-magenta)",
-  "var(--mf-green)",
-];
-
-function mapToProjectUI(project: ProjectFromApi, index: number): ProjectUI {
-  return {
-    ...project,
-    title: project.title || `Project #${project.id}`,
-    description: project.description || "",
-    status: project.status || "UNKNOWN",
-    chapter: "No chapter data",
-    mangaka: "Unassigned",
-    progress: 0,
-    budget: 0,
-    allocated: 0,
-    nextDeadline: "No deadline",
-    genre: "Unspecified",
-    color: UI_COLORS[index % UI_COLORS.length],
-  };
-}
-
-export async function getProjects(): Promise<ProjectUI[]> {
-  const data = await apiRequest<ProjectFromApi[]>("/projects");
-  return data.map(mapToProjectUI);
-}
-
-export async function createProject(payload: {
-  title: string;
-  description: string;
+  description?: string;
   status?: string;
-}): Promise<ProjectFromApi> {
-  return apiRequest<ProjectFromApi>("/projects", {
+}
+
+export function getProjects(): Promise<ProjectFromApi[]> {
+  return apiRequest<ProjectFromApi[]>("/projects");
+}
+
+export function getProjectById(projectId: number): Promise<ProjectFromApi> {
+  return apiRequest<ProjectFromApi>(`/projects/${projectId}`);
+}
+
+export function updateProject(projectId: number, payload: UpdateProjectPayload): Promise<ProjectFromApi> {
+  const body: UpdateProjectPayload = { title: payload.title };
+  if (payload.description !== undefined) body.description = payload.description;
+  if (payload.status !== undefined) body.status = payload.status;
+
+  return apiRequest<ProjectFromApi>(`/projects/${projectId}`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function assignTantouToProject(projectId: number, tantouId: number): Promise<void> {
+  await apiRequest<null>(`/workflow/project/${projectId}/assign-tantou/${tantouId}`, {
     method: "POST",
-    body: JSON.stringify(payload),
-  }, [200, 201]);
+  });
 }

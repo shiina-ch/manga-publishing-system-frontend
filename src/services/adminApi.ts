@@ -15,6 +15,7 @@ export interface AdminAccount {
   id: number;
   firstName: string;
   lastName: string;
+  username?: string | null;
   phoneNumber: string;
   email: string;
   requestedRole: string | null;
