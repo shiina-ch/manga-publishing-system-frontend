@@ -142,6 +142,30 @@ export async function login(credentials: LoginRequest): Promise<LoginResponseDat
   if (!isLoginResponse(response)) throw createInvalidResponseError(res);
   tokenStorage.setToken(response.data.token);
   tokenStorage.setAccount(response.data.account);
+
+  // Fetch account role details via GET /api/accounts/{accountId} and store roleName in localStorage
+  try {
+    const accId = response.data.account.id;
+    const accRes = await fetch(`${API_BASE_URL}/accounts/${accId}`, {
+      headers: { Authorization: `Bearer ${response.data.token}` },
+    });
+    if (accRes.ok) {
+      const accData = await accRes.json();
+      // Response format: { code: 200, message: "Account retrieved", data: { systemRole: [ { roleName: "MANGAKA" } ] } }
+      const systemRoles = accData.data?.systemRole;
+      const roleName = (Array.isArray(systemRoles) && systemRoles[0]?.roleName) 
+        || accData.data?.requestedRole 
+        || response.data.account.roles?.[0] 
+        || "";
+      if (roleName) {
+        tokenStorage.setUserRole(roleName.toUpperCase());
+      }
+    }
+  } catch {
+    const primaryRole = response.data.account.roles?.[0] || "";
+    if (primaryRole) tokenStorage.setUserRole(primaryRole.toUpperCase());
+  }
+
   return response.data;
 }
 

@@ -4,6 +4,7 @@ import type { ChapterApi } from "./workflowApi";
 
 export interface ProductionPlan {
   id: number;
+  title?: string | null;
   milestones?: string | null;
   schedule?: string | null;
   chapterTimeline?: string | null;
@@ -16,6 +17,8 @@ export interface ProductionPlan {
   approvalStatus?: string | null;
   startDate?: string | null;
   endDate?: string | null;
+  publishDate?: string | null;
+  deadlineDate?: string | null;
   chapters?: ChapterApi[] | null;
 }
 
@@ -217,3 +220,46 @@ export function getProductionPlans(): Promise<ProductionPlanResponse[]> {
 export function getProductionPlansByProject(projectId: number): Promise<ProductionPlanResponse[]> {
   return apiRequest<ProductionPlanResponse[]>(`/v1/projects/${projectId}/production-plans`);
 }
+
+export function getChaptersByMangaka(mangakaId: number): Promise<any[]> {
+  return apiRequest<any[]>(`/workflow/mangaka/${mangakaId}/chapters`);
+}
+
+export interface CreateTaskPayload {
+  requesterId: number;
+  title: string;
+  description: string;
+  acceptanceCriteria: string;
+  productionTaskType: string;
+  deadlineDate: string;
+  deadlineTime: string;
+}
+
+export function createTaskUnderChapter(chapterId: number, payload: CreateTaskPayload): Promise<any> {
+  return apiRequest<any>(`/workflow/chapters/${chapterId}/tasks`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface CreateSubTaskPayload {
+  requesterId: number;
+  assigneeId?: number | null;
+  title: string;
+  description: string;
+  productionTaskType: string;
+  deadlineDate: string;
+  deadlineTime: string;
+}
+
+export function createSubTask(taskId: number, payload: CreateSubTaskPayload): Promise<any> {
+  return apiRequest<any>(`/tasks/${taskId}/subtasks`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getSubTasks(taskId: number, requesterId: number): Promise<any[]> {
+  return apiRequest<any[]>(`/tasks/${taskId}/subtasks?requesterId=${requesterId}`);
+}
+

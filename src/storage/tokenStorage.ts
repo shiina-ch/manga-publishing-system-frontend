@@ -43,6 +43,8 @@ function rolesFromToken(token: string | null): ActiveRole[] {
   return [...new Set(roles)];
 }
 
+const ROLE_KEY = "mangaflow_user_role";
+
 export const tokenStorage = {
   getToken(): string | null {
     return localStorage.getItem(TOKEN_KEY);
@@ -75,9 +77,22 @@ export const tokenStorage = {
     localStorage.removeItem(ACCOUNT_KEY);
   },
 
+  getUserRole(): string | null {
+    return localStorage.getItem(ROLE_KEY);
+  },
+
+  setUserRole(roleName: string): void {
+    localStorage.setItem(ROLE_KEY, roleName);
+  },
+
+  removeUserRole(): void {
+    localStorage.removeItem(ROLE_KEY);
+  },
+
   clear(): void {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(ACCOUNT_KEY);
+    localStorage.removeItem(ROLE_KEY);
   },
 
   isAuthenticated(): boolean {

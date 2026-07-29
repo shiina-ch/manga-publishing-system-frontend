@@ -5,6 +5,7 @@ export interface ChapterApi {
   chapterNumber: number | null;
   title: string | null;
   chapterStatus: string | null;
+  status?: string | null;
   targetPageCount?: number | null;
   publishDate?: string | null;
   projectId?: number | null;
@@ -39,6 +40,8 @@ export interface SubmissionApi {
   project?: ProjectSummaryApi | null;
   planning?: PlanningSummaryApi | null;
   reviews?: SubmissionReviewApi[] | null;
+  tantouId?: number | null;
+  tantou?: AccountSummaryApi | null;
 }
 
 export interface SubmissionReviewApi {
@@ -79,6 +82,8 @@ export interface ProjectSummaryApi {
   name?: string | null;
   status?: string | null;
   description?: string | null;
+  tantouId?: number | null;
+  tantou?: AccountSummaryApi | null;
 }
 
 export interface SubmissionFileApi {
@@ -116,6 +121,7 @@ export interface TaskApi {
   taskType?: string | null;
   assigneeId?: number | null;
   assigneeName?: string | null;
+  chapterTitle?: string | null;
 }
 
 export interface SketchTaskApi {
@@ -414,16 +420,61 @@ export async function getSubTasksForTask(taskId: number, requesterId: number): P
   });
 }
 
-export async function getSubTasksForAssignee(assigneeId: number, requesterId: number): Promise<SubTaskApi[]> {
+export async function getAssignedSubTasks(userId: number): Promise<SubTaskApi[]> {
   let realTasks: SubTaskApi[] = [];
   try {
-    realTasks = await apiRequest<SubTaskApi[]>(`/users/${assigneeId}/subtasks?requesterId=${requesterId}`, {
+    // Primary API: GET /api/users/{userId}/subtasks/assigned
+    realTasks = await apiRequest<SubTaskApi[]>(`/users/${userId}/subtasks/assigned`, {
       method: "GET",
     });
   } catch (e) {
-    console.error("Real API failed", e);
+    console.warn("GET /users/{userId}/subtasks/assigned failed, trying fallback...", e);
+    try {
+      realTasks = await apiRequest<SubTaskApi[]>(`/users/${userId}/subtasks?requesterId=${userId}`, {
+        method: "GET",
+      });
+    } catch (e2) {
+      console.error("Fallback subtasks API failed", e2);
+    }
   }
-  const mockTasks = JSON.parse(localStorage.getItem("mock_subtasks") || "[]").filter((t: any) => t.assigneeId === assigneeId);
+  const mockTasks = JSON.parse(localStorage.getItem("mock_subtasks") || "[]").filter((t: any) => t.assigneeId === userId);
   return [...realTasks, ...mockTasks];
+}
+
+export async function getSubTasksForAssignee(assigneeId: number, requesterId?: number): Promise<SubTaskApi[]> {
+  return getAssignedSubTasks(assigneeId);
+}
+
+export async function submitSubTaskWork(subTaskId: number, payload: { note?: string; fileUrl?: string; file?: File }): Promise<void> {
+  try {
+    const formData = new FormData();
+    if (payload.note) formData.append("note", payload.note);
+    if (payload.fileUrl) formData.append("contentUrl", payload.fileUrl);
+    if (payload.file) formData.append("file", payload.file);
+
+    await apiRequest<unknown>(`/subtasks/${subTaskId}/submit`, {
+      method: "POST",
+      body: formData,
+    });
+  } catch (err) {
+    console.warn(`POST /subtasks/${subTaskId}/submit failed, trying status update...`, err);
+    try {
+      await apiRequest<unknown>(`/subtasks/${subTaskId}/status`, {
+        method: "PUT",
+        body: JSON.stringify({ status: "submitted", note: payload.note, contentUrl: payload.fileUrl }),
+      });
+    } catch (err2) {
+      console.warn("API fallback failed, updating local mock state", err2);
+    }
+  }
+
+  const mockTasks = JSON.parse(localStorage.getItem("mock_subtasks") || "[]");
+  const idx = mockTasks.findIndex((t: any) => t.id === subTaskId);
+  if (idx !== -1) {
+    mockTasks[idx].status = "submitted";
+    mockTasks[idx].note = payload.note;
+    mockTasks[idx].completedUrl = payload.fileUrl;
+    localStorage.setItem("mock_subtasks", JSON.stringify(mockTasks));
+  }
 }
 

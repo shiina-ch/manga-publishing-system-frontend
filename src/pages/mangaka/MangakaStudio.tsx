@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppLayout } from "../../components/layout/AppLayout";
 import {
   Brush,
@@ -18,7 +18,819 @@ import {
 } from "lucide-react";
 import { toast } from "react-toastify";
 import { getMangakaSubmissions, getSubmissionById, getChapters, type SubmissionApi, type ChapterApi, type TaskApi, submitIdea, type SubmissionReviewApi } from "../../services/workflowApi";
+import { getChaptersByMangaka, createTaskUnderChapter, createSubTask, getSubTasks } from "../../services/projectApi";
+import { getAllAccounts, type AdminAccount } from "../../services/adminApi";
 import { tokenStorage } from "../../storage/tokenStorage";
+import { RefreshCw, AlertTriangle, Inbox } from "lucide-react";
+
+function MangakaMyChapters() {
+  const [chapters, setChapters] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedChapter, setSelectedChapter] = useState<any | null>(null);
+  const [activeTab, setActiveTab] = useState<"details" | "tasks">("details");
+  // Task Detail Modal State
+  const [selectedTaskDetail, setSelectedTaskDetail] = useState<any | null>(null);
+  const [activeTaskDetailTab, setActiveTaskDetailTab] = useState<"detail" | "subtask">("detail");
+  const [showCreateTask, setShowCreateTask] = useState(false);
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDescription, setTaskDescription] = useState("");
+  const [taskAcceptanceCriteria, setTaskAcceptanceCriteria] = useState("");
+  const [taskType, setTaskType] = useState("OUTLINE");
+  const [taskDeadlineDate, setTaskDeadlineDate] = useState("");
+  const [taskDeadlineTime, setTaskDeadlineTime] = useState("09:00");
+  const [creatingTask, setCreatingTask] = useState(false);
+
+  // Create SubTask Form State
+  const [showCreateSubTask, setShowCreateSubTask] = useState(false);
+  const [subTaskTitle, setSubTaskTitle] = useState("");
+  const [subTaskDescription, setSubTaskDescription] = useState("");
+  const [subTaskType, setSubTaskType] = useState("OUTLINE");
+  const [subTaskAssigneeId, setSubTaskAssigneeId] = useState("");
+  const [subTaskDeadlineDate, setSubTaskDeadlineDate] = useState("");
+  const [subTaskDeadlineTime, setSubTaskDeadlineTime] = useState("09:00");
+  const [creatingSubTask, setCreatingSubTask] = useState(false);
+  const [loadingSubTasks, setLoadingSubTasks] = useState(false);
+  const [assistantList, setAssistantList] = useState<AdminAccount[]>([]);
+
+  const fetchAssistants = useCallback(async () => {
+    try {
+      const accounts = await getAllAccounts();
+      const filtered = accounts.filter(acc =>
+        acc.systemRole?.some(role => role.roleName?.toUpperCase().includes("ASSISTANT")) ||
+        acc.requestedRole?.toUpperCase().includes("ASSISTANT")
+      );
+      setAssistantList(filtered.length > 0 ? filtered : accounts);
+    } catch {
+      setAssistantList([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchAssistants();
+  }, [fetchAssistants]);
+
+  const fetchSubTasksForCurrentTask = async (taskId: number) => {
+    const requesterId = tokenStorage.getAccount()?.id;
+    if (!requesterId || !taskId) return;
+    setLoadingSubTasks(true);
+    try {
+      const list = await getSubTasks(taskId, requesterId);
+      if (Array.isArray(list)) {
+        setSelectedTaskDetail((prev: any) => prev?.id === taskId ? { ...prev, subTasks: list } : prev);
+      }
+    } catch (err) {
+      console.error("Failed to fetch subtasks:", err);
+    } finally {
+      setLoadingSubTasks(false);
+    }
+  };
+
+  const handleOpenCreateSubTaskModal = () => {
+    setSubTaskTitle("");
+    setSubTaskDescription("");
+    setSubTaskType(selectedTaskDetail?.productionTaskType || "OUTLINE");
+    setSubTaskAssigneeId("");
+    const today = new Date().toISOString().slice(0, 10);
+    setSubTaskDeadlineDate(today);
+    setSubTaskDeadlineTime("09:00");
+    setShowCreateSubTask(true);
+  };
+
+  const handleCreateSubTaskSubmit = async () => {
+    if (!selectedTaskDetail?.id) {
+      toast.error("No task selected");
+      return;
+    }
+    if (!subTaskTitle.trim()) {
+      toast.error("Subtask title is required");
+      return;
+    }
+    const requesterId = tokenStorage.getAccount()?.id;
+    if (!requesterId) {
+      toast.error("Authentication required to create subtask");
+      return;
+    }
+
+    setCreatingSubTask(true);
+    try {
+      const formattedDeadlineTime = subTaskDeadlineTime.length === 5 ? `${subTaskDeadlineTime}:00` : subTaskDeadlineTime;
+
+      const createdSubTask = await createSubTask(selectedTaskDetail.id, {
+        requesterId,
+        assigneeId: subTaskAssigneeId ? Number(subTaskAssigneeId) : null,
+        title: subTaskTitle.trim(),
+        description: subTaskDescription.trim(),
+        productionTaskType: subTaskType,
+        deadlineDate: subTaskDeadlineDate,
+        deadlineTime: formattedDeadlineTime,
+      });
+
+      toast.success("Subtask created successfully!");
+      setShowCreateSubTask(false);
+
+      const currentSubTasks = Array.isArray(selectedTaskDetail.subTasks) ? selectedTaskDetail.subTasks : [];
+      const updatedSubTasks = [...currentSubTasks, createdSubTask];
+      setSelectedTaskDetail((prev: any) => prev ? { ...prev, subTasks: updatedSubTasks } : null);
+
+      void fetchSubTasksForCurrentTask(selectedTaskDetail.id);
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to create subtask.");
+    } finally {
+      setCreatingSubTask(false);
+    }
+  };
+
+  const handleOpenCreateTaskModal = () => {
+    setTaskTitle("");
+    setTaskDescription("");
+    setTaskAcceptanceCriteria("");
+    setTaskType("OUTLINE");
+    const today = new Date().toISOString().slice(0, 10);
+    setTaskDeadlineDate(today);
+    setTaskDeadlineTime("09:00");
+    setShowCreateTask(true);
+  };
+
+  const handleCreateTaskSubmit = async () => {
+    if (!selectedChapter?.id) {
+      toast.error("No chapter selected");
+      return;
+    }
+    if (!taskTitle.trim()) {
+      toast.error("Task title is required");
+      return;
+    }
+    const requesterId = tokenStorage.getAccount()?.id;
+    if (!requesterId) {
+      toast.error("Authentication required to create task");
+      return;
+    }
+
+    setCreatingTask(true);
+    try {
+      const formattedDeadlineTime = `${taskDeadlineDate || new Date().toISOString().slice(0, 10)}T${taskDeadlineTime.length === 5 ? taskDeadlineTime + ":00" : taskDeadlineTime}`;
+
+      const createdTask = await createTaskUnderChapter(selectedChapter.id, {
+        requesterId,
+        title: taskTitle.trim(),
+        description: taskDescription.trim(),
+        acceptanceCriteria: taskAcceptanceCriteria.trim(),
+        productionTaskType: taskType,
+        deadlineDate: taskDeadlineDate,
+        deadlineTime: formattedDeadlineTime,
+      });
+
+      toast.success("Task created under chapter successfully!");
+      setShowCreateTask(false);
+
+      const updatedTasks = Array.isArray(selectedChapter.tasks) ? [...selectedChapter.tasks, createdTask] : [createdTask];
+      setSelectedChapter((prev: any) => prev ? { ...prev, tasks: updatedTasks } : null);
+
+      await fetchMyChapters();
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to create task.");
+    } finally {
+      setCreatingTask(false);
+    }
+  };
+
+  const fetchMyChapters = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const account = tokenStorage.getAccount();
+      const mangakaId = account?.id;
+      if (!mangakaId) {
+        setError("Mangaka ID not found in session.");
+        setChapters([]);
+        return;
+      }
+      const data = await getChaptersByMangaka(mangakaId);
+      setChapters(data || []);
+    } catch (err: any) {
+      setError(err?.message || "Failed to fetch assigned chapters.");
+      setChapters([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void fetchMyChapters();
+  }, []);
+
+  return (
+    <div style={{ padding: 28, display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 900, margin: 0, color: "var(--mf-text)", letterSpacing: "-0.01em" }}>My Chapters</h2>
+          <p style={{ fontSize: 13, color: "var(--mf-text-muted)", margin: "4px 0 0" }}>Chapters assigned to you for production</p>
+        </div>
+        <button
+          onClick={() => void fetchMyChapters()}
+          disabled={loading}
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text-secondary)", fontSize: 12, fontWeight: 800, cursor: loading ? "default" : "pointer", opacity: loading ? 0.65 : 1 }}
+        >
+          <RefreshCw size={13} /> Refresh
+        </button>
+      </div>
+
+      {loading && (
+        <div style={{ padding: 60, textAlign: "center", color: "var(--mf-text-muted)", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+          <Loader2 size={20} style={{ animation: "editor-spin 1s linear infinite" }} />
+          Loading assigned chapters...
+        </div>
+      )}
+
+      {!loading && error && (
+        <div style={{ padding: 20, background: "rgba(255,42,122,0.1)", border: "1px solid rgba(255,42,122,0.3)", borderRadius: 12, color: "var(--mf-red)", display: "flex", alignItems: "center", gap: 10 }}>
+          <AlertTriangle size={18} />
+          <span style={{ fontSize: 13, fontWeight: 700 }}>{error}</span>
+        </div>
+      )}
+
+      {!loading && !error && chapters.length === 0 && (
+        <div style={{ padding: 60, textAlign: "center", color: "var(--mf-text-muted)", background: "var(--mf-bg-surface)", borderRadius: 12, border: "1px dashed var(--mf-border)" }}>
+          <Inbox size={40} style={{ opacity: 0.4, marginBottom: 12 }} />
+          <p style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>No chapters assigned to you yet.</p>
+        </div>
+      )}
+
+      {!loading && !error && chapters.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
+          {chapters.map((ch: any) => (
+            <div
+              key={ch.id}
+              onClick={() => {
+                setSelectedChapter(ch);
+                setSelectedTaskDetail(null);
+                setActiveTab("details");
+              }}
+              style={{
+                background: "var(--mf-bg-surface)",
+                border: "1px solid var(--mf-border)",
+                borderRadius: 14,
+                padding: 18,
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+              className="hover:border-[var(--mf-cyan-border)]"
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 15, fontWeight: 800, color: "var(--mf-text)" }}>
+                  Chapter {ch.chapterNumber}: {ch.title}
+                </span>
+                <span style={{ fontSize: 11, fontWeight: 800, padding: "3px 9px", background: "var(--mf-cyan-dim)", color: "var(--mf-cyan)", borderRadius: 6 }}>
+                  {ch.status || ch.chapterStatus || "ACTIVE"}
+                </span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12, color: "var(--mf-text-secondary)", background: "var(--mf-bg-base)", padding: 12, borderRadius: 8 }}>
+                {ch.targetPageCount != null && <div>Target Pages: <strong>{ch.targetPageCount}</strong></div>}
+                {ch.priority && <div>Priority: <strong>{ch.priority}</strong></div>}
+                {ch.startDate && <div>Start Date: <strong>{new Date(ch.startDate).toLocaleDateString()}</strong></div>}
+                {ch.endDate && <div>End Date: <strong>{new Date(ch.endDate).toLocaleDateString()}</strong></div>}
+                {ch.deadline && <div>Deadline: <strong>{new Date(ch.deadline).toLocaleDateString()}</strong></div>}
+                {ch.publishDate && <div>Publish Date: <strong>{new Date(ch.publishDate).toLocaleDateString()}</strong></div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Chapter Detail & Tasks Modal for Mangaka */}
+      {selectedChapter && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, gap: 16 }}>
+          <div style={{ background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 16, width: "100%", maxWidth: 540, padding: 24, display: "flex", flexDirection: "column", gap: 16, maxHeight: "85vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--mf-border)", paddingBottom: 12 }}>
+              <h3 style={{ fontSize: 17, fontWeight: 800, margin: 0, color: "var(--mf-text)" }}>
+                Ch.{selectedChapter.chapterNumber}: {selectedChapter.title}
+              </h3>
+              <button onClick={() => { setSelectedChapter(null); setSelectedTaskDetail(null); }} style={{ background: "transparent", border: "none", color: "var(--mf-text-muted)", cursor: "pointer" }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* 2 Tabs Header */}
+            <div style={{ display: "flex", gap: 8, borderBottom: "1px solid var(--mf-border)", paddingBottom: 8 }}>
+              <button
+                onClick={() => setActiveTab("details")}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 6,
+                  fontSize: 13,
+                  fontWeight: 800,
+                  border: "none",
+                  cursor: "pointer",
+                  background: activeTab === "details" ? "var(--mf-cyan-dim)" : "transparent",
+                  color: activeTab === "details" ? "var(--mf-cyan)" : "var(--mf-text-secondary)",
+                }}
+              >
+                Details
+              </button>
+              <button
+                onClick={() => setActiveTab("tasks")}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 6,
+                  fontSize: 13,
+                  fontWeight: 800,
+                  border: "none",
+                  cursor: "pointer",
+                  background: activeTab === "tasks" ? "var(--mf-cyan-dim)" : "transparent",
+                  color: activeTab === "tasks" ? "var(--mf-cyan)" : "var(--mf-text-secondary)",
+                }}
+              >
+                Tasks ({Array.isArray(selectedChapter.tasks) ? selectedChapter.tasks.length : 0})
+              </button>
+            </div>
+
+            {/* Tab 1: Details */}
+            {activeTab === "details" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, background: "var(--mf-bg-base)", padding: 12, borderRadius: 10, border: "1px solid var(--mf-border)", fontSize: 13 }}>
+                  <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>STATUS</span> <strong>{selectedChapter.status || selectedChapter.chapterStatus || "ACTIVE"}</strong></div>
+                  <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>PRIORITY</span> <strong>{selectedChapter.priority || "Medium"}</strong></div>
+                  <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>TARGET PAGES</span> <strong>{selectedChapter.targetPageCount ?? "N/A"}</strong></div>
+                  <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>MANGAKA</span> <strong style={{ color: "var(--mf-cyan)" }}>{selectedChapter.assigneeName || "Assigned"}</strong></div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 12, color: "var(--mf-text-secondary)" }}>
+                  {selectedChapter.startDate && <div>Start Date: <strong>{new Date(selectedChapter.startDate).toLocaleDateString()}</strong></div>}
+                  {selectedChapter.endDate && <div>End Date: <strong>{new Date(selectedChapter.endDate).toLocaleDateString()}</strong></div>}
+                  {selectedChapter.deadline && <div>Deadline: <strong>{new Date(selectedChapter.deadline).toLocaleDateString()}</strong></div>}
+                  {selectedChapter.publishDate && <div>Publish Date: <strong>{new Date(selectedChapter.publishDate).toLocaleDateString()}</strong></div>}
+                </div>
+              </div>
+            )}
+
+            {/* Tab 2: Tasks */}
+            {activeTab === "tasks" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)" }}>Chapter Tasks</span>
+                  <button
+                    onClick={handleOpenCreateTaskModal}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "6px 12px",
+                      background: "var(--mf-cyan)",
+                      border: "none",
+                      borderRadius: 8,
+                      color: "#000",
+                      fontSize: 12,
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Plus size={14} /> New Task
+                  </button>
+                </div>
+                {(!selectedChapter.tasks || selectedChapter.tasks.length === 0) ? (
+                  <div style={{ padding: 24, textAlign: "center", color: "var(--mf-text-muted)", background: "var(--mf-bg-base)", borderRadius: 8, border: "1px dashed var(--mf-border)" }}>
+                    <Inbox size={28} style={{ opacity: 0.4, marginBottom: 6 }} />
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>No tasks found for this chapter.</p>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {selectedChapter.tasks.map((task: any) => (
+                      <div
+                        key={task.id}
+                        onClick={() => {
+                          setSelectedTaskDetail(task);
+                          setActiveTaskDetailTab("detail");
+                          void fetchSubTasksForCurrentTask(task.id);
+                        }}
+                        style={{
+                          background: selectedTaskDetail?.id === task.id ? "var(--mf-bg-surface)" : "var(--mf-bg-base)",
+                          border: selectedTaskDetail?.id === task.id ? "1px solid var(--mf-cyan)" : "1px solid var(--mf-border)",
+                          borderRadius: 10,
+                          padding: 12,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 6,
+                          cursor: "pointer",
+                          transition: "all 0.15s ease",
+                        }}
+                        className="hover:border-[var(--mf-cyan-border)]"
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)" }}>{task.title}</span>
+                          <span style={{ fontSize: 10, fontWeight: 800, padding: "2px 6px", background: "var(--mf-cyan-dim)", color: "var(--mf-cyan)", borderRadius: 4 }}>
+                            {task.productionTaskType || "OUTLINE"} · {task.taskWorkflowStatus || "TODO"}
+                          </span>
+                        </div>
+                        {task.description && <div style={{ fontSize: 12, color: "var(--mf-text-secondary)" }}>{task.description}</div>}
+                        {task.acceptanceCriteria && (
+                          <div style={{ fontSize: 11, color: "var(--mf-text-muted)" }}>
+                            Criteria: <strong>{task.acceptanceCriteria}</strong>
+                          </div>
+                        )}
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--mf-text-muted)", marginTop: 2 }}>
+                          <div>Assignee: <strong style={{ color: "var(--mf-cyan)" }}>{task.assigneeName || "Unassigned"}</strong></div>
+                          {task.deadlineDate && <div>Deadline: <strong>{task.deadlineDate} {task.deadlineTime || ""}</strong></div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+              <button onClick={() => { setSelectedChapter(null); setSelectedTaskDetail(null); }} style={{ padding: "8px 16px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                Close
+              </button>
+            </div>
+          </div>
+
+          {/* 2nd Dialog (Vertical at the right for Task Detail & Sub Task) */}
+          {selectedTaskDetail && (
+            <div style={{ background: "var(--mf-bg-surface)", border: "1px solid var(--mf-cyan-border)", borderRadius: 16, width: 440, padding: 24, display: "flex", flexDirection: "column", gap: 16, maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 40px rgba(0,0,0,0.6)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--mf-border)", paddingBottom: 12 }}>
+                <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0, color: "var(--mf-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  Task: {selectedTaskDetail.title}
+                </h3>
+                <button onClick={() => setSelectedTaskDetail(null)} style={{ background: "transparent", border: "none", color: "var(--mf-text-muted)", cursor: "pointer" }}>
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* 2 Tabs for Task Detail Side Panel */}
+              <div style={{ display: "flex", gap: 8, borderBottom: "1px solid var(--mf-border)", paddingBottom: 8 }}>
+                <button
+                  onClick={() => setActiveTaskDetailTab("detail")}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: 800,
+                    border: "none",
+                    cursor: "pointer",
+                    background: activeTaskDetailTab === "detail" ? "var(--mf-cyan-dim)" : "transparent",
+                    color: activeTaskDetailTab === "detail" ? "var(--mf-cyan)" : "var(--mf-text-secondary)",
+                  }}
+                >
+                  Detail
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTaskDetailTab("subtask");
+                    if (selectedTaskDetail?.id) {
+                      void fetchSubTasksForCurrentTask(selectedTaskDetail.id);
+                    }
+                  }}
+                  style={{
+                    padding: "6px 14px",
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: 800,
+                    border: "none",
+                    cursor: "pointer",
+                    background: activeTaskDetailTab === "subtask" ? "var(--mf-cyan-dim)" : "transparent",
+                    color: activeTaskDetailTab === "subtask" ? "var(--mf-cyan)" : "var(--mf-text-secondary)",
+                  }}
+                >
+                  Sub task ({Array.isArray(selectedTaskDetail.subTasks) ? selectedTaskDetail.subTasks.length : 0})
+                </button>
+              </div>
+
+              {/* TAB 1: TASK DETAIL */}
+              {activeTaskDetailTab === "detail" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                  <div style={{ background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+                    <div>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", display: "block" }}>TASK TITLE</span>
+                      <span style={{ fontSize: 14, fontWeight: 800, color: "var(--mf-text)" }}>{selectedTaskDetail.title}</span>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 12 }}>
+                      <div>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", display: "block" }}>TYPE</span>
+                        <span style={{ fontWeight: 800, color: "var(--mf-cyan)" }}>{selectedTaskDetail.productionTaskType || "OUTLINE"}</span>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", display: "block" }}>STATUS</span>
+                        <span style={{ fontWeight: 800, color: "var(--mf-green)" }}>{selectedTaskDetail.taskWorkflowStatus || "TODO"}</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", display: "block" }}>ASSIGNEE</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--mf-cyan)" }}>{selectedTaskDetail.assigneeName || "Unassigned"}</span>
+                    </div>
+
+                    {selectedTaskDetail.description && (
+                      <div>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", display: "block" }}>DESCRIPTION</span>
+                        <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--mf-text-secondary)", lineHeight: 1.5 }}>{selectedTaskDetail.description}</p>
+                      </div>
+                    )}
+
+                    {selectedTaskDetail.acceptanceCriteria && (
+                      <div>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", display: "block" }}>ACCEPTANCE CRITERIA</span>
+                        <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--mf-text-secondary)", lineHeight: 1.5 }}>{selectedTaskDetail.acceptanceCriteria}</p>
+                      </div>
+                    )}
+
+                    {(selectedTaskDetail.deadlineDate || selectedTaskDetail.deadlineTime) && (
+                      <div>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", display: "block" }}>DEADLINE</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text)" }}>{selectedTaskDetail.deadlineDate} {selectedTaskDetail.deadlineTime || ""}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: SUB TASK */}
+              {activeTaskDetailTab === "subtask" && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)" }}>
+                      Subtasks ({Array.isArray(selectedTaskDetail.subTasks) ? selectedTaskDetail.subTasks.length : 0})
+                    </span>
+                    <button
+                      onClick={handleOpenCreateSubTaskModal}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "5px 10px",
+                        background: "var(--mf-cyan)",
+                        border: "none",
+                        borderRadius: 6,
+                        color: "#000",
+                        fontSize: 11,
+                        fontWeight: 800,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <Plus size={13} /> New Subtask
+                    </button>
+                  </div>
+
+                  {loadingSubTasks && (
+                    <div style={{ padding: 16, textAlign: "center", color: "var(--mf-text-muted)", fontSize: 12 }}>
+                      Loading subtasks...
+                    </div>
+                  )}
+
+                  {!loadingSubTasks && (!selectedTaskDetail.subTasks || selectedTaskDetail.subTasks.length === 0) ? (
+                    <div style={{ padding: 24, textAlign: "center", color: "var(--mf-text-muted)", background: "var(--mf-bg-base)", borderRadius: 8, border: "1px dashed var(--mf-border)" }}>
+                      <Inbox size={28} style={{ opacity: 0.4, marginBottom: 6, margin: "0 auto" }} />
+                      <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>No sub tasks found for this task.</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {selectedTaskDetail.subTasks?.map((st: any, idx: number) => (
+                        <div key={st.id || idx} style={{ background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", gap: 4 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span style={{ fontSize: 12, fontWeight: 800, color: "var(--mf-text)" }}>{st.title || `Subtask #${st.id || idx + 1}`}</span>
+                            <span style={{ fontSize: 10, fontWeight: 800, padding: "2px 6px", background: "var(--mf-cyan-dim)", color: "var(--mf-cyan)", borderRadius: 4 }}>
+                              {st.subtaskStatus || st.status || "TODO"}
+                            </span>
+                          </div>
+                          {st.description && <span style={{ fontSize: 11, color: "var(--mf-text-muted)" }}>{st.description}</span>}
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--mf-text-muted)", marginTop: 2 }}>
+                            {st.assigneeName && <div>Assignee: <strong style={{ color: "var(--mf-cyan)" }}>{st.assigneeName}</strong> (ID: {st.assigneeId})</div>}
+                            {st.deadlineDate && <div>Deadline: <strong>{st.deadlineDate} {st.deadlineTime || ""}</strong></div>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Create Task Modal */}
+      {showCreateTask && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 16, width: "100%", maxWidth: 460, padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--mf-border)", paddingBottom: 10 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0, color: "var(--mf-text)" }}>
+                Create New Task for Chapter #{selectedChapter?.chapterNumber}
+              </h3>
+              <button onClick={() => setShowCreateTask(false)} style={{ background: "transparent", border: "none", color: "var(--mf-text-muted)", cursor: "pointer" }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Title *</label>
+              <input
+                type="text"
+                value={taskTitle}
+                onChange={(e) => setTaskTitle(e.target.value)}
+                placeholder="Task Title..."
+                style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13 }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Description</label>
+              <textarea
+                value={taskDescription}
+                onChange={(e) => setTaskDescription(e.target.value)}
+                placeholder="Task details..."
+                rows={2}
+                style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13 }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Acceptance Criteria</label>
+              <input
+                type="text"
+                value={taskAcceptanceCriteria}
+                onChange={(e) => setTaskAcceptanceCriteria(e.target.value)}
+                placeholder="Criteria for completing task..."
+                style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13 }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Task Type</label>
+              <select
+                value={taskType}
+                onChange={(e) => setTaskType(e.target.value)}
+                style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13 }}
+              >
+                <option value="OUTLINE">OUTLINE</option>
+                <option value="NAME_WIP">NAME_WIP</option>
+                <option value="LINEART">LINEART</option>
+                <option value="INKING">INKING</option>
+                <option value="BACKGROUND">BACKGROUND</option>
+              </select>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Deadline Date</label>
+                <input
+                  type="date"
+                  value={taskDeadlineDate}
+                  onChange={(e) => setTaskDeadlineDate(e.target.value)}
+                  style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-cyan-border)", borderRadius: 8, color: "#fff", colorScheme: "dark", fontSize: 13 }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Deadline Time</label>
+                <input
+                  type="time"
+                  value={taskDeadlineTime}
+                  onChange={(e) => setTaskDeadlineTime(e.target.value)}
+                  style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-cyan-border)", borderRadius: 8, color: "#fff", colorScheme: "dark", fontSize: 13 }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 10 }}>
+              <button
+                onClick={() => setShowCreateTask(false)}
+                disabled={creatingTask}
+                style={{ padding: "8px 16px", background: "transparent", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text-muted)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void handleCreateTaskSubmit()}
+                disabled={creatingTask}
+                style={{ padding: "8px 16px", background: "var(--mf-cyan)", border: "none", borderRadius: 8, color: "#000", fontSize: 12, fontWeight: 800, cursor: creatingTask ? "default" : "pointer", opacity: creatingTask ? 0.7 : 1 }}
+              >
+                {creatingTask ? "Creating..." : "Create Task"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create SubTask Modal */}
+      {showCreateSubTask && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 16, width: "100%", maxWidth: 460, padding: 24, display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--mf-border)", paddingBottom: 10 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0, color: "var(--mf-text)" }}>
+                Create New Subtask for Task: {selectedTaskDetail?.title}
+              </h3>
+              <button onClick={() => setShowCreateSubTask(false)} style={{ background: "transparent", border: "none", color: "var(--mf-text-muted)", cursor: "pointer" }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Subtask Title *</label>
+                <input
+                  type="text"
+                  value={subTaskTitle}
+                  onChange={(e) => setSubTaskTitle(e.target.value)}
+                  placeholder="Subtask title (e.g. Draw character lineart)"
+                  style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13 }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Description</label>
+                <textarea
+                  value={subTaskDescription}
+                  onChange={(e) => setSubTaskDescription(e.target.value)}
+                  placeholder="Subtask details..."
+                  rows={2}
+                  style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13 }}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Production Task Type</label>
+                <select
+                  value={subTaskType}
+                  onChange={(e) => setSubTaskType(e.target.value)}
+                  style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13 }}
+                >
+                  <option value="OUTLINE">OUTLINE</option>
+                  <option value="NAME_WIP">NAME_WIP</option>
+                  <option value="LINEART">LINEART</option>
+                  <option value="INKING">INKING</option>
+                  <option value="BACKGROUND">BACKGROUND</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Assignee (Assistant)</label>
+                <select
+                  value={subTaskAssigneeId}
+                  onChange={(e) => setSubTaskAssigneeId(e.target.value)}
+                  style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13, cursor: "pointer" }}
+                >
+                  <option value="">-- None (Unassigned) --</option>
+                  {assistantList.map((acc: any) => {
+                    const name = `${acc.firstName || ""} ${acc.lastName || ""}`.trim() || acc.username || acc.email || `User #${acc.id}`;
+                    const roleStr = acc.systemRole?.map((r: any) => r.roleName).join(", ") || acc.requestedRole || "ASSISTANT";
+                    return (
+                      <option key={acc.id} value={acc.id}>
+                        {name} ({roleStr}) - ID: {acc.id}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Deadline Date</label>
+                  <input
+                    type="date"
+                    value={subTaskDeadlineDate}
+                    onChange={(e) => setSubTaskDeadlineDate(e.target.value)}
+                    style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-cyan-border)", borderRadius: 8, color: "#fff", colorScheme: "dark", fontSize: 13 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Deadline Time</label>
+                  <input
+                    type="text"
+                    value={subTaskDeadlineTime}
+                    onChange={(e) => setSubTaskDeadlineTime(e.target.value)}
+                    placeholder="e.g. 09:00:00 or 9am"
+                    style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-cyan-border)", borderRadius: 8, color: "#fff", colorScheme: "dark", fontSize: 13 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 10 }}>
+                <button
+                  onClick={() => setShowCreateSubTask(false)}
+                  disabled={creatingSubTask}
+                  style={{ padding: "8px 16px", background: "transparent", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text-muted)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => void handleCreateSubTaskSubmit()}
+                  disabled={creatingSubTask}
+                  style={{ padding: "8px 16px", background: "var(--mf-cyan)", border: "none", borderRadius: 8, color: "#000", fontSize: 12, fontWeight: 800, cursor: creatingSubTask ? "default" : "pointer", opacity: creatingSubTask ? 0.7 : 1 }}
+                >
+                  {creatingSubTask ? "Creating..." : "Create Subtask"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function submissionTitle(submission: SubmissionApi): string {
   return (
@@ -147,17 +959,14 @@ function DelegateSubTaskModal({
     setSubmitting(true);
     setError(null);
     try {
-      const { createSubTask } = await import("../../services/workflowApi");
-      const finalDescription = pageNumber !== "" ? `${description}\n[Page ${pageNumber}]`.trim() : description;
-
       await createSubTask(selectedTask.id, {
         requesterId,
         assigneeId,
         title: title.trim(),
-        description: finalDescription,
-        productionTaskType: productionTaskType || undefined,
+        description: pageNumber !== "" ? `${description}\n[Page ${pageNumber}]`.trim() : description,
+        productionTaskType: productionTaskType || "OUTLINE",
         deadlineDate,
-        deadlineTime: deadlineTime.trim() || undefined,
+        deadlineTime: deadlineTime.trim() || "09:00:00",
       });
       toast.success("Task successfully delegated to assistant!");
       onSuccess();
@@ -1200,9 +2009,7 @@ function SubmissionDetailsModal({
                     )}
                   </div>
                 </div>
-              ) : null}
-
-              {/* Other Files list */}
+              ) : null}              {/* Other Files list */}
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {files.filter(f => !thumbnailSrc || f !== firstImageFile).map((file, idx) => {
                   const name = file.originalName || file.originalFilename || file.fileName || file.filename || "Unknown file";
@@ -1340,7 +2147,7 @@ function SubmitView({
 }
 
 export function MangakaStudio() {
-  const [activeNav, setActiveNav] = useState("My Series");
+  const [activeNav, setActiveNav] = useState("My Chapters");
   const [refreshKey, setRefreshKey] = useState(0);
   const [submissions, setSubmissions] = useState<SubmissionApi[]>([]);
   const [submissionsLoading, setSubmissionsLoading] = useState(true);
@@ -1406,7 +2213,6 @@ export function MangakaStudio() {
   useEffect(() => {
     if (authenticatedAccountId === undefined) return;
 
-    // First, collect project IDs that belong to this Mangaka
     const projectIds = new Set<number>();
     submissions.forEach(submission => {
       if (typeof submission.project?.id === "number") projectIds.add(submission.project.id);
@@ -1419,11 +2225,9 @@ export function MangakaStudio() {
       }
     } catch (e) { }
 
-    // Fetch chapters and extract tasks for those projects
     getChapters().then(allChapters => {
       const myTasks: any[] = [];
 
-      // Also add projects where the chapter owner is this Mangaka
       allChapters.forEach(ch => {
         if (ch.ownerId === authenticatedAccountId && ch.projectId) {
           projectIds.add(ch.projectId);
@@ -1445,7 +2249,6 @@ export function MangakaStudio() {
   }, [submissions, authenticatedAccountId]);
 
   const projectCount = assignedProjectIds.size;
-
   const taskCount = tasks.length;
 
   const navBadges = useMemo<Record<string, number>>(() => ({
@@ -1474,6 +2277,7 @@ export function MangakaStudio() {
         </div>
 
         <div style={{ flex: 1, overflowY: "auto" }}>
+          {activeNav === "My Chapters" && <MangakaMyChapters />}
           {activeNav === "Submission History" && (
             <SubmitView
               submissions={submissionsForView}

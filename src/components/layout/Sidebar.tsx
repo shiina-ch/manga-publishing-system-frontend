@@ -6,7 +6,7 @@ import {
   Plus, Edit3, Users, PenTool, Brush, Home, Search,
   FileText, Clock, AlertTriangle, CheckCircle, BarChart3, Layers, Star,
   Inbox, Shield, Activity, UserPlus, Eye, User, LogOut, CheckSquare,
-  Image as FileImage, Send
+  Image as FileImage, Send, ClipboardList
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { logout } from "../../services/adminApi";
@@ -71,6 +71,7 @@ const roleConfig: Record<LayoutRole, RoleConfig> = {
   mangaka: {
     label: "Mangaka", color: "var(--mf-magenta)", icon: PenTool,
     nav: [
+      { icon: Layers, label: "My Chapters" },
       { icon: FileImage, label: "My Series" },
       { icon: Clock, label: "Active Tasks", badgeColor: "var(--mf-orange)" },
       { icon: Brush, label: "Drafts & Storyboards" },
@@ -83,9 +84,7 @@ const roleConfig: Record<LayoutRole, RoleConfig> = {
   assistant: {
     label: "Assistant", color: "var(--mf-green)", icon: Brush,
     nav: [
-      { icon: Inbox, label: "My Assignments", badge: 4 },
-      { icon: Clock, label: "In Progress", badge: 2 },
-      { icon: CheckCircle, label: "Submitted" },
+      { icon: ClipboardList, label: "My Task" },
     ],
     channels: ["assistant-coloring", "background-art", "team-updates"],
     dms: ["Mangaka: Kishimoto-san", "Lead Aiko"],
