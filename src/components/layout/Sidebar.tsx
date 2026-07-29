@@ -5,7 +5,8 @@ import {
   BookOpen, Hash, Bell, ChevronDown, ChevronRight,
   Plus, Edit3, Users, PenTool, Brush, Home, Search,
   FileText, Clock, AlertTriangle, CheckCircle, BarChart3, Layers, Star,
-  Inbox, Shield, Activity, UserPlus, Eye, User, LogOut, CheckSquare
+  Inbox, Shield, Activity, UserPlus, Eye, User, LogOut, CheckSquare,
+  Image as FileImage, Send
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { logout } from "../../services/adminApi";
@@ -21,6 +22,7 @@ interface NavItem {
   badge?: number;
   badgeColor?: string;
   path?: string;
+  group?: string;
 }
 
 interface RoleConfig {
@@ -68,10 +70,11 @@ const roleConfig: Record<LayoutRole, RoleConfig> = {
   mangaka: {
     label: "Mangaka", color: "var(--mf-magenta)", icon: PenTool,
     nav: [
-      { icon: Layers, label: "My Projects" },
-      { icon: CheckSquare, label: "Tasks", badgeColor: "var(--mf-orange)" },
-      { icon: FileText, label: "Script Drafts" },
-      { icon: CheckCircle, label: "Submissions" },
+      { icon: FileImage, label: "My Series" },
+      { icon: Clock, label: "Active Tasks", badgeColor: "var(--mf-orange)" },
+      { icon: Brush, label: "Drafts & Storyboards" },
+      { icon: Layers, label: "Compile Chapter" },
+      { icon: Send, label: "Submission History" },
     ],
     channels: ["naruto-ch-101", "team-chat", "assistant-coloring", "background-art"],
     dms: ["Editor: Yamada-san", "Assistant Aiko", "Assistant Kenji"],
@@ -263,14 +266,15 @@ export function Sidebar({ activeNav, onNavClick, navBadges }: SidebarProps) {
                   gap: 10,
                   width: "100%",
                   padding: isCollapsed ? "9px 0" : "7px 10px",
-                  marginBottom: 1,
-                  background: isActive ? `${config.color}10` : "transparent",
+                  marginBottom: 2,
+                  background: isActive ? `linear-gradient(90deg, ${config.color}25 0%, transparent 100%)` : "transparent",
                   border: "none",
-                  borderRadius: 8,
+                  borderLeft: isActive ? `3px solid ${config.color}` : "3px solid transparent",
+                  borderRadius: isCollapsed ? 8 : "0 8px 8px 0",
                   cursor: "pointer",
                   color: isActive ? config.color : "var(--mf-text-secondary)",
                   fontSize: 13,
-                  fontWeight: isActive ? 600 : 400,
+                  fontWeight: isActive ? 800 : 600,
                   textAlign: "left",
                   transition: "all 0.15s ease",
                   position: "relative",
@@ -281,7 +285,7 @@ export function Sidebar({ activeNav, onNavClick, navBadges }: SidebarProps) {
                 onMouseLeave={e => { if (!isActive) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--mf-text-secondary)"; } }}
               >
                 <div style={{ width: 22, display: "flex", justifyContent: "center", flexShrink: 0 }}>
-                  <Icon size={17} strokeWidth={isActive ? 2.2 : 1.8} />
+                  <Icon size={17} strokeWidth={isActive ? 2.5 : 2} />
                 </div>
                 <span style={{
                   flex: isCollapsed ? 0 : 1,

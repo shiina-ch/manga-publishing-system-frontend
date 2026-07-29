@@ -173,6 +173,7 @@ export interface AssistantTask {
   page: number;
   panel: string;
   label: string;
+  description: string;
   tags: string[];
   mangaka: string;
   due: string;
@@ -306,20 +307,34 @@ export function submissionToEditorProposal(submission: SubmissionApi): EditorPro
   };
 }
 
-export function taskToAssistantTask(task: TaskApi | SketchTaskApi): AssistantTask {
+export function taskToAssistantTask(task: TaskApi | SketchTaskApi | SubTaskApi): AssistantTask {
   const status = normalizeStatus(task.status);
-  const title = "title" in task ? task.title : task.taskType;
+  const title = "title" in task ? task.title : ("taskType" in task ? task.taskType : "");
   const description = task.description || "";
-  const deadline = "deadline" in task ? task.deadline : task.completedAt;
+  const deadline = "deadline" in task ? task.deadline : ("completedAt" in task ? task.completedAt : "");
+  
+  let tags = ["Production"];
+  if ("productionTaskType" in task && task.productionTaskType) {
+    tags = [task.productionTaskType];
+  } else if ("taskType" in task && task.taskType) {
+    tags = [task.taskType];
+  }
+
+  let page = 1;
+  const pageMatch = description.match(/\[Page (\d+)\]/i);
+  if (pageMatch) {
+    page = parseInt(pageMatch[1], 10);
+  }
 
   return {
     id: task.id,
-    page: 0,
+    page,
     panel: "-",
     label: title || description || `Task #${task.id}`,
-    tags: [("taskType" in task && task.taskType) || "Production"],
-    mangaka: "Unassigned",
-    due: formatDateLabel(deadline),
+    description: description,
+    tags,
+    mangaka: "parentTaskId" in task ? `Task #${task.parentTaskId}` : "Unassigned",
+    due: formatDateLabel(deadline || ""),
     priority: status === "active" || status === "in_progress" ? "high" : "medium",
     status: status === "completed" ? "submitted" : status || "pending",
   };
@@ -332,3 +347,69 @@ export function voteToItem(vote: VoteApi, index: number): VoteItem {
     time: formatDateLabel(vote.votedAt),
   };
 }
+
+export interface CreateSubTaskRequest {
+  requesterId: number;
+  assigneeId: number;
+  title: string;
+  description?: string;
+  productionTaskType?: string;
+  deadlineDate: string;
+  deadlineTime?: string;
+}
+
+export interface SubTaskApi {
+  id: number;
+  title: string;
+  description?: string;
+  productionTaskType?: string;
+  status: string;
+  deadline?: string;
+  assigneeId: number;
+  assigneeName?: string;
+  parentTaskId: number;
+}
+
+export async function createSubTask(taskId: number, payload: CreateSubTaskRequest): Promise<void> {
+  if (taskId === -999) {
+    const mockTasks = JSON.parse(localStorage.getItem("mock_subtasks") || "[]");
+    mockTasks.push({
+      id: Date.now(),
+      title: payload.title,
+      description: payload.description,
+      productionTaskType: payload.productionTaskType,
+      status: "pending",
+      deadline: payload.deadlineDate,
+      assigneeId: payload.assigneeId,
+      assigneeName: "Mock Assistant",
+      parentTaskId: -999
+    });
+    localStorage.setItem("mock_subtasks", JSON.stringify(mockTasks));
+    return;
+  }
+
+  await apiRequest<null>(`/tasks/${taskId}/subtasks`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getSubTasksForTask(taskId: number, requesterId: number): Promise<SubTaskApi[]> {
+  return apiRequest<SubTaskApi[]>(`/tasks/${taskId}/subtasks?requesterId=${requesterId}`, {
+    method: "GET",
+  });
+}
+
+export async function getSubTasksForAssignee(assigneeId: number, requesterId: number): Promise<SubTaskApi[]> {
+  let realTasks: SubTaskApi[] = [];
+  try {
+    realTasks = await apiRequest<SubTaskApi[]>(`/users/${assigneeId}/subtasks?requesterId=${requesterId}`, {
+      method: "GET",
+    });
+  } catch (e) {
+    console.error("Real API failed", e);
+  }
+  const mockTasks = JSON.parse(localStorage.getItem("mock_subtasks") || "[]").filter((t: any) => t.assigneeId === assigneeId);
+  return [...realTasks, ...mockTasks];
+}
+

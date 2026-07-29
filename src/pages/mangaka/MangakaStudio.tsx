@@ -11,9 +11,13 @@ import {
   User,
   Users,
   X,
+  ArrowUpRight,
+  ChevronUp,
+  UserPlus,
+  Loader2
 } from "lucide-react";
 import { toast } from "react-toastify";
-import { getMangakaSubmissions, getChapters, type SubmissionApi, type ChapterApi, type TaskApi, submitIdea } from "../../services/workflowApi";
+import { getMangakaSubmissions, getChapters, type SubmissionApi, type ChapterApi, type TaskApi, submitIdea, type SubmissionReviewApi } from "../../services/workflowApi";
 import { tokenStorage } from "../../storage/tokenStorage";
 
 function submissionTitle(submission: SubmissionApi): string {
@@ -62,31 +66,339 @@ function EmptyState({
   );
 }
 
+function DelegateSubTaskModal({
+  task: initialTask = null,
+  tasks = [],
+  onClose,
+  onSuccess,
+}: {
+  task?: TaskApi | null;
+  tasks?: TaskApi[];
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [emailSearch, setEmailSearch] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchMessage, setSearchMessage] = useState<string | null>(null);
+  const [assigneeId, setAssigneeId] = useState<number | null>(null);
+
+  const [selectedTask, setSelectedTask] = useState<TaskApi | null>(initialTask);
+  
+  const [title, setTitle] = useState(initialTask ? `Help with: ${initialTask.title || "Task"}` : "");
+  const [description, setDescription] = useState("");
+  const [deadlineDate, setDeadlineDate] = useState("");
+  const [deadlineTime, setDeadlineTime] = useState("");
+  const [pageNumber, setPageNumber] = useState<number | "">("");
+  const [productionTaskType, setProductionTaskType] = useState<string>("");
+  
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (selectedTask) {
+      setTitle(`Help with: ${selectedTask.title || "Task"}`);
+    }
+  }, [selectedTask]);
+
+  const handleSearch = async () => {
+    if (!emailSearch.trim()) return;
+    setSearching(true);
+    setSearchMessage(null);
+    setAssigneeId(null);
+    try {
+      const { searchAccountByEmail } = await import("../../services/accountApi");
+      const account = await searchAccountByEmail(emailSearch.trim());
+      setAssigneeId(account.id);
+      setSearchMessage(`Found assistant: ${account.firstName || ""} ${account.lastName || ""}`.trim() || `Found account ID: ${account.id}`);
+    } catch (err: any) {
+      setSearchMessage(err.message || "Failed to find assistant by email.");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    const requesterId = tokenStorage.getAccount()?.id;
+    if (!requesterId) {
+      setError("Your session is unavailable. Please log in again.");
+      return;
+    }
+    if (!selectedTask) {
+      setError("Please select a parent task to delegate.");
+      return;
+    }
+    if (!assigneeId) {
+      setError("Please search and select an assistant first.");
+      return;
+    }
+    if (!title.trim()) {
+      setError("SubTask title is required.");
+      return;
+    }
+    if (!deadlineDate) {
+      setError("Deadline date is required.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      const { createSubTask } = await import("../../services/workflowApi");
+      const finalDescription = pageNumber !== "" ? `${description}\n[Page ${pageNumber}]`.trim() : description;
+      
+      await createSubTask(selectedTask.id, {
+        requesterId,
+        assigneeId,
+        title: title.trim(),
+        description: finalDescription,
+        productionTaskType: productionTaskType || undefined,
+        deadlineDate,
+        deadlineTime: deadlineTime.trim() || undefined,
+      });
+      toast.success("Task successfully delegated to assistant!");
+      onSuccess();
+    } catch (err: any) {
+      setError(err.message || "Failed to delegate task.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const fieldStyle = {
+    width: "100%", padding: "12px 16px", background: "rgba(255,255,255,0.02)",
+    border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#fff",
+    fontSize: 14, fontWeight: 500, outline: "none", transition: "border-color 0.15s ease",
+    boxSizing: "border-box" as const
+  };
+
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 1200, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: "100%", maxWidth: 600, maxHeight: "92vh", overflowY: "auto", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 16, boxShadow: "0 20px 40px rgba(0,0,0,0.5)", display: "flex", flexDirection: "column" }}>
+
+        {/* Header */}
+        <div style={{ padding: "24px 32px 18px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.01)", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ width: 38, height: 38, borderRadius: 10, background: "rgba(0, 240, 255, 0.1)", border: "1px solid rgba(0, 240, 255, 0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-cyan)", flexShrink: 0 }}>
+              <UserPlus size={20} />
+            </div>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 900, color: "#fff", letterSpacing: "-0.01em" }}>Delegate Task</div>
+              <div style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4 }}>Assign a SubTask to an Assistant</div>
+            </div>
+          </div>
+          <button onClick={onClose} disabled={submitting} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, cursor: submitting ? "not-allowed" : "pointer", color: "var(--mf-text-muted)", width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s ease" }}
+            onMouseEnter={e => { if (!submitting) { e.currentTarget.style.background = "rgba(0, 240, 255, 0.1)"; e.currentTarget.style.color = "var(--mf-cyan)"; e.currentTarget.style.borderColor = "rgba(0, 240, 255, 0.3)"; } }}
+            onMouseLeave={e => { if (!submitting) { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.color = "var(--mf-text-muted)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; } }}
+          ><X size={16} /></button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "28px 32px 32px", display: "flex", flexDirection: "column", gap: 24 }}>
+
+          {initialTask ? (
+            <div style={{ padding: "16px", background: "rgba(0, 240, 255, 0.05)", border: "1px solid rgba(0, 240, 255, 0.15)", borderRadius: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-cyan)", letterSpacing: "0.08em", marginBottom: 6, textTransform: "uppercase" }}>Parent Task</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", marginBottom: 4 }}>{initialTask.title}</div>
+              <div style={{ fontSize: 13, color: "var(--mf-text-muted)" }}>Deadline: {initialTask.deadline ? new Date(initialTask.deadline).toLocaleDateString() : "No deadline"}</div>
+            </div>
+          ) : (
+            <div>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>SELECT PARENT TASK</label>
+              <div style={{ position: "relative" }}>
+                <select
+                  value={selectedTask?.id || ""}
+                  onChange={e => {
+                    if (Number(e.target.value) === -999) {
+                      setSelectedTask({ id: -999, title: "Test Mock Task", chapterTitle: "Test Chapter", deadline: "2026-12-31" } as any);
+                    } else {
+                      const found = tasks.find(t => t.id === Number(e.target.value));
+                      setSelectedTask(found || null);
+                    }
+                  }}
+                  style={{
+                    width: "100%", padding: "12px 16px", background: "rgba(255,255,255,0.02)",
+                    border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#fff",
+                    fontSize: 14, fontWeight: 500, outline: "none", appearance: "none"
+                  }}
+                >
+                  <option value="" disabled style={{ background: "var(--mf-bg-surface)" }}>-- Select an Active Task --</option>
+                  <option value="-999" style={{ background: "var(--mf-bg-surface)", color: "var(--mf-cyan)" }}>
+                    [Test Mode] Mock Parent Task
+                  </option>
+                  {tasks.map(t => (
+                    <option key={t.id} value={t.id} style={{ background: "var(--mf-bg-surface)" }}>
+                      [{t.chapterTitle}] {t.title}
+                    </option>
+                  ))}
+                </select>
+                {selectedTask && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: "var(--mf-text-muted)" }}>
+                    Task Deadline: {selectedTask.deadline ? new Date(selectedTask.deadline).toLocaleDateString() : "No deadline"}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>ASSISTANT EMAIL</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input type="email" value={emailSearch} onChange={e => setEmailSearch(e.target.value)} placeholder="Enter assistant's email..." style={{ ...fieldStyle, flex: 1 }} onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"} onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"} onKeyDown={e => { if (e.key === 'Enter') void handleSearch(); }} />
+              <button onClick={() => void handleSearch()} disabled={searching || !emailSearch.trim()} style={{ padding: "0 20px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, color: "#fff", fontSize: 13, fontWeight: 700, cursor: (searching || !emailSearch.trim()) ? "not-allowed" : "pointer", opacity: (searching || !emailSearch.trim()) ? 0.5 : 1 }}>
+                {searching ? "..." : "Search"}
+              </button>
+            </div>
+            {searchMessage && (
+              <div style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: assigneeId ? "var(--mf-green)" : "var(--mf-orange)" }}>
+                {searchMessage}
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: "flex", gap: 16 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>PAGE NUMBER</label>
+              <input type="number" min="1" value={pageNumber} onChange={e => setPageNumber(e.target.value === "" ? "" : Number(e.target.value))} placeholder="E.g. 1" style={fieldStyle} onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"} onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"} />
+            </div>
+            <div style={{ flex: 3 }}>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>QUICK TASK TYPE</label>
+              <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
+                {[
+                  { id: "LINEART", label: "Line Art" },
+                  { id: "BACKGROUND", label: "Background" },
+                  { id: "INKING", label: "Inking / Color" },
+                  { id: "OUTLINE", label: "Effects / FX" }
+                ].map(type => (
+                  <button
+                    key={type.id}
+                    onClick={() => {
+                      setProductionTaskType(type.id);
+                      setTitle(type.label);
+                    }}
+                    style={{
+                      padding: "10px 14px",
+                      background: productionTaskType === type.id ? "rgba(0, 240, 255, 0.15)" : "rgba(255,255,255,0.02)",
+                      border: `1px solid ${productionTaskType === type.id ? "var(--mf-cyan)" : "rgba(255,255,255,0.1)"}`,
+                      borderRadius: 10,
+                      color: productionTaskType === type.id ? "var(--mf-cyan)" : "var(--mf-text-muted)",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                      transition: "all 0.2s ease"
+                    }}
+                  >
+                    {type.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>SUBTASK TITLE</label>
+            <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="E.g., Draw backgrounds for pages 10-15" style={fieldStyle} onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"} onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"} />
+          </div>
+
+          <div>
+            <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>DESCRIPTION (OPTIONAL)</label>
+            <textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="Provide any details or instructions for the assistant..." rows={3} style={{ ...fieldStyle, resize: "vertical" }} onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"} onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"} />
+          </div>
+
+          <div style={{ display: "flex", gap: 16 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>DEADLINE DATE</label>
+              <input type="date" value={deadlineDate} onChange={e => setDeadlineDate(e.target.value)} style={fieldStyle} onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"} onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>DEADLINE TIME (OPTIONAL)</label>
+              <input type="time" value={deadlineTime} onChange={e => setDeadlineTime(e.target.value)} style={fieldStyle} onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"} onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"} />
+            </div>
+          </div>
+
+          {error && <div style={{ padding: "12px 16px", borderRadius: 10, color: "var(--mf-magenta)", background: "rgba(255,42,109,0.1)", border: "1px solid rgba(255,42,109,0.3)", fontSize: 13, fontWeight: 700 }}>{error}</div>}
+
+          {/* Actions */}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 8, paddingTop: 24, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+            <button onClick={onClose} disabled={submitting} style={{ padding: "12px 20px", background: "transparent", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, color: "var(--mf-text)", fontSize: 13, fontWeight: 700, cursor: submitting ? "not-allowed" : "pointer", transition: "border-color 0.15s ease" }} onMouseEnter={e => { if (!submitting) e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)"; }} onMouseLeave={e => { if (!submitting) e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"; }}>Cancel</button>
+            <button onClick={() => void handleSubmit()} disabled={submitting} style={{ padding: "12px 24px", background: "var(--mf-cyan)", border: "none", borderRadius: 10, color: "#000", fontSize: 13, fontWeight: 800, cursor: submitting ? "not-allowed" : "pointer", opacity: submitting ? 0.7 : 1, display: "flex", alignItems: "center", gap: 8, boxShadow: "0 0 15px rgba(0,240,255,0.3)" }}>
+              {submitting && <Loader2 size={16} className="mf-spin" />}
+              Delegate Task
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MangakaTasks({ tasks }: { tasks: any[] }) {
+  const [delegatingTask, setDelegatingTask] = useState<TaskApi | null>(null);
+
   if (tasks.length === 0) {
     return (
-      <EmptyState
-        icon={Calendar}
-        title="No tasks assigned"
-        description="When your Tantou assigns you a chapter, tasks will appear here."
-      />
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <EmptyState
+          icon={Calendar}
+          title="No tasks assigned"
+          description="When your Tantou assigns you a chapter, tasks will appear here."
+        />
+        <button
+          onClick={() => setDelegatingTask({ id: -999, title: "Test Mock Task", chapterTitle: "Test Chapter", deadline: "2026-12-31" } as any)}
+          style={{ marginTop: 16, padding: "8px 16px", background: "rgba(0, 240, 255, 0.1)", border: "1px solid var(--mf-cyan)", borderRadius: 8, color: "var(--mf-cyan)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+        >
+          [Test Mode] Delegate Mock Task
+        </button>
+        {delegatingTask && (
+          <DelegateSubTaskModal
+            task={delegatingTask}
+            tasks={[]}
+            onClose={() => setDelegatingTask(null)}
+            onSuccess={() => setDelegatingTask(null)}
+          />
+        )}
+      </div>
     );
   }
 
   return (
     <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
       {tasks.map(t => (
-        <div key={t.id} style={{ padding: 16, background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-            <div style={{ fontSize: 13, color: "var(--mf-text-secondary)", fontWeight: 700 }}>{t.chapterTitle}</div>
+        <div key={t.id} style={{ padding: 20, background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 12, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style={{ fontSize: 12, color: "var(--mf-text-secondary)", fontWeight: 800, letterSpacing: "0.05em", textTransform: "uppercase", marginBottom: 6 }}>{t.chapterTitle}</div>
+              <div style={{ fontSize: 16, fontWeight: 900, color: "#fff" }}>{t.title}</div>
+            </div>
             <div style={{ fontSize: 12, fontWeight: 900, color: "var(--mf-cyan)", background: "var(--mf-cyan-dim)", padding: "4px 8px", borderRadius: 4 }}>
               {t.status}
             </div>
           </div>
-          <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 8 }}>{t.title}</div>
-          {t.description && <div style={{ fontSize: 13, color: "var(--mf-text-muted)" }}>{t.description}</div>}
+          {t.description && <div style={{ fontSize: 13, color: "var(--mf-text-muted)", lineHeight: 1.5 }}>{t.description}</div>}
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ fontSize: 12, color: "var(--mf-text-muted)", display: "flex", alignItems: "center", gap: 6 }}>
+              <Calendar size={13} /> {t.deadline ? new Date(t.deadline).toLocaleDateString() : "No deadline"}
+            </div>
+            <button
+              onClick={() => setDelegatingTask(t)}
+              style={{ padding: "8px 16px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8, color: "var(--mf-text)", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "all 0.15s ease" }}
+              onMouseEnter={e => { e.currentTarget.style.background = "var(--mf-cyan-dim)"; e.currentTarget.style.borderColor = "var(--mf-cyan)"; e.currentTarget.style.color = "var(--mf-cyan)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"; e.currentTarget.style.color = "var(--mf-text)"; }}
+            >
+              <UserPlus size={14} /> Delegate
+            </button>
+          </div>
         </div>
       ))}
+      {delegatingTask && (
+        <DelegateSubTaskModal
+          task={delegatingTask}
+          onClose={() => setDelegatingTask(null)}
+          onSuccess={() => setDelegatingTask(null)}
+        />
+      )}
     </div>
   );
 }
@@ -101,13 +413,130 @@ function ScriptDrafts() {
   );
 }
 
-function DelegationPanel() {
+function DelegationPanel({
+  tasks,
+  authenticatedAccountId,
+}: {
+  tasks: TaskApi[];
+  authenticatedAccountId?: number;
+}) {
+  const [delegatedSubTasks, setDelegatedSubTasks] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [showDelegateModal, setShowDelegateModal] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    if (tasks.length === 0 || !authenticatedAccountId) return;
+    let active = true;
+    setLoading(true);
+
+    const fetchAll = async () => {
+      try {
+        const { getSubTasksForTask } = await import("../../services/workflowApi");
+        const listPromises = tasks.map(task =>
+          getSubTasksForTask(task.id, authenticatedAccountId)
+            .then((list: any[]) =>
+              (list || []).map(st => ({
+                ...st,
+                parentTaskTitle: task.title,
+                chapterTitle: task.chapterTitle,
+              }))
+            )
+            .catch(() => [])
+        );
+        const results = await Promise.all(listPromises);
+        if (active) {
+          setDelegatedSubTasks(results.flat());
+        }
+      } catch (err) {
+        console.error("Error loading delegated tasks", err);
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    };
+
+    void fetchAll();
+
+    return () => {
+      active = false;
+    };
+  }, [tasks, authenticatedAccountId, refreshKey]);
+
   return (
-    <EmptyState
-      icon={Users}
-      title="No delegation workflow available"
-      description="Assistant delegation is hidden until assignments, assignees, task tags, and persistence are provided by the API."
-    />
+    <div style={{ padding: "24px 28px", height: "100%", display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em" }}>Assistant Delegation</h2>
+          <p style={{ fontSize: 13, color: "var(--mf-text-muted)", marginTop: 3 }}>Manage work assigned to your assistant team</p>
+        </div>
+        <button
+          onClick={() => setShowDelegateModal(true)}
+          style={{
+            padding: "10px 18px",
+            background: "var(--mf-magenta)",
+            border: "none",
+            borderRadius: 8,
+            fontSize: 13,
+            color: "#fff",
+            fontWeight: 700,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            boxShadow: "0 0 15px var(--mf-magenta-glow)",
+          }}
+        >
+          <Plus size={15} /> Delegate Task
+        </button>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        {loading ? (
+          <div style={{ color: "var(--mf-text-muted)", textAlign: "center", padding: 36 }}>Loading delegated tasks...</div>
+        ) : delegatedSubTasks.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title="No tasks delegated yet"
+            description="Click 'Delegate Task' above to start assigning work to assistants."
+          />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {delegatedSubTasks.map(st => (
+              <div key={st.id} style={{ padding: "18px 20px", background: "var(--mf-bg-surface)", borderRadius: 14, border: "1px solid var(--mf-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontSize: 11, color: "var(--mf-text-secondary)", fontWeight: 800, textTransform: "uppercase", marginBottom: 4 }}>
+                    [{st.chapterTitle || "Chapter"}] SubTask of: {st.parentTaskTitle || "Parent Task"}
+                  </div>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: "#fff", marginBottom: 6 }}>{st.title}</div>
+                  <div style={{ fontSize: 13, color: "var(--mf-text-muted)" }}>Assigned to: <strong style={{ color: "var(--mf-cyan)" }}>{st.assigneeName || "Unknown Assistant"}</strong></div>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+                  <div style={{ padding: "4px 10px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, fontSize: 11, fontWeight: 700, color: "var(--mf-text-muted)" }}>
+                    {st.subtaskStatus || "CREATED"}
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--mf-text-muted)" }}>
+                    Due: {st.deadlineDate ? new Date(st.deadlineDate).toLocaleDateString() : "TBD"}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showDelegateModal && (
+        <DelegateSubTaskModal
+          tasks={tasks}
+          onClose={() => setShowDelegateModal(false)}
+          onSuccess={() => {
+            setShowDelegateModal(false);
+            setRefreshKey(prev => prev + 1);
+          }}
+        />
+      )}
+    </div>
   );
 }
 
@@ -253,41 +682,241 @@ function SubmitIdeaModal({
     }}>
       <div style={{
         background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
-        borderRadius: 16, width: "100%", maxWidth: 500, padding: 24, boxShadow: "0 20px 40px rgba(0,0,0,0.4)",
+        borderRadius: 16, width: "100%", maxWidth: 520, boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+        maxHeight: "92vh", overflowY: "auto", display: "flex", flexDirection: "column"
       }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 800 }}>Submit New Project</h2>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)" }}>
-            <X size={18} />
+        {/* Header Section */}
+        <div style={{
+          padding: "24px 32px 18px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          background: "rgba(255,255,255,0.01)",
+          flexShrink: 0
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: 10,
+              background: "var(--mf-magenta-dim)",
+              border: "1px solid rgba(255,42,122,0.3)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "var(--mf-magenta)", flexShrink: 0
+            }}>
+              <Plus size={20} />
+            </div>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 900, color: "#fff", letterSpacing: "-0.01em" }}>Submit New Project</div>
+              <div style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4 }}>
+                Upload details and files for your new idea
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: "rgba(255, 255, 255, 0.04)",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              borderRadius: 10,
+              cursor: "pointer",
+              color: "var(--mf-text-muted)",
+              width: 34,
+              height: 34,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "all 0.15s ease",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = "var(--mf-magenta-dim)"; e.currentTarget.style.color = "var(--mf-magenta)"; e.currentTarget.style.borderColor = "rgba(255,42,122,0.3)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "rgba(255, 255, 255, 0.04)"; e.currentTarget.style.color = "var(--mf-text-muted)"; e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.1)"; }}
+          >
+            <X size={16} />
           </button>
         </div>
 
-        {error && <div style={{ padding: "10px 14px", background: "rgba(255,42,109,0.1)", border: "1px solid var(--mf-magenta)50", color: "var(--mf-magenta)", borderRadius: 8, fontSize: 13, marginBottom: 16 }}>{error}</div>}
+        <div style={{ padding: "28px 32px 32px" }}>
+          {error && (
+            <div style={{
+              padding: "12px 16px",
+              background: "rgba(255,42,109,0.1)",
+              border: "1px solid rgba(255,42,109,0.3)",
+              color: "var(--mf-magenta)",
+              borderRadius: 10,
+              fontSize: 13,
+              marginBottom: 20,
+              fontWeight: 700
+            }}>
+              {error}
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <div>
-            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--mf-text-muted)", marginBottom: 6 }}>Title</label>
-            <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Project title" style={{ width: "100%", padding: "10px 14px", background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 14 }} />
-          </div>
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            {/* Title Input */}
+            <div>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>TITLE</label>
+              <input
+                type="text"
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                placeholder="Project title"
+                style={{
+                  width: "100%",
+                  padding: "12px 16px",
+                  background: "rgba(255,255,255,0.02)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: 10,
+                  color: "#fff",
+                  fontSize: 14,
+                  fontWeight: 700,
+                  outline: "none",
+                  transition: "border-color 0.15s ease"
+                }}
+                onFocus={e => e.currentTarget.style.borderColor = "var(--mf-magenta)"}
+                onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"}
+              />
+            </div>
 
-          <div>
-            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--mf-text-muted)", marginBottom: 6 }}>Synopsis</label>
-            <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Synopsis for the editor..." rows={3} style={{ width: "100%", padding: "10px 14px", background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 14, resize: "vertical" }} />
-          </div>
+            {/* Synopsis Input */}
+            <div>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>SYNOPSIS</label>
+              <textarea
+                value={note}
+                onChange={e => setNote(e.target.value)}
+                placeholder="Synopsis for the editor..."
+                rows={3}
+                style={{
+                  width: "100%",
+                  padding: "12px 16px",
+                  background: "rgba(255,255,255,0.02)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: 10,
+                  color: "#fff",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  lineHeight: 1.6,
+                  resize: "vertical",
+                  outline: "none",
+                  transition: "border-color 0.15s ease"
+                }}
+                onFocus={e => e.currentTarget.style.borderColor = "var(--mf-magenta)"}
+                onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"}
+              />
+            </div>
 
-          <div>
-            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--mf-text-muted)", marginBottom: 6 }}>Files</label>
-            <input type="file" multiple onChange={handleFileChange} style={{ width: "100%", padding: "10px 14px", background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13 }} />
-            {files.length > 0 && <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 6 }}>{files.length} file(s) selected</div>}
-          </div>
+            {/* Custom Premium File Upload Card */}
+            <div>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>UPLOAD FILES</label>
+              <div style={{ position: "relative" }}>
+                <input
+                  type="file"
+                  multiple
+                  onChange={handleFileChange}
+                  id="idea-file-upload"
+                  style={{ display: "none" }}
+                />
+                <label
+                  htmlFor="idea-file-upload"
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "28px 16px",
+                    background: "rgba(255, 255, 255, 0.02)",
+                    border: "1px dashed rgba(255,255,255,0.15)",
+                    borderRadius: 12,
+                    cursor: "pointer",
+                    transition: "all 0.15s ease"
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--mf-magenta)"; e.currentTarget.style.background = "rgba(255,42,122,0.02)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"; e.currentTarget.style.background = "rgba(255, 255, 255, 0.02)"; }}
+                >
+                  <FileText size={24} color="var(--mf-text-muted)" style={{ marginBottom: 8 }} />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--mf-text-secondary)" }}>Choose Files</span>
+                  <span style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 4 }}>Image or storyboard files</span>
+                </label>
+              </div>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 10 }}>
-            <button type="button" onClick={onClose} style={{ padding: "10px 16px", background: "transparent", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
-            <button type="submit" disabled={isSubmitting} style={{ padding: "10px 20px", background: "var(--mf-magenta)", border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 800, cursor: isSubmitting ? "not-allowed" : "pointer", opacity: isSubmitting ? 0.7 : 1 }}>
-              {isSubmitting ? "Submitting..." : "Submit Project"}
-            </button>
-          </div>
-        </form>
+              {/* Selected Files List */}
+              {files.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
+                  {files.map((file, idx) => (
+                    <div key={idx} style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "10px 12px",
+                      background: "rgba(255,255,255,0.01)",
+                      border: "1px solid rgba(255,255,255,0.04)",
+                      borderRadius: 10
+                    }}>
+                      <FileText size={15} color="var(--mf-text-muted)" style={{ flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</div>
+                        <div style={{ fontSize: 10, color: "var(--mf-text-muted)", marginTop: 2 }}>{(file.size / 1024).toFixed(1)} KB</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setFiles(prev => prev.filter((_, i) => i !== idx))}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "var(--mf-magenta)",
+                          cursor: "pointer",
+                          fontSize: 12,
+                          fontWeight: 700
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Form Actions */}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 12 }}>
+              <button
+                type="button"
+                onClick={onClose}
+                style={{
+                  padding: "10px 18px",
+                  background: "transparent",
+                  border: "1px solid rgba(255,255,255,0.15)",
+                  borderRadius: 10,
+                  color: "var(--mf-text)",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  transition: "border-color 0.15s ease"
+                }}
+                onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)"}
+                onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                style={{
+                  padding: "10px 22px",
+                  background: "var(--mf-magenta)",
+                  border: "none",
+                  borderRadius: 10,
+                  color: "#fff",
+                  fontSize: 13,
+                  fontWeight: 800,
+                  cursor: isSubmitting ? "not-allowed" : "pointer",
+                  opacity: isSubmitting ? 0.7 : 1,
+                  boxShadow: "0 0 15px var(--mf-magenta-glow)",
+                }}
+              >
+                {isSubmitting ? "Submitting..." : "Submit Project"}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );
@@ -295,15 +924,35 @@ function SubmitIdeaModal({
 
 function SubmissionDetailsModal({
   submission,
+  reviews = [],
   onClose
 }: {
   submission: SubmissionApi;
+  reviews?: SubmissionReviewApi[];
   onClose: () => void;
 }) {
   const rawStatus = submission.status || "PENDING";
   const statusKey = rawStatus.toLowerCase();
   const status = chapterStatusMap[statusKey] || { label: rawStatus, color: "var(--mf-cyan)" };
   const files = submission.files || [];
+  const isImageFile = (file: any) => {
+    const name = (file.originalName || file.originalFilename || file.fileName || file.filename || "").toLowerCase();
+    return name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".gif") || name.endsWith(".webp");
+  };
+  const getFilePath = (file: any) => {
+    return file.url || file.fileUrl || file.path || file.filePath || null;
+  };
+
+  const firstImageFile = files.find(isImageFile);
+  const thumbnailSrc = firstImageFile ? getFilePath(firstImageFile) : null;
+  const firstImageName = firstImageFile ? (firstImageFile.originalName || firstImageFile.originalFilename || firstImageFile.fileName || firstImageFile.filename || "Preview Image") : "";
+  const firstImageSize = firstImageFile ? (typeof firstImageFile.size === "number" ? firstImageFile.size : firstImageFile.fileSize) : 0;
+  const firstImageSizeStr = firstImageSize ? `${(firstImageSize / 1024).toFixed(1)} KB` : "";
+
+  const latestReviewWithComment = [...reviews]
+    .reverse()
+    .find(r => r.comment && r.comment.trim() !== "");
+  const reviewCommentText = latestReviewWithComment?.comment || null;
 
   return (
     <div style={{
@@ -313,55 +962,224 @@ function SubmissionDetailsModal({
     }}>
       <div style={{
         background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
-        borderRadius: 16, width: "100%", maxWidth: 600, boxShadow: "0 20px 40px rgba(0,0,0,0.4)",
+        borderRadius: 16, width: "100%", maxWidth: thumbnailSrc ? 800 : 520, boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
         maxHeight: "92vh", overflowY: "auto", display: "flex", flexDirection: "column"
       }}>
-        <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--mf-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 900 }}>{submissionTitle(submission)}</div>
-            <div style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4 }}>Submission Details</div>
+        {/* Header Section */}
+        <div style={{
+          padding: "24px 32px 18px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          background: "rgba(255,255,255,0.01)",
+          flexShrink: 0
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: 10,
+              background: "var(--mf-magenta-dim)",
+              border: "1px solid rgba(255,42,122,0.3)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "var(--mf-magenta)", flexShrink: 0
+            }}>
+              <FileText size={20} />
+            </div>
+            <div>
+              <div style={{ fontSize: 20, fontWeight: 900, color: "#fff", letterSpacing: "-0.01em" }}>{submissionTitle(submission)}</div>
+              <div style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4, display: "flex", alignItems: "center", gap: 6 }}>
+                <User size={13} color="var(--mf-text-muted)" /> {submission.submittedByName || "Unknown"}
+                <span style={{ color: "rgba(255,255,255,0.15)" }}>·</span>
+                <Clock size={13} color="var(--mf-text-muted)" /> {formatSubmissionDate(submission.submittedAt)}
+              </div>
+            </div>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)" }}>
-            <X size={18} />
+          <button
+            onClick={onClose}
+            style={{
+              background: "rgba(255, 255, 255, 0.04)",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              borderRadius: 10,
+              cursor: "pointer",
+              color: "var(--mf-text-muted)",
+              width: 34,
+              height: 34,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "all 0.15s ease",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = "var(--mf-magenta-dim)"; e.currentTarget.style.color = "var(--mf-magenta)"; e.currentTarget.style.borderColor = "rgba(255,42,122,0.3)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "rgba(255, 255, 255, 0.04)"; e.currentTarget.style.color = "var(--mf-text-muted)"; e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.1)"; }}
+          >
+            <X size={16} />
           </button>
         </div>
 
-        <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 16 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <div style={{ padding: "12px", background: "var(--mf-bg-deep)", borderRadius: 10, border: "1px solid var(--mf-border)" }}>
-              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 4 }}>STATUS</div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: status.color }}>{status.label}</div>
-            </div>
-            <div style={{ padding: "12px", background: "var(--mf-bg-deep)", borderRadius: 10, border: "1px solid var(--mf-border)" }}>
-              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 4 }}>DATE SUBMITTED</div>
-              <div style={{ fontSize: 13 }}>{formatSubmissionDate(submission.submittedAt)}</div>
-            </div>
-          </div>
+        <div style={{ padding: "28px 32px 32px", display: "flex", gap: 28, flexDirection: "row", flexWrap: "wrap" }}>
+          {/* Left Column - Details */}
+          <div style={{
+            width: thumbnailSrc ? 460 : 456,
+            borderRight: thumbnailSrc ? "1px solid rgba(255, 255, 255, 0.08)" : "none",
+            paddingRight: thumbnailSrc ? 28 : 0,
+            display: "flex",
+            flexDirection: "column",
+            gap: 20
+          }}>
 
-          {(submission.note || submission.description) && (
-            <div style={{ padding: "12px", background: "var(--mf-bg-deep)", borderRadius: 10, border: "1px solid var(--mf-border)" }}>
-              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 6 }}>SYNOPSIS / NOTE</div>
-              <div style={{ fontSize: 13, color: "var(--mf-text-secondary)", lineHeight: 1.5 }}>
-                {submission.note || submission.description}
+            {/* Status Card (Now on top, full width) */}
+            <div style={{
+              background: "rgba(255, 255, 255, 0.02)",
+              border: "1px solid rgba(255, 255, 255, 0.05)",
+              borderRadius: 12,
+              padding: "16px 20px",
+              display: "flex",
+              flexDirection: "column"
+            }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>STATUS</div>
+              <div style={{
+                alignSelf: "flex-start",
+                background: `${status.color}15`,
+                border: `1px solid ${status.color}30`,
+                color: status.color,
+                padding: "6px 14px",
+                borderRadius: 20,
+                fontSize: 12,
+                fontWeight: 900,
+                textAlign: "center"
+              }}>
+                {status.label}
               </div>
             </div>
-          )}
 
+            {/* Date Card (Now below, full width) */}
+            <div style={{
+              background: "rgba(255, 255, 255, 0.02)",
+              border: "1px solid rgba(255, 255, 255, 0.05)",
+              borderRadius: 12,
+              padding: "16px 20px",
+            }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>DATE</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>
+                <Clock size={14} color="var(--mf-text-muted)" />
+                {formatSubmissionDate(submission.submittedAt)}
+              </div>
+            </div>
+
+            {/* Synopsis Card */}
+            {(submission.note || submission.description) && (
+              <div style={{
+                background: "rgba(255, 255, 255, 0.02)",
+                border: "1px solid rgba(255, 255, 255, 0.05)",
+                borderRadius: 12,
+                padding: "16px 20px",
+              }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>SYNOPSIS</div>
+                <div style={{ fontSize: 13, color: "rgba(255, 255, 255, 0.7)", lineHeight: 1.6 }}>
+                  {submission.note || submission.description}
+                </div>
+              </div>
+            )}
+
+            {/* Feedback / Review Comment Card */}
+            {reviewCommentText && (
+              <div style={{
+                background: "rgba(255, 255, 255, 0.02)",
+                border: "1px solid rgba(255, 255, 255, 0.05)",
+                borderRadius: 12,
+                padding: "16px 20px",
+              }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>EDITOR / BOARD COMMENT</div>
+                <div style={{ fontSize: 13, color: "rgba(255, 255, 255, 0.7)", lineHeight: 1.6 }}>
+                  {reviewCommentText}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right Column - Attached Files & Preview */}
           {files.length > 0 && (
-            <div>
-              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8 }}>ATTACHED FILES ({files.length})</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {files.map((file, idx) => {
+            <div style={{ width: 240, display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.05em" }}>UPLOADED FILES ({files.length})</div>
+
+              {/* Thumbnail Container card wrapper */}
+              {thumbnailSrc ? (
+                <div style={{
+                  background: "rgba(255, 255, 255, 0.02)",
+                  border: "1px solid rgba(255, 255, 255, 0.05)",
+                  borderRadius: 16,
+                  padding: 12,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 12
+                }}>
+                  <div style={{
+                    borderRadius: 12,
+                    border: "1px solid rgba(255, 255, 255, 0.06)",
+                    background: "rgba(0,0,0,0.3)",
+                    overflow: "hidden",
+                    position: "relative",
+                    aspectRatio: "3/4",
+                    maxHeight: 280,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center"
+                  }}>
+                    <img
+                      src={thumbnailSrc}
+                      alt="Submission preview"
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                    <a href={thumbnailSrc} target="_blank" rel="noreferrer"
+                      style={{
+                        position: "absolute", bottom: 10, right: 10,
+                        width: 32, height: 32, borderRadius: "50%",
+                        background: "rgba(0,0,0,0.7)", border: "1px solid rgba(255,255,255,0.2)",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        color: "#fff", textDecoration: "none"
+                      }}
+                    >
+                      <ArrowUpRight size={15} />
+                    </a>
+                  </div>
+
+                  {/* Thumbnail Info */}
+                  <div style={{ padding: "0 2px 2px" }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: "#fff", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }} title={firstImageName}>
+                      {firstImageName}
+                    </div>
+                    {firstImageSizeStr && (
+                      <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 4 }}>
+                        {firstImageSizeStr} · {firstImageName.split(".").pop()?.toUpperCase()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Other Files list */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {files.filter(f => !thumbnailSrc || f !== firstImageFile).map((file, idx) => {
                   const name = file.originalName || file.originalFilename || file.fileName || file.filename || "Unknown file";
                   const size = typeof file.size === "number" ? file.size : file.fileSize;
                   const sizeStr = size ? `${(size / 1024).toFixed(1)} KB` : "";
+                  const path = getFilePath(file);
                   return (
-                    <div key={idx} style={{ padding: "10px 14px", background: "var(--mf-bg-deep)", border: "1px solid var(--mf-border)", borderRadius: 8, display: "flex", alignItems: "center", gap: 12 }}>
-                      <FileText size={16} color="var(--mf-cyan)" />
-                      <div style={{ flex: 1, overflow: "hidden" }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
-                        {sizeStr && <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 2 }}>{sizeStr}</div>}
+                    <div key={idx} style={{
+                      display: "flex", alignItems: "center", gap: 10,
+                      padding: "10px 12px", background: "rgba(255,255,255,0.01)",
+                      border: "1px solid rgba(255,255,255,0.04)", borderRadius: 10
+                    }}>
+                      <FileText size={15} color="var(--mf-text-muted)" style={{ flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+                        {sizeStr && <div style={{ fontSize: 10, color: "var(--mf-text-muted)", marginTop: 2 }}>{sizeStr}</div>}
                       </div>
+                      {path && (
+                        <a href={path} target="_blank" rel="noreferrer" style={{ color: "var(--mf-text-muted)", display: "flex", alignItems: "center" }}>
+                          <ArrowUpRight size={13} />
+                        </a>
+                      )}
                     </div>
                   );
                 })}
@@ -376,11 +1194,13 @@ function SubmissionDetailsModal({
 
 function SubmitView({
   submissions,
+  reviews = [],
   loading,
   error,
   onRefreshRequested,
 }: {
   submissions: SubmissionApi[];
+  reviews?: SubmissionReviewApi[];
   loading: boolean;
   error: string | null;
   onRefreshRequested: () => void;
@@ -466,6 +1286,7 @@ function SubmitView({
       {selectedSubmission && (
         <SubmissionDetailsModal
           submission={selectedSubmission}
+          reviews={reviews.filter(r => Number(r.submissionId) === Number(selectedSubmission.id))}
           onClose={() => setSelectedSubmission(null)}
         />
       )}
@@ -473,20 +1294,13 @@ function SubmitView({
   );
 }
 
-const tabs = [
-  { id: "schedule", label: "Production Schedule", icon: Calendar },
-  { id: "script", label: "Script Drafts", icon: FileText },
-  { id: "delegate", label: "Delegate Work", icon: Users },
-  { id: "compile", label: "Compile Chapter", icon: Layers },
-];
-
 export function MangakaStudio() {
-  const [activeTab, setActiveTab] = useState("schedule");
-  const [activeNav, setActiveNav] = useState("My Projects");
+  const [activeNav, setActiveNav] = useState("My Series");
   const [refreshKey, setRefreshKey] = useState(0);
   const [submissions, setSubmissions] = useState<SubmissionApi[]>([]);
   const [submissionsLoading, setSubmissionsLoading] = useState(true);
   const [submissionsError, setSubmissionsError] = useState<string | null>(null);
+  const [allReviews, setAllReviews] = useState<any[]>([]);
 
   const account = tokenStorage.getAccount();
   const authenticatedAccountId = account?.id;
@@ -510,6 +1324,7 @@ export function MangakaStudio() {
       })
       .then(({ rows, reviews }) => {
         if (!cancelled) {
+          setAllReviews(reviews);
           const reviewMap = new Map<number, number>();
           for (const r of reviews) {
             if (r.decision === "REJECTED" || r.decision === "REJECT") {
@@ -541,6 +1356,7 @@ export function MangakaStudio() {
   }, [authenticatedAccountId, refreshKey]);
 
   const [tasks, setTasks] = useState<any[]>([]);
+  const [assignedProjectIds, setAssignedProjectIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     if (authenticatedAccountId === undefined) return;
@@ -561,6 +1377,14 @@ export function MangakaStudio() {
     // Fetch chapters and extract tasks for those projects
     getChapters().then(allChapters => {
       const myTasks: any[] = [];
+
+      // Also add projects where the chapter owner is this Mangaka
+      allChapters.forEach(ch => {
+        if (ch.ownerId === authenticatedAccountId && ch.projectId) {
+          projectIds.add(ch.projectId);
+        }
+      });
+
       allChapters.forEach(ch => {
         if (ch.projectId && projectIds.has(ch.projectId)) {
           if (ch.tasks) {
@@ -570,25 +1394,18 @@ export function MangakaStudio() {
           }
         }
       });
+      setAssignedProjectIds(projectIds);
       setTasks(myTasks);
     }).catch(console.error);
   }, [submissions, authenticatedAccountId]);
 
-  const projectCount = useMemo(() => {
-    const projectIds = new Set<number>();
-    submissions.forEach(submission => {
-      if (typeof submission.project?.id === "number") {
-        projectIds.add(submission.project.id);
-      }
-    });
-    return projectIds.size;
-  }, [submissions]);
+  const projectCount = assignedProjectIds.size;
 
   const taskCount = tasks.length;
 
   const navBadges = useMemo<Record<string, number>>(() => ({
-    "My Projects": projectCount,
-    "Tasks": taskCount,
+    "My Series": projectCount,
+    "Active Tasks": taskCount,
   }), [projectCount, taskCount]);
 
   const hasAuthenticatedAccount = authenticatedAccountId !== undefined;
@@ -597,15 +1414,8 @@ export function MangakaStudio() {
     : "Your session is unavailable. Please log in again.";
   const submissionsForView = hasAuthenticatedAccount ? submissions : [];
 
-  const handleNavClick = (label: string) => {
-    setActiveNav(label);
-    if (label === "My Projects") setActiveTab("schedule");
-    else if (label === "Tasks") setActiveTab("schedule");
-    else if (label === "Script Drafts") setActiveTab("script");
-  };
-
   return (
-    <AppLayout role="mangaka" activeNav={activeNav} onNavClick={handleNavClick} navBadges={navBadges}>
+    <AppLayout role="mangaka" activeNav={activeNav} onNavClick={setActiveNav} navBadges={navBadges}>
       <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
         <div style={{ padding: "14px 28px", borderBottom: "1px solid var(--mf-border)", background: "var(--mf-bg-base)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -618,52 +1428,20 @@ export function MangakaStudio() {
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 2, padding: "10px 28px", borderBottom: "1px solid var(--mf-border)", background: "var(--mf-bg-base)", flexShrink: 0, overflowX: "auto" }}>
-          {tabs.map((tab, index) => {
-            const Icon = tab.icon;
-            const active = activeTab === tab.id;
-            return (
-              <div key={tab.id} style={{ display: "flex", alignItems: "center" }}>
-                <button
-                  onClick={() => setActiveTab(tab.id)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 7, padding: "8px 16px",
-                    background: active ? "var(--mf-magenta-dim)" : "transparent",
-                    border: active ? "1px solid var(--mf-magenta)40" : "1px solid transparent",
-                    borderRadius: 9, cursor: "pointer", whiteSpace: "nowrap",
-                    color: active ? "var(--mf-magenta)" : "var(--mf-text-muted)",
-                    fontSize: 13, fontWeight: active ? 700 : 400,
-                    transition: "all 0.15s",
-                  }}
-                >
-                  <Icon size={14} />
-                  {tab.label}
-                  <span style={{ fontSize: 10, color: active ? "var(--mf-magenta)" : "var(--mf-text-muted)", fontWeight: 700 }}>
-                    {index + 1}/4
-                  </span>
-                </button>
-                {index < tabs.length - 1 && <ChevronRight size={13} color="var(--mf-text-muted)" style={{ margin: "0 2px", flexShrink: 0 }} />}
-              </div>
-            );
-          })}
-        </div>
-
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {activeNav === "Submissions" ? (
+          {activeNav === "Submission History" && (
             <SubmitView
               submissions={submissionsForView}
+              reviews={allReviews}
               loading={hasAuthenticatedAccount && submissionsLoading}
               error={submissionsViewError}
               onRefreshRequested={() => setRefreshKey(previous => previous + 1)}
             />
-          ) : (
-            <>
-              {activeTab === "schedule" && <MangakaTasks tasks={tasks} />}
-              {activeTab === "script" && <ScriptDrafts />}
-              {activeTab === "delegate" && <DelegationPanel />}
-              {activeTab === "compile" && <PageCompilation />}
-            </>
           )}
+          {activeNav === "Active Tasks" && <MangakaTasks tasks={tasks} />}
+          {activeNav === "Drafts & Storyboards" && <ScriptDrafts />}
+          {activeNav === "My Series" && <DelegationPanel tasks={tasks} authenticatedAccountId={authenticatedAccountId} />}
+          {activeNav === "Compile Chapter" && <PageCompilation />}
         </div>
       </div>
     </AppLayout>

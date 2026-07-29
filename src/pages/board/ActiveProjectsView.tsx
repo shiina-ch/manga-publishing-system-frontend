@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, Calendar, CheckCircle, Edit3, Loader2, Package, RefreshCw, Save, UserPlus, X } from "lucide-react";
+import { AlertCircle, Calendar, CheckCircle, Edit3, FileText, Loader2, Package, RefreshCw, Save, UserPlus, X } from "lucide-react";
 import { toast } from "react-toastify";
 import type { AdminAccount } from "../../services/adminApi";
 import { searchAccountByEmail } from "../../services/accountApi";
@@ -312,33 +312,97 @@ function ProjectDetailsDialog({ project, assignmentCache, loading, error, saving
     ["Mangaka", accountName(project.mangaka)],
   ] : [];
 
+  const fieldStyle = {
+    width: "100%",
+    padding: "12px 16px",
+    background: "rgba(255,255,255,0.02)",
+    border: "1px solid rgba(255,255,255,0.1)",
+    borderRadius: 10,
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: 500,
+    outline: "none",
+    transition: "border-color 0.15s ease",
+    boxSizing: "border-box" as const
+  };
+
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 1100, padding: 20, background: "rgba(0,0,0,0.68)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ width: "min(720px, 100%)", maxHeight: "90vh", overflowY: "auto", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border-bright)", borderRadius: 16, boxShadow: "0 24px 70px rgba(0,0,0,0.5)" }}>
-        <div style={{ padding: "18px 20px", borderBottom: "1px solid var(--mf-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontSize: 17, fontWeight: 900 }}>Project Details</div>
-          <button onClick={onClose} disabled={saving} aria-label="Close project details" style={{ background: "none", border: "none", color: "var(--mf-text-muted)", cursor: saving ? "not-allowed" : "pointer" }}><X size={18} /></button>
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 1200, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: "100%", maxWidth: 720, maxHeight: "92vh", overflowY: "auto", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 16, boxShadow: "0 20px 40px rgba(0,0,0,0.5)", display: "flex", flexDirection: "column" }}>
+
+        {/* Header Section */}
+        <div style={{
+          padding: "24px 32px 18px", display: "flex", justifyContent: "space-between", alignItems: "flex-start",
+          borderBottom: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.01)", flexShrink: 0
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ width: 38, height: 38, borderRadius: 10, background: "rgba(0, 240, 255, 0.1)", border: "1px solid rgba(0, 240, 255, 0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-cyan)", flexShrink: 0 }}>
+              <FileText size={20} />
+            </div>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 900, color: "#fff", letterSpacing: "-0.01em" }}>Project Details</div>
+              <div style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4 }}>View and edit project information</div>
+            </div>
+          </div>
+          <button onClick={onClose} disabled={saving} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, cursor: saving ? "not-allowed" : "pointer", color: "var(--mf-text-muted)", width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s ease" }}
+            onMouseEnter={e => { if (!saving) { e.currentTarget.style.background = "rgba(0, 240, 255, 0.1)"; e.currentTarget.style.color = "var(--mf-cyan)"; e.currentTarget.style.borderColor = "rgba(0, 240, 255, 0.3)"; } }}
+            onMouseLeave={e => { if (!saving) { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.color = "var(--mf-text-muted)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; } }}
+          ><X size={16} /></button>
         </div>
-        <div style={{ padding: 20 }}>
+
+        <div style={{ padding: "28px 32px 32px", display: "flex", flexDirection: "column" }}>
           {loading && <div style={{ minHeight: 180, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "var(--mf-text-muted)" }}><Loader2 size={18} className="mf-spin" /> Loading project details…</div>}
-          {!loading && error && !project && <div style={{ padding: 24, display: "flex", flexDirection: "column", alignItems: "center", gap: 12, color: "var(--mf-magenta)" }}><AlertCircle size={28} /><span>{error}</span><button onClick={onRetry} style={{ ...actionButtonStyle, background: "var(--mf-bg-elevated)", color: "var(--mf-text)", border: "1px solid var(--mf-border)" }}>Retry</button></div>}
+          {!loading && error && !project && <div style={{ padding: 24, display: "flex", flexDirection: "column", alignItems: "center", gap: 12, color: "var(--mf-magenta)" }}><AlertCircle size={28} /><span>{error}</span><button onClick={onRetry} style={{ padding: "10px 18px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, color: "var(--mf-text)", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Retry</button></div>}
           {!loading && project && (
             <>
-              {(error || validationError) && <div style={{ marginBottom: 14, padding: "10px 12px", borderRadius: 8, color: "var(--mf-magenta)", background: "rgba(255,42,122,0.08)", border: "1px solid rgba(255,42,122,0.25)", fontSize: 12 }}>{validationError || error}</div>}
+              {(error || validationError) && <div style={{ marginBottom: 14, padding: "12px 16px", borderRadius: 10, color: "var(--mf-magenta)", background: "rgba(255,42,109,0.1)", border: "1px solid rgba(255,42,109,0.3)", fontSize: 13, fontWeight: 700 }}>{validationError || error}</div>}
               {editing ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                  <label style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)" }}>TITLE<input value={title} onChange={event => setTitle(event.target.value)} disabled={saving} style={fieldStyle} /></label>
-                  <label style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)" }}>DESCRIPTION<textarea value={description} onChange={event => setDescription(event.target.value)} disabled={saving} rows={5} style={{ ...fieldStyle, resize: "vertical" }} /></label>
-                  <label style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)" }}>STATUS<input value={status} onChange={event => setStatus(event.target.value)} disabled={saving} style={fieldStyle} /></label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                  <div>
+                    <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>TITLE</label>
+                    <input value={title} onChange={event => setTitle(event.target.value)} disabled={saving} style={fieldStyle} onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"} onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"} />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>DESCRIPTION</label>
+                    <textarea value={description} onChange={event => setDescription(event.target.value)} disabled={saving} rows={5} style={{ ...fieldStyle, resize: "vertical", lineHeight: 1.5 }} onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"} onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"} />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>STATUS</label>
+                    <input value={status} onChange={event => setStatus(event.target.value)} disabled={saving} style={fieldStyle} onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"} onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"} />
+                  </div>
                 </div>
               ) : (
                 <>
-                  <div style={{ marginBottom: 18 }}><div style={{ fontSize: 20, fontWeight: 900, marginBottom: 7 }}>{project.title || "—"}</div><div style={{ fontSize: 13, color: "var(--mf-text-muted)", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{project.description || "—"}</div><div style={{ display: "inline-flex", marginTop: 12, padding: "4px 10px", borderRadius: 7, background: "var(--mf-orange)18", border: "1px solid var(--mf-orange)40", color: "var(--mf-orange)", fontSize: 10, fontWeight: 800 }}>{project.status || "—"}</div></div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10 }}>{rows.map(([label, value]) => <div key={label} style={{ padding: "10px 12px", background: "var(--mf-bg-elevated)", borderRadius: 9 }}><div style={{ fontSize: 9, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 4 }}>{label.toUpperCase()}</div><div style={{ fontSize: 12, wordBreak: "break-word" }}>{value}</div></div>)}</div>
+                  <div style={{ marginBottom: 24, paddingBottom: 24, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 8, color: "#fff" }}>{project.title || "—"}</div>
+                    <div style={{ fontSize: 14, color: "var(--mf-text-secondary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{project.description || "—"}</div>
+                    <div style={{ display: "inline-flex", marginTop: 14, padding: "6px 12px", borderRadius: 8, background: "rgba(255,140,66,0.1)", border: "1px solid rgba(255,140,66,0.25)", color: "var(--mf-orange)", fontSize: 11, fontWeight: 800 }}>{project.status || "—"}</div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }}>
+                    {rows.map(([label, value]) => (
+                      <div key={label} style={{ padding: "14px 16px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12 }}>
+                        <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 6, letterSpacing: "0.08em", textTransform: "uppercase" }}>{label}</div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--mf-text-secondary)", wordBreak: "break-word" }}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
                 </>
               )}
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 9, marginTop: 20 }}>
-                {editing ? <><button onClick={cancelEditing} disabled={saving} style={{ ...actionButtonStyle, background: "transparent", color: "var(--mf-text)", border: "1px solid var(--mf-border)", cursor: saving ? "not-allowed" : "pointer" }}>Cancel</button><button onClick={() => void save()} disabled={saving} style={{ ...actionButtonStyle, cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.65 : 1 }}>{saving ? <Loader2 size={13} className="mf-spin" /> : <Save size={13} />}{saving ? "Saving…" : "Save"}</button></> : <button onClick={beginEditing} style={{ ...actionButtonStyle, cursor: "pointer" }}><Edit3 size={13} /> Edit</button>}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 32, paddingTop: 16, borderTop: editing ? "1px solid rgba(255,255,255,0.06)" : "none" }}>
+                {editing ? (
+                  <>
+                    <button onClick={cancelEditing} disabled={saving} style={{ padding: "10px 18px", background: "transparent", color: "var(--mf-text)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer", transition: "border-color 0.15s ease" }} onMouseEnter={e => !saving && (e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)")} onMouseLeave={e => !saving && (e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)")}>Cancel</button>
+                    <button onClick={() => void save()} disabled={saving} style={{ padding: "10px 22px", background: "var(--mf-cyan)", color: "#000", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.7 : 1, display: "flex", alignItems: "center", gap: 8, boxShadow: "0 0 15px rgba(0,240,255,0.3)" }}>
+                      {saving ? <Loader2 size={15} className="mf-spin" /> : <Save size={15} />}
+                      {saving ? "Saving…" : "Save Details"}
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={beginEditing} style={{ padding: "10px 22px", background: "var(--mf-cyan)", color: "#000", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, boxShadow: "0 0 15px rgba(0,240,255,0.3)" }}>
+                    <Edit3 size={15} /> Edit Details
+                  </button>
+                )}
               </div>
             </>
           )}
@@ -364,6 +428,20 @@ function AssignmentDialog({ accounts, loading, accountsError, assignmentError, a
   const [validationError, setValidationError] = useState<string | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchMessage, setSearchMessage] = useState<string | null>(null);
+
+  const fieldStyle = {
+    width: "100%",
+    padding: "12px 16px",
+    background: "rgba(255,255,255,0.02)",
+    border: "1px solid rgba(255,255,255,0.1)",
+    borderRadius: 10,
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: 500,
+    outline: "none",
+    transition: "border-color 0.15s ease",
+    boxSizing: "border-box" as const
+  };
 
   const handleSearchAndAssign = async () => {
     let id = Number(manualId.trim());
@@ -398,15 +476,51 @@ function AssignmentDialog({ accounts, loading, accountsError, assignmentError, a
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 1200, padding: 20, background: "rgba(0,0,0,0.68)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ width: "min(480px, 100%)", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border-bright)", borderRadius: 16, boxShadow: "0 24px 70px rgba(0,0,0,0.5)" }}>
-        <div style={{ padding: "18px 20px", borderBottom: "1px solid var(--mf-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div style={{ fontSize: 17, fontWeight: 900 }}>Assign Tantou</div><button onClick={onClose} disabled={assigning} aria-label="Close assignment dialog" style={{ background: "none", border: "none", color: "var(--mf-text-muted)", cursor: assigning ? "not-allowed" : "pointer" }}><X size={18} /></button></div>
-        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 15 }}>
-          <label style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)" }}>TANTOU EMAIL SEARCH<input type="email" value={emailSearch} onChange={event => setEmailSearch(event.target.value)} disabled={assigning || Boolean(manualId)} placeholder="Enter Tantou's email" style={{ ...fieldStyle, opacity: manualId ? 0.55 : 1 }} /></label>
-          {searchMessage && <div style={{ padding: "10px 12px", borderRadius: 8, color: "var(--mf-orange)", background: "rgba(255,140,66,0.08)", border: "1px solid rgba(255,140,66,0.3)", fontSize: 12, lineHeight: 1.5 }}>{searchMessage}</div>}
-          <label style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)" }}>OR TANTOU ACCOUNT ID<input type="number" min={1} step={1} value={manualId} onChange={event => setManualId(event.target.value)} disabled={assigning || Boolean(emailSearch)} placeholder="Enter a positive account ID directly" style={{ ...fieldStyle, opacity: emailSearch ? 0.55 : 1 }} /></label>
-          {(validationError || assignmentError) && <div style={{ padding: "10px 12px", borderRadius: 8, color: "var(--mf-magenta)", background: "rgba(255,42,122,0.08)", border: "1px solid rgba(255,42,122,0.25)", fontSize: 12 }}>{validationError || assignmentError}</div>}
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 9 }}><button onClick={onClose} disabled={assigning} style={{ ...actionButtonStyle, background: "transparent", color: "var(--mf-text)", border: "1px solid var(--mf-border)", cursor: assigning ? "not-allowed" : "pointer" }}>Cancel</button><button onClick={() => void handleSearchAndAssign()} disabled={assigning || searchLoading} style={{ ...actionButtonStyle, cursor: assigning || searchLoading ? "not-allowed" : "pointer", opacity: assigning || searchLoading ? 0.65 : 1 }}>{(assigning || searchLoading) ? <Loader2 size={13} className="mf-spin" /> : <UserPlus size={13} />}{(assigning || searchLoading) ? "Assigning…" : "Confirm"}</button></div>
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 1200, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: "100%", maxWidth: 520, background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 16, boxShadow: "0 20px 40px rgba(0,0,0,0.5)", display: "flex", flexDirection: "column" }}>
+
+        {/* Header Section */}
+        <div style={{
+          padding: "24px 32px 18px", display: "flex", justifyContent: "space-between", alignItems: "flex-start",
+          borderBottom: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.01)", flexShrink: 0
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ width: 38, height: 38, borderRadius: 10, background: "rgba(0, 240, 255, 0.1)", border: "1px solid rgba(0, 240, 255, 0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-cyan)", flexShrink: 0 }}>
+              <UserPlus size={20} />
+            </div>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 900, color: "#fff", letterSpacing: "-0.01em" }}>Assign Tantou</div>
+              <div style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4 }}>Assign an editor to this project</div>
+            </div>
+          </div>
+          <button onClick={onClose} disabled={assigning} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, cursor: assigning ? "not-allowed" : "pointer", color: "var(--mf-text-muted)", width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s ease" }}
+            onMouseEnter={e => { if (!assigning) { e.currentTarget.style.background = "rgba(0, 240, 255, 0.1)"; e.currentTarget.style.color = "var(--mf-cyan)"; e.currentTarget.style.borderColor = "rgba(0, 240, 255, 0.3)"; } }}
+            onMouseLeave={e => { if (!assigning) { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.color = "var(--mf-text-muted)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; } }}
+          ><X size={16} /></button>
+        </div>
+
+        <div style={{ padding: "28px 32px 32px", display: "flex", flexDirection: "column", gap: 20 }}>
+          <div>
+            <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>TANTOU EMAIL SEARCH</label>
+            <input type="email" value={emailSearch} onChange={event => setEmailSearch(event.target.value)} disabled={assigning || Boolean(manualId)} placeholder="Enter Tantou's email" style={{ ...fieldStyle, opacity: manualId ? 0.55 : 1 }} onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"} onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"} />
+          </div>
+
+          {searchMessage && <div style={{ padding: "12px 16px", borderRadius: 10, color: "var(--mf-orange)", background: "rgba(255,140,66,0.1)", border: "1px solid rgba(255,140,66,0.3)", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><AlertCircle size={16} />{searchMessage}</div>}
+
+          <div>
+            <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>OR TANTOU ACCOUNT ID</label>
+            <input type="number" min={1} step={1} value={manualId} onChange={event => setManualId(event.target.value)} disabled={assigning || Boolean(emailSearch)} placeholder="Enter a positive account ID directly" style={{ ...fieldStyle, opacity: emailSearch ? 0.55 : 1 }} onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"} onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"} />
+          </div>
+
+          {(validationError || assignmentError) && <div style={{ padding: "12px 16px", borderRadius: 10, color: "var(--mf-magenta)", background: "rgba(255,42,109,0.1)", border: "1px solid rgba(255,42,109,0.3)", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}><AlertCircle size={16} />{validationError || assignmentError}</div>}
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 12, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+            <button onClick={onClose} disabled={assigning} style={{ padding: "10px 18px", background: "transparent", color: "var(--mf-text)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: assigning ? "not-allowed" : "pointer", transition: "border-color 0.15s ease" }} onMouseEnter={e => !assigning && (e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)")} onMouseLeave={e => !assigning && (e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)")}>Cancel</button>
+            <button onClick={() => void handleSearchAndAssign()} disabled={assigning || searchLoading} style={{ padding: "10px 22px", background: "var(--mf-cyan)", color: "#000", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: (assigning || searchLoading) ? "not-allowed" : "pointer", opacity: (assigning || searchLoading) ? 0.7 : 1, display: "flex", alignItems: "center", gap: 8, boxShadow: "0 0 15px rgba(0,240,255,0.3)" }}>
+              {(assigning || searchLoading) ? <Loader2 size={15} className="mf-spin" /> : <UserPlus size={15} />}
+              {(assigning || searchLoading) ? "Assigning…" : "Confirm Assignment"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

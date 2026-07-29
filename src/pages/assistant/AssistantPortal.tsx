@@ -3,9 +3,10 @@ import { AppLayout } from "../../components/layout/AppLayout";
 import {
   Brush, Layers, Send, CheckCircle, AlertTriangle,
   Plus, Eraser, Pipette, ZoomIn, ZoomOut,
-  RotateCcw, Eye, EyeOff, Lock, Unlock,
+  RotateCcw, Eye, EyeOff, Lock, Unlock, X, ClipboardList
 } from "lucide-react";
-import { getSketchTasks, getTasks, taskToAssistantTask, type AssistantTask } from "../../services/workflowApi";
+import { getSubTasksForAssignee, taskToAssistantTask, type AssistantTask } from "../../services/workflowApi";
+import { tokenStorage } from "../../storage/tokenStorage";
 
 const allTasks = [
   { id: 1, page: 4, panel: "A", label: "Draw Background — Cyberpunk City", tags: ["Background Art"], mangaka: "Kishimoto-san", due: "Jun 20", priority: "high", status: "active" },
@@ -144,6 +145,7 @@ function drawCyberpunkBackground(ctx: CanvasRenderingContext2D, w: number, h: nu
 export function AssistantPortal() {
   const [activeNav, setActiveNav] = useState("My Assignments");
   const [selectedTask, setSelectedTask] = useState<number | null>(null);
+  const [viewingTask, setViewingTask] = useState<AssistantTask | null>(null);
   const [allTasksFromApi, setAllTasksFromApi] = useState<AssistantTask[]>([]);
   const [layers, setLayers] = useState(canvasLayers);
   const [activeTool, setActiveTool] = useState("brush");
@@ -174,12 +176,21 @@ export function AssistantPortal() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    Promise.all([getTasks(), getSketchTasks()])
-      .then(([tasks, sketchTasks]) => {
+    const account = tokenStorage.getAccount();
+    if (!account || !account.id) {
+      setError("User not logged in");
+      setLoading(false);
+      return;
+    }
+
+    getSubTasksForAssignee(account.id, account.id)
+      .then((tasks) => {
         if (cancelled) return;
-        const mapped = [...tasks.map(taskToAssistantTask), ...sketchTasks.map(taskToAssistantTask)];
+        const mapped = tasks.map(taskToAssistantTask);
         setAllTasksFromApi(mapped);
-        setSelectedTask(mapped[0]?.id ?? null);
+        if (mapped.length > 0) {
+          setSelectedTask(mapped[0].id);
+        }
       })
       .catch((err: { message?: string }) => {
         if (!cancelled) setError(err.message || "Failed to load assistant tasks.");
@@ -268,8 +279,8 @@ export function AssistantPortal() {
   const tasks = activeNav === "In Progress"
     ? allTasksFromApi.filter(t => t.status === "active" || t.status === "in_progress")
     : activeNav === "Submitted"
-    ? allTasksFromApi.filter(t => submitted.has(t.id) || t.status === "submitted")
-    : allTasksFromApi;
+      ? allTasksFromApi.filter(t => submitted.has(t.id) || t.status === "submitted")
+      : allTasksFromApi;
 
   const activeTask = allTasksFromApi.find(t => t.id === selectedTask);
 
@@ -321,32 +332,102 @@ export function AssistantPortal() {
             ) : tasks.map(task => {
               const isSubmitted = submitted.has(task.id);
               const statusInfo = isSubmitted ? { label: "Submitted", color: "var(--mf-green)" } : statusMap[task.status];
+              const isSelected = selectedTask === task.id;
               return (
-                <button
+                <div
                   key={task.id}
-                  onClick={() => setSelectedTask(task.id)}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => { setSelectedTask(task.id); setViewingTask(task); }}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { setSelectedTask(task.id); setViewingTask(task); } }}
                   style={{
-                    display: "block", width: "100%", padding: "12px 14px", marginBottom: 8,
-                    background: selectedTask === task.id ? "var(--mf-bg-elevated)" : "var(--mf-bg-surface)",
-                    border: `1px solid ${selectedTask === task.id ? "var(--mf-green)40" : "var(--mf-border)"}`,
-                    borderRadius: 12, cursor: "pointer", textAlign: "left", transition: "all 0.15s",
-                    opacity: isSubmitted ? 0.7 : 1,
+                    display: "block",
+                    width: "100%",
+                    padding: "16px",
+                    marginBottom: 12,
+                    background: isSelected
+                      ? "linear-gradient(135deg, rgba(0, 240, 255, 0.1), rgba(0, 240, 255, 0.02))"
+                      : "rgba(255,255,255,0.02)",
+                    border: `1px solid ${isSelected ? "rgba(0,240,255,0.4)" : "rgba(255,255,255,0.05)"}`,
+                    borderRadius: 16,
+                    cursor: "pointer",
+                    textAlign: "left",
+                    transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+                    opacity: isSubmitted ? 0.6 : 1,
+                    boxShadow: isSelected ? "0 10px 30px rgba(0,240,255,0.1)" : "0 4px 12px rgba(0,0,0,0.1)",
+                    position: "relative",
+                    overflow: "hidden"
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                      e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
+                      e.currentTarget.style.transform = "translateY(-1px)";
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isSelected) {
+                      e.currentTarget.style.background = "rgba(255,255,255,0.02)";
+                      e.currentTarget.style.borderColor = "rgba(255,255,255,0.05)";
+                      e.currentTarget.style.transform = "none";
+                    }
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 6, gap: 8 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: "var(--mf-text)", lineHeight: 1.3, flex: 1 }}>{task.label}</span>
-                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: priorityColor[task.priority], flexShrink: 0, marginTop: 4 }} />
+                  {isSelected && (
+                    <div style={{
+                      position: "absolute", top: 0, left: 0, width: 4, height: "100%",
+                      background: "var(--mf-cyan)",
+                      boxShadow: "0 0 12px var(--mf-cyan)"
+                    }} />
+                  )}
+
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8, gap: 8 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "#fff", lineHeight: 1.4, flex: 1 }}>{task.label}</span>
+                    <div
+                      title={`Priority: ${task.priority}`}
+                      style={{
+                        width: 8, height: 8, borderRadius: "50%",
+                        background: priorityColor[task.priority],
+                        flexShrink: 0, marginTop: 4,
+                        boxShadow: `0 0 8px ${priorityColor[task.priority]}`
+                      }}
+                    />
                   </div>
-                  <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginBottom: 8 }}>
+
+                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginBottom: 12, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
+                    <Brush size={12} />
                     Page {task.page} · Panel {task.panel} · Due {task.due}
                   </div>
+
                   <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     {task.tags.map(tag => (
-                      <span key={tag} style={{ padding: "2px 8px", background: `${tagColor[tag] || "var(--mf-text-muted)"}18`, border: `1px solid ${tagColor[tag] || "var(--mf-text-muted)"}30`, borderRadius: 100, fontSize: 10, color: tagColor[tag] || "var(--mf-text-muted)", fontWeight: 700 }}>{tag}</span>
+                      <span key={tag} style={{
+                        padding: "3px 10px",
+                        background: `${tagColor[tag] || "rgba(255,255,255,0.5)"}15`,
+                        border: `1px solid ${tagColor[tag] || "rgba(255,255,255,0.5)"}30`,
+                        borderRadius: 100,
+                        fontSize: 10,
+                        color: tagColor[tag] || "rgba(255,255,255,0.7)",
+                        fontWeight: 700,
+                        letterSpacing: "0.03em"
+                      }}>
+                        {tag}
+                      </span>
                     ))}
-                    <span style={{ marginLeft: "auto", fontSize: 10, color: statusInfo.color, fontWeight: 700 }}>{statusInfo.label}</span>
+                    <span style={{
+                      marginLeft: "auto",
+                      fontSize: 11,
+                      color: statusInfo.color,
+                      fontWeight: 800,
+                      background: `${statusInfo.color}15`,
+                      padding: "3px 10px",
+                      borderRadius: 100,
+                      border: `1px solid ${statusInfo.color}30`
+                    }}>
+                      {statusInfo.label}
+                    </span>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -516,6 +597,83 @@ export function AssistantPortal() {
           </div>
         </div>
       </div>
+
+      {/* Task Details Modal */}
+      {viewingTask && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 1200, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", animation: "mf-fade-in 0.2s ease" }} onClick={() => setViewingTask(null)}>
+          <div style={{ width: "100%", maxWidth: 600, maxHeight: "92vh", overflowY: "auto", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 16, boxShadow: "0 20px 40px rgba(0,0,0,0.5)", display: "flex", flexDirection: "column", animation: "mf-slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1)" }} onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div style={{ padding: "24px 32px 18px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.01)", flexShrink: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: "rgba(0, 240, 255, 0.1)", border: "1px solid rgba(0, 240, 255, 0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-cyan)", flexShrink: 0 }}>
+                  <ClipboardList size={20} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 900, color: "#fff", letterSpacing: "-0.01em" }}>Task Details</div>
+                  <div style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4 }}>Review details before starting</div>
+                </div>
+              </div>
+              <button onClick={() => setViewingTask(null)} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, cursor: "pointer", color: "var(--mf-text-muted)", width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s ease" }} onMouseEnter={e => { e.currentTarget.style.background = "rgba(0, 240, 255, 0.1)"; e.currentTarget.style.color = "var(--mf-cyan)"; e.currentTarget.style.borderColor = "rgba(0, 240, 255, 0.3)"; }} onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.color = "var(--mf-text-muted)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: "28px 32px 32px", display: "flex", flexDirection: "column", gap: 24 }}>
+
+              <div style={{ padding: "16px", background: "rgba(0, 240, 255, 0.05)", border: "1px solid rgba(0, 240, 255, 0.15)", borderRadius: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-cyan)", letterSpacing: "0.08em", marginBottom: 6, textTransform: "uppercase" }}>Parent Task / Mangaka</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", marginBottom: 4 }}>{viewingTask.mangaka}</div>
+                <div style={{ fontSize: 13, color: "var(--mf-text-muted)", display: "flex", alignItems: "center", gap: 8 }}>
+                  <Brush size={14} /> Page {viewingTask.page}
+                  <span style={{ color: "rgba(255,255,255,0.2)" }}>•</span>
+                  Due: {viewingTask.due}
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>SUBTASK TITLE</label>
+                <div style={{ width: "100%", padding: "12px 16px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#fff", fontSize: 14, fontWeight: 600, boxSizing: "border-box" }}>
+                  {viewingTask.label}
+                </div>
+              </div>
+
+              {viewingTask.description && (
+                <div>
+                  <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>DESCRIPTION / NOTES</label>
+                  <div style={{ width: "100%", padding: "16px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "rgba(255,255,255,0.8)", fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap", boxSizing: "border-box" }}>
+                    {viewingTask.description}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>TAGS & PRIORITY</label>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  {viewingTask.tags.map(tag => (
+                    <span key={tag} style={{ padding: "6px 14px", background: "rgba(0, 240, 255, 0.1)", border: "1px solid rgba(0, 240, 255, 0.2)", borderRadius: 100, fontSize: 11, fontWeight: 700, color: "var(--mf-cyan)" }}>
+                      {tag}
+                    </span>
+                  ))}
+                  <span style={{ padding: "6px 14px", background: "rgba(255, 255, 255, 0.05)", border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: 100, fontSize: 11, fontWeight: 700, color: "var(--mf-text-muted)" }}>
+                    Priority: {viewingTask.priority}
+                  </span>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 8, paddingTop: 24, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                <button onClick={() => setViewingTask(null)} style={{ padding: "12px 20px", background: "transparent", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, color: "var(--mf-text)", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "border-color 0.15s ease" }} onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)"} onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"}>Cancel</button>
+                <button onClick={() => { setSelectedTask(viewingTask.id); setViewingTask(null); }} style={{ padding: "12px 24px", background: "var(--mf-cyan)", border: "none", borderRadius: 10, color: "#000", fontSize: 13, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, boxShadow: "0 0 15px rgba(0,240,255,0.3)", transition: "all 0.15s ease" }} onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 0 20px rgba(0,240,255,0.4)"; }} onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 0 15px rgba(0,240,255,0.3)"; }}>
+                  <Brush size={16} />
+                  Work on Task
+                </button>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      )}
     </AppLayout>
   );
 }

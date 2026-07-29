@@ -85,6 +85,16 @@ export async function assignMangakaToProject(projectId: number, mangakaId: numbe
   });
 }
 
+export async function assignChapterToMangaka(chapterId: number, mangakaId: number): Promise<void> {
+  const requesterId = tokenStorage.getAccount()?.id;
+  if (!requesterId) throw new Error("Authentication required to assign a chapter");
+
+  await apiRequest<null>(`/workflow/chapters/${chapterId}/assign`, {
+    method: "POST",
+    body: JSON.stringify({ mangakaId, requesterId }),
+  });
+}
+
 export interface ProductionPlanPayload {
   milestones?: string;
   schedule?: string;

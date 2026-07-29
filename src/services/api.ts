@@ -50,6 +50,13 @@ export async function apiRequest<T>(
     throw err;
   }
 
+  if (res.ok) {
+    if (path.includes("/projects")) {
+      console.log(`[API RESPONSE] ${path}`, json);
+    }
+    return json?.data as T;
+  }
+
   return json?.data as T;
 }
 

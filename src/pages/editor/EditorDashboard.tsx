@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "react-toastify";
 import { AppLayout } from "../../components/layout/AppLayout";
 import {
   AlertTriangle, ArrowUpRight, CheckCircle, Clock, FileText,
@@ -840,71 +841,247 @@ function ApprovedList({
 
 function ProjectDetailsModal({
   project,
-  onClose
+  onClose,
 }: {
   project: ProjectFromApi;
   onClose: () => void;
 }) {
   const plan = project.productionPlan;
+
+  const [description, setDescription] = useState(project.description || "");
+  const [mangakaId, setMangakaId] = useState(project.mangaka?.id?.toString() || "");
+  const [priority, setPriority] = useState(plan?.priority || "Medium");
+  const [deadline, setDeadline] = useState(plan?.deadline ? plan.deadline.substring(0, 10) : "");
+  const [chapterTimeline, setChapterTimeline] = useState(plan?.chapterTimeline || "");
+  const [saving, setSaving] = useState(false);
+
+  // Mock list of Mangakas - ready for API integration
+  const mangakaList = [
+    { id: 6, name: "Master Mangaka" },
+    { id: 10, name: "Newbie Mangaka" }
+  ];
+
+  const fieldStyle = {
+    width: "100%",
+    padding: "12px 16px",
+    background: "rgba(255,255,255,0.02)",
+    border: "1px solid rgba(255,255,255,0.1)",
+    borderRadius: 10,
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: 700,
+    outline: "none",
+    transition: "border-color 0.15s ease",
+    marginTop: 8,
+    boxSizing: "border-box"
+  } as const;
+
+  const labelStyle = {
+    display: "block",
+    fontSize: 10,
+    fontWeight: 800,
+    color: "var(--mf-text-muted)",
+    marginBottom: 8,
+    letterSpacing: "0.08em",
+    textTransform: "uppercase" as const
+  };
+
+  const handleSave = () => {
+    setSaving(true);
+    // Giả lập API
+    setTimeout(() => {
+      setSaving(false);
+      toast.success("Project details updated successfully");
+      onClose();
+    }, 600);
+  };
+
   return (
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 1200, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ width: "min(600px, 100%)", maxHeight: "90vh", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 16, overflowY: "auto", display: "flex", flexDirection: "column", boxShadow: "0 20px 50px rgba(0,0,0,0.5)" }}>
-        <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--mf-border)", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: "var(--mf-bg-surface)", zIndex: 1 }}>
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 900 }}>{project.title || "Project Details"}</div>
-            <div style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4 }}>Production Plan Information</div>
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1200,
+    }}>
+      <div style={{
+        background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
+        borderRadius: 16, width: "100%", maxWidth: 640, boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+        maxHeight: "92vh", overflowY: "auto", display: "flex", flexDirection: "column"
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: "24px 32px 18px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          background: "rgba(255,255,255,0.01)",
+          flexShrink: 0
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: 10,
+              background: "rgba(0, 240, 255, 0.1)",
+              border: "1px solid rgba(0, 240, 255, 0.3)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "var(--mf-cyan)", flexShrink: 0
+            }}>
+              <FileText size={20} />
+            </div>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 900, color: "#fff", letterSpacing: "-0.01em" }}>
+                {project.title || "Project Details"}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4 }}>
+                Update production details
+              </div>
+            </div>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)" }}>
-            <X size={18} />
+          <button
+            onClick={onClose}
+            type="button"
+            style={{
+              background: "rgba(255, 255, 255, 0.04)",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              borderRadius: 10,
+              cursor: "pointer",
+              color: "var(--mf-text-muted)",
+              width: 34,
+              height: 34,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "all 0.15s ease",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = "rgba(0, 240, 255, 0.1)"; e.currentTarget.style.color = "var(--mf-cyan)"; e.currentTarget.style.borderColor = "rgba(0, 240, 255, 0.3)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "rgba(255, 255, 255, 0.04)"; e.currentTarget.style.color = "var(--mf-text-muted)"; e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.1)"; }}
+          >
+            <X size={16} />
           </button>
         </div>
-        <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
-          {project.description && (
-            <div style={{ padding: 16, background: "var(--mf-bg-deep)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
-              <div style={{ fontSize: 10, fontWeight: 900, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.05em" }}>DESCRIPTION</div>
-              <div style={{ fontSize: 13, color: "var(--mf-text-secondary)", lineHeight: 1.5 }}>{project.description}</div>
-            </div>
-          )}
-          {plan && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <div style={{ padding: 16, background: "var(--mf-bg-deep)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
-                  <div style={{ fontSize: 10, fontWeight: 900, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.05em" }}>PRIORITY</div>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: plan.priority === "High" ? "var(--mf-magenta)" : "var(--mf-cyan)" }}>{plan.priority || "Medium"}</div>
-                </div>
-                <div style={{ padding: 16, background: "var(--mf-bg-deep)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
-                  <div style={{ fontSize: 10, fontWeight: 900, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.05em" }}>DEADLINE</div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--mf-text)" }}>{formatDateTime(plan.deadline)}</div>
-                </div>
-              </div>
-              {plan.milestones && (
-                <div style={{ padding: 16, background: "var(--mf-bg-deep)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
-                  <div style={{ fontSize: 10, fontWeight: 900, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.05em" }}>MILESTONES</div>
-                  <div style={{ fontSize: 13, color: "var(--mf-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{plan.milestones}</div>
-                </div>
+
+        {/* Body */}
+        <div style={{ padding: "28px 32px 32px", display: "flex", flexDirection: "column", gap: 20 }}>
+          
+          <div>
+            <label style={labelStyle}>MANGAKA ASSIGNMENT</label>
+            <select
+              style={fieldStyle}
+              value={mangakaId}
+              onChange={(e) => setMangakaId(e.target.value)}
+              onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"}
+              onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"}
+            >
+              <option value="" style={{ background: "var(--mf-bg-deep)" }}>-- Select Mangaka --</option>
+              {project.mangaka && !mangakaList.find(m => m.id.toString() === mangakaId) && (
+                <option value={project.mangaka.id} style={{ background: "var(--mf-bg-deep)" }}>{project.mangaka.name}</option>
               )}
-              {plan.chapterTimeline && (
-                <div style={{ padding: 16, background: "var(--mf-bg-deep)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
-                  <div style={{ fontSize: 10, fontWeight: 900, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.05em" }}>CHAPTER TIMELINE</div>
-                  <div style={{ fontSize: 13, color: "var(--mf-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{plan.chapterTimeline}</div>
-                </div>
-              )}
+              {mangakaList.map(m => (
+                <option key={m.id} value={m.id} style={{ background: "var(--mf-bg-deep)" }}>{m.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={labelStyle}>DESCRIPTION</label>
+            <textarea
+              style={{ ...fieldStyle, minHeight: 100, resize: "vertical", lineHeight: 1.5 }}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Enter project description..."
+              onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"}
+              onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"}
+            />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+            <div>
+              <label style={labelStyle}>PRIORITY</label>
+              <select 
+                style={fieldStyle} 
+                value={priority} 
+                onChange={(e) => setPriority(e.target.value)}
+                onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"}
+                onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"}
+              >
+                <option value="High" style={{ background: "var(--mf-bg-deep)" }}>High</option>
+                <option value="Medium" style={{ background: "var(--mf-bg-deep)" }}>Medium</option>
+                <option value="Low" style={{ background: "var(--mf-bg-deep)" }}>Low</option>
+              </select>
             </div>
-          )}
-          <div style={{ padding: 16, background: "var(--mf-bg-deep)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
-            <div style={{ fontSize: 10, fontWeight: 900, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.05em" }}>ASSIGNED MANGAKA</div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--mf-text)" }}>
-              {project.mangaka ? project.mangaka.name : "Not assigned yet"}
+            <div>
+              <label style={labelStyle}>DEADLINE</label>
+              <input
+                type="date"
+                style={fieldStyle}
+                value={deadline}
+                onChange={(e) => setDeadline(e.target.value)}
+                onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"}
+                onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"}
+              />
             </div>
           </div>
+
+          <div>
+            <label style={labelStyle}>CHAPTER TIMELINE</label>
+            <textarea
+              style={{ ...fieldStyle, minHeight: 80, resize: "vertical", lineHeight: 1.5 }}
+              value={chapterTimeline}
+              onChange={(e) => setChapterTimeline(e.target.value)}
+              placeholder="Outline chapter deadlines..."
+              onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"}
+              onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"}
+            />
+          </div>
         </div>
+
+        {/* Footer */}
+        <div style={{ padding: "16px 32px", borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", justifyContent: "flex-end", gap: 12 }}>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            style={{
+              padding: "10px 18px",
+              background: "transparent",
+              border: "1px solid rgba(255,255,255,0.15)",
+              borderRadius: 10,
+              color: "var(--mf-text)",
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: saving ? "not-allowed" : "pointer",
+              transition: "border-color 0.15s ease"
+            }}
+            onMouseEnter={e => !saving && (e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)")}
+            onMouseLeave={e => !saving && (e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)")}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{
+              padding: "10px 22px",
+              background: "var(--mf-cyan)",
+              border: "none",
+              borderRadius: 10,
+              color: "#000",
+              fontSize: 13,
+              fontWeight: 800,
+              cursor: saving ? "not-allowed" : "pointer",
+              opacity: saving ? 0.7 : 1,
+              boxShadow: "0 0 15px rgba(0,240,255,0.4)",
+            }}
+          >
+            {saving ? "Saving..." : "Save Details"}
+          </button>
+        </div>
+
       </div>
     </div>
   );
 }
 
-// ─── Tantor Submissions Section ────────────────────────────────────────────────
-
+// ─── Tantou Submissions Section ────────────────────────────────────────────────
 
 function ReviewModal({
   submission,
@@ -952,50 +1129,73 @@ function ReviewModal({
   }
 
   return (
-    <div
-      style={{
-        position: "fixed", inset: 0, zIndex: 9999,
-        background: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        padding: 24,
-      }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 1200,
+      background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+      display: "flex", alignItems: "center", justifyContent: "center"
+    }}>
       <div style={{
-        background: "var(--mf-bg-surface)", borderRadius: 20,
-        border: "1px solid var(--mf-border)",
-        boxShadow: "0 24px 80px rgba(0,0,0,0.6)",
-        width: "100%", maxWidth: 780,
-        maxHeight: "92vh", overflowY: "auto",
-        display: "flex", flexDirection: "column",
+        background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
+        borderRadius: 16, width: "100%", maxWidth: 780, boxShadow: "0 20px 40px rgba(0,0,0,0.5)",
+        maxHeight: "92vh", overflowY: "auto", display: "flex", flexDirection: "column"
       }}>
-        {/* Modal Header */}
+        {/* Header Section */}
         <div style={{
-          padding: "20px 28px", borderBottom: "1px solid var(--mf-border)",
-          display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0,
+          padding: "24px 32px 18px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          borderBottom: "1px solid rgba(255,255,255,0.06)",
+          background: "rgba(255,255,255,0.01)",
+          flexShrink: 0
         }}>
-          <div>
-            <div style={{ fontSize: 18, fontWeight: 900, color: "var(--mf-text)", letterSpacing: "-0.01em" }}>
-              {displayText(submission.title, "Untitled Submission")}
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: 10,
+              background: "rgba(0, 240, 255, 0.1)",
+              border: "1px solid rgba(0, 240, 255, 0.3)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: "var(--mf-cyan)", flexShrink: 0
+            }}>
+              <FileText size={20} />
             </div>
-            <div style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4 }}>
-              Review Submission
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 900, color: "#fff", letterSpacing: "-0.01em" }}>
+                {displayText(submission.title, "Untitled Submission")}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4 }}>
+                Review Submission
+              </div>
             </div>
           </div>
           <button
             onClick={onClose}
-            style={{ background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text-secondary)", cursor: "pointer", width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center" }}
+            type="button"
+            style={{
+              background: "rgba(255, 255, 255, 0.04)",
+              border: "1px solid rgba(255, 255, 255, 0.1)",
+              borderRadius: 10,
+              cursor: "pointer",
+              color: "var(--mf-text-muted)",
+              width: 34,
+              height: 34,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              transition: "all 0.15s ease",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = "rgba(0, 240, 255, 0.1)"; e.currentTarget.style.color = "var(--mf-cyan)"; e.currentTarget.style.borderColor = "rgba(0, 240, 255, 0.3)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "rgba(255, 255, 255, 0.04)"; e.currentTarget.style.color = "var(--mf-text-muted)"; e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.1)"; }}
           >
             <X size={16} />
           </button>
         </div>
 
-        <div style={{ padding: "24px 28px", display: "flex", flexDirection: "column", gap: 24 }}>
+        <div style={{ padding: "28px 32px 32px", display: "flex", flexDirection: "column", gap: 24 }}>
           {/* File Previews */}
           {files.length > 0 && (
             <div>
-              <div style={{ fontSize: 11, fontWeight: 900, color: "var(--mf-text)", letterSpacing: "0.08em", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 4, height: 14, background: "var(--mf-cyan)", borderRadius: 2 }} />
+              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.08em", marginBottom: 14 }}>
                 UPLOADED FILES ({files.length})
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 14 }}>
@@ -1004,8 +1204,8 @@ function ReviewModal({
                   const canPreview = Boolean(path && isImageFile(file));
                   const isPsd = isPsdFile(file);
                   return (
-                    <div key={file.id ?? idx} style={{ background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", borderRadius: 12, overflow: "hidden" }}>
-                      <div style={{ width: "100%", aspectRatio: "3/4", background: "var(--mf-bg-deep)", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
+                    <div key={file.id ?? idx} style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, overflow: "hidden" }}>
+                      <div style={{ width: "100%", aspectRatio: "3/4", background: "rgba(255,255,255,0.01)", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
                         {canPreview ? (
                           <img src={path || ""} alt={fileName(file)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                         ) : (
@@ -1020,11 +1220,8 @@ function ReviewModal({
                         )}
                       </div>
                       <div style={{ padding: "10px 12px" }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text)", wordBreak: "break-word", marginBottom: 2 }}>{fileName(file)}</div>
-                        <div style={{ fontSize: 10, color: "var(--mf-text-muted)" }}>{formatBytes(fileSize(file))} · {fileContentType(file).split("/").pop()?.toUpperCase()}</div>
-                        <div style={{ fontSize: 10, color: "var(--mf-cyan)", marginTop: 4, wordBreak: "break-all", lineHeight: 1.4 }}>
-                          {filePath(file) || "No path"}
-                        </div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", wordBreak: "break-word", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fileName(file)}</div>
+                        <div style={{ fontSize: 10, color: "var(--mf-text-muted)" }}>{formatBytes(fileSize(file))}</div>
                         {isPsd && <div style={{ fontSize: 10, color: "var(--mf-magenta)", fontWeight: 800, marginTop: 4 }}>NO PREVIEW</div>}
                       </div>
                     </div>
@@ -1036,8 +1233,7 @@ function ReviewModal({
 
           {/* Review Fields */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 900, color: "var(--mf-text)", letterSpacing: "0.08em", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ width: 4, height: 14, background: "var(--mf-cyan)", borderRadius: 2 }} />
+            <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.08em", marginBottom: 14 }}>
               REVIEW CRITERIA
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginBottom: 16 }}>
@@ -1046,8 +1242,8 @@ function ReviewModal({
                 { label: "Structure", value: structurePass, onChange: setStructurePass },
                 { label: "Image Flow", value: imageFlowPass, onChange: setImageFlowPass },
               ] as const).map(({ label, value, onChange }) => (
-                <div key={label} style={{ background: "var(--mf-bg-deep)", borderRadius: 10, padding: "12px 14px", border: "1px solid var(--mf-border)" }}>
-                  <div style={{ fontSize: 10, color: "var(--mf-text-muted)", fontWeight: 800, letterSpacing: "0.06em", marginBottom: 8 }}>{label.toUpperCase()}</div>
+                <div key={label} style={{ background: "rgba(255,255,255,0.02)", borderRadius: 10, padding: "12px 14px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ fontSize: 10, color: "var(--mf-text-muted)", fontWeight: 800, letterSpacing: "0.08em", marginBottom: 8, textTransform: "uppercase" }}>{label}</div>
                   <div style={{ position: "relative" }}>
                     <select
                       value={value ? "true" : "false"}
@@ -1058,11 +1254,11 @@ function ReviewModal({
                         border: `1px solid ${value ? "rgba(0,230,180,0.35)" : "rgba(255,42,122,0.35)"}`,
                         borderRadius: 8, color: value ? "var(--mf-green)" : "var(--mf-magenta)",
                         fontSize: 13, fontWeight: 700, cursor: "pointer",
-                        appearance: "none", WebkitAppearance: "none",
+                        appearance: "none", WebkitAppearance: "none", outline: "none"
                       }}
                     >
-                      <option value="true">✓ Pass</option>
-                      <option value="false">✗ Not Pass</option>
+                      <option value="true" style={{ background: "var(--mf-bg-deep)", color: "var(--mf-green)" }}>✓ Pass</option>
+                      <option value="false" style={{ background: "var(--mf-bg-deep)", color: "var(--mf-magenta)" }}>✗ Not Pass</option>
                     </select>
                     <ChevronDown size={13} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: value ? "var(--mf-green)" : "var(--mf-magenta)" }} />
                   </div>
@@ -1071,27 +1267,46 @@ function ReviewModal({
             </div>
 
             {/* Comment */}
-            <div style={{ background: "var(--mf-bg-deep)", borderRadius: 10, padding: "12px 14px", border: "1px solid var(--mf-border)" }}>
-              <div style={{ fontSize: 10, color: "var(--mf-text-muted)", fontWeight: 800, letterSpacing: "0.06em", marginBottom: 8 }}>COMMENT</div>
+            <div>
+              <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>COMMENT</label>
               <textarea
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 placeholder="Add your review comments here..."
                 rows={4}
                 style={{
-                  width: "100%", background: "transparent", border: "none",
-                  color: "var(--mf-text)", fontSize: 13, lineHeight: 1.6,
-                  resize: "vertical", outline: "none", fontFamily: "inherit",
-                  boxSizing: "border-box",
+                  width: "100%",
+                  padding: "12px 16px",
+                  background: "rgba(255,255,255,0.02)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: 10,
+                  color: "#fff",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  lineHeight: 1.6,
+                  resize: "vertical",
+                  outline: "none",
+                  transition: "border-color 0.15s ease",
+                  boxSizing: "border-box"
                 }}
+                onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"}
+                onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"}
               />
             </div>
           </div>
 
           {/* Error */}
           {submitError && (
-            <div style={{ padding: "12px 16px", background: "rgba(255,42,122,0.08)", border: "1px solid rgba(255,42,122,0.25)", borderRadius: 10, color: "var(--mf-magenta)", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
-              <AlertTriangle size={14} /> {submitError}
+            <div style={{
+              padding: "12px 16px",
+              background: "rgba(255,42,109,0.1)",
+              border: "1px solid rgba(255,42,109,0.3)",
+              color: "var(--mf-magenta)",
+              borderRadius: 10,
+              fontSize: 13,
+              fontWeight: 700
+            }}>
+              {submitError}
             </div>
           )}
 
@@ -1102,16 +1317,14 @@ function ReviewModal({
               disabled={submitting}
               style={{
                 flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-                padding: "14px 24px", background: submitting ? "var(--mf-bg-surface)" : "linear-gradient(135deg, #00e6b4, #00c8ff)",
-                border: "none", borderRadius: 100, color: submitting ? "var(--mf-text-muted)" : "#000",
-                fontSize: 14, fontWeight: 900, cursor: submitting ? "not-allowed" : "pointer",
-                boxShadow: submitting ? "none" : "0 4px 20px rgba(0,230,180,0.3)",
-                transition: "transform 0.1s, box-shadow 0.2s",
+                padding: "14px 24px", background: "var(--mf-cyan)",
+                border: "none", borderRadius: 10, color: "#000",
+                fontSize: 13, fontWeight: 800, cursor: submitting ? "not-allowed" : "pointer",
+                opacity: submitting ? 0.7 : 1,
+                boxShadow: "0 0 15px rgba(0,240,255,0.3)",
               }}
-              onMouseEnter={(e) => { if (!submitting) e.currentTarget.style.transform = "scale(1.02)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = "none"; }}
             >
-              {submitting ? <Loader2 size={15} style={{ animation: "editor-spin 1s linear infinite" }} /> : <ThumbsUp size={15} />}
+              {submitting ? <Loader2 size={15} className="mf-spin" /> : <ThumbsUp size={15} />}
               APPROVE
             </button>
             <button
@@ -1120,15 +1333,15 @@ function ReviewModal({
               style={{
                 flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                 padding: "14px 24px", background: "transparent",
-                border: "1px solid rgba(255,42,122,0.5)", borderRadius: 100,
-                color: "var(--mf-magenta)", fontSize: 14, fontWeight: 900,
+                border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10,
+                color: "var(--mf-text)", fontSize: 13, fontWeight: 800,
                 cursor: submitting ? "not-allowed" : "pointer",
-                transition: "background 0.2s, transform 0.1s",
+                transition: "border-color 0.15s ease",
               }}
-              onMouseEnter={(e) => { if (!submitting) { e.currentTarget.style.background = "rgba(255,42,122,0.1)"; e.currentTarget.style.transform = "scale(1.02)"; } }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.transform = "none"; }}
+              onMouseEnter={(e) => { if (!submitting) e.currentTarget.style.borderColor = "rgba(255,42,122,0.8)"; e.currentTarget.style.color = "var(--mf-magenta)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"; e.currentTarget.style.color = "var(--mf-text)"; }}
             >
-              {submitting ? <Loader2 size={15} style={{ animation: "editor-spin 1s linear infinite" }} /> : <ThumbsDown size={15} />}
+              {submitting ? <Loader2 size={15} className="mf-spin" /> : <ThumbsDown size={15} />}
               REJECT
             </button>
           </div>
@@ -1277,17 +1490,19 @@ function ProductionPlanList() {
                       <div style={{ fontSize: 12, color: "var(--mf-text-secondary)" }}>{p.mangaka ? p.mangaka.name : "No Mangaka"}</div>
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setAssignChapterPlanId(plan.id);
-                          setAssignChapterProjectId(p.id);
-                          setAssignChapterId((p as any).cachedChapterId || null);
-                        }}
-                        style={{ padding: "8px 16px", borderRadius: 8, background: p.mangaka ? "var(--mf-bg-surface)" : "var(--mf-cyan)", border: p.mangaka ? "1px solid var(--mf-border-bright)" : "none", color: p.mangaka ? "var(--mf-text)" : "#000", fontSize: 12, fontWeight: 800, cursor: "pointer" }}
-                      >
-                        {p.mangaka ? "Update Chapter" : "+ Assign Chapter"}
-                      </button>
+                      {!p.mangaka && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setAssignChapterPlanId(plan.id);
+                            setAssignChapterProjectId(p.id);
+                            setAssignChapterId((p as any).cachedChapterId || null);
+                          }}
+                          style={{ padding: "8px 16px", borderRadius: 8, background: "var(--mf-cyan)", border: "none", color: "#000", fontSize: 12, fontWeight: 800, cursor: "pointer" }}
+                        >
+                          + Assign Chapter
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1303,6 +1518,7 @@ function ProductionPlanList() {
           planId={assignChapterPlanId}
           chapterId={assignChapterId}
           initialTitle={projects.find(p => p.id === assignChapterProjectId)?.title || ""}
+          initialMangakaId={projects.find(p => p.id === assignChapterProjectId)?.mangaka?.id || null}
           onClose={() => {
             setAssignChapterPlanId(null);
             setAssignChapterProjectId(null);
