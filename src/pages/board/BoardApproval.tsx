@@ -11,7 +11,7 @@ import { getPlannings, getSubmissions, getSubmissionReviews, type SubmissionApi,
 import { ActiveProjectsView } from "./ActiveProjectsView";
 import { getAccountProfile } from "../../services/accountApi";
 
-const BOARD_STATUSES = ["PENDING_BOARD_REVIEW", "APPROVED", "REJECTED"];
+const BOARD_STATUSES = ["PENDING_BOARD_REVIEW", "PROCESSING", "APPROVED", "REJECTED"];
 
 function normalizeStatus(status: string | null | undefined): string {
   return (status ?? "").toUpperCase().replace(/-/g, "_");
@@ -19,7 +19,8 @@ function normalizeStatus(status: string | null | undefined): string {
 
 function normalizeStatusLabel(status: string | null | undefined): string {
   switch (normalizeStatus(status)) {
-    case "PENDING_BOARD_REVIEW": return "Voting In Progress";
+    case "PENDING_BOARD_REVIEW":
+    case "PROCESSING": return "Voting In Progress";
     case "APPROVED": return "Approved";
     case "REJECTED": return "Rejected";
     default: return status ?? "Unknown";
@@ -30,7 +31,8 @@ function statusColor(status: string | null | undefined): string {
   switch (normalizeStatus(status)) {
     case "APPROVED": return "var(--mf-green)";
     case "REJECTED": return "var(--mf-magenta)";
-    case "PENDING_BOARD_REVIEW": return "var(--mf-cyan)";
+    case "PENDING_BOARD_REVIEW":
+    case "PROCESSING": return "var(--mf-cyan)";
     default: return "var(--mf-text-muted)";
   }
 }
