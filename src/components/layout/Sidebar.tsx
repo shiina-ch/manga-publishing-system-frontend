@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "react-toastify";
 import {
-  BookOpen, Hash, Bell, ChevronDown, ChevronRight,
+  BookOpen, Hash, ChevronDown, ChevronRight,
   Plus, Edit3, Users, PenTool, Brush, Home, Search,
   FileText, Clock, AlertTriangle, CheckCircle, BarChart3, Layers, Star,
   Inbox, Shield, Activity, UserPlus, Eye, User, LogOut, CheckSquare,
@@ -97,6 +97,7 @@ const roleConfig: Record<LayoutRole, RoleConfig> = {
       { icon: Eye, label: "Chapter Monitor", path: "/admin?tab=chapters" },
       { icon: Users, label: "User Management", path: "/admin?tab=users" },
       { icon: CheckSquare, label: "Process Monitor", path: "/admin?tab=processes" },
+      { icon: FileText, label: "Production Plan Summary", path: "/admin/production-plans" },
     ],
     channels: ["system-alerts", "admin-logs", "moderation", "announcements"],
     dms: ["Chief Editor Yamamoto", "Director Tanaka", "Support Team"],
@@ -145,11 +146,8 @@ export function Sidebar({ activeNav, onNavClick, navBadges }: SidebarProps) {
     navigate("/", { replace: true });
   }
 
-  // All nav items unified: Notifications + role-specific
-  const allNavItems: (NavItem & { isQuickNav?: boolean })[] = [
-    { icon: Bell, label: "Notifications", isQuickNav: true },
-    ...config.nav,
-  ];
+  // Nav items are role-specific (see roleConfig); quick-nav removed in favor of role-aware entries.
+  const allNavItems: NavItem[] = [...config.nav];
 
   return (
     <div style={{
@@ -252,7 +250,7 @@ export function Sidebar({ activeNav, onNavClick, navBadges }: SidebarProps) {
         <div style={{ padding: isCollapsed ? "0 8px" : "0 8px" }}>
           {allNavItems.map((item, idx) => {
             const Icon = item.icon;
-            const isActive = !item.isQuickNav && effectiveActive === item.label;
+            const isActive = effectiveActive === item.label;
             const badge = navBadges?.[item.label] ?? item.badge;
             const shouldShowBadge = typeof badge === "number" && badge > 0;
 

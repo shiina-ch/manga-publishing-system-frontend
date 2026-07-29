@@ -17,7 +17,8 @@ import {
   type TaskApi, type SketchTaskApi, type SketchPageApi, type PlanningApi, type SubTaskApi
 } from "../../services/workflowApi";
 import { tokenStorage } from "../../storage/tokenStorage";
-import { getProjects, type ProjectFromApi } from "../../services/projectApi";
+import { getProjects, getProductionPlans, type ProjectFromApi, type ProductionPlanResponse } from "../../services/projectApi";
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, Legend } from "recharts";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -38,7 +39,18 @@ interface ChapterStatus {
   manga: string;
   chapter: number;
   title: string;
-  status: "draft" | "in_review" | "approved" | "published" | "rejected";
+  status:
+    | "backlog"
+    | "in_production"
+    | "completed"
+    | "completed_needs_review"
+    | "scheduled"
+    | "published"
+    | "overdue"
+    | "draft"
+    | "in_review"
+    | "approved"
+    | "rejected";
   author: string;
   updatedAt: string;
   progress: number;
@@ -69,10 +81,17 @@ interface ActivityEvent {
 // ─── Shared Sub-Components ────────────────────────────────────────────────────
 
 const statusChapterConfig: Record<string, { label: string; color: string; bg: string }> = {
+  backlog: { label: "Backlog", color: "var(--mf-text-muted)", bg: "var(--mf-bg-elevated)" },
+  in_production: { label: "In Production", color: "var(--mf-cyan)", bg: "var(--mf-cyan-dim)" },
+  completed: { label: "Completed", color: "var(--mf-green)", bg: "var(--mf-green-dim)" },
+  completed_needs_review: { label: "Needs Review", color: "var(--mf-orange)", bg: "rgba(255,140,66,0.14)" },
+  scheduled: { label: "Scheduled", color: "#9F7AEA", bg: "rgba(159,122,234,0.14)" },
+  published: { label: "Published", color: "var(--mf-green)", bg: "var(--mf-green-dim)" },
+  overdue: { label: "Overdue", color: "var(--mf-magenta)", bg: "var(--mf-magenta-dim)" },
+  // Legacy keys kept so older renders / filter chips still work
   draft: { label: "Draft", color: "var(--mf-text-muted)", bg: "var(--mf-bg-elevated)" },
   in_review: { label: "In Review", color: "var(--mf-orange)", bg: "rgba(255,140,66,0.14)" },
   approved: { label: "Approved", color: "var(--mf-cyan)", bg: "var(--mf-cyan-dim)" },
-  published: { label: "Published", color: "var(--mf-green)", bg: "var(--mf-green-dim)" },
   rejected: { label: "Rejected", color: "var(--mf-magenta)", bg: "var(--mf-magenta-dim)" },
 };
 
@@ -96,8 +115,10 @@ function StatusBadge({ label, color, bg }: { label: string; color: string; bg: s
 }
 
 function ChapterStatusBadge({ status }: { status: string }) {
-  const s = statusChapterConfig[status] || statusChapterConfig.draft;
-  return <StatusBadge label={s.label} color={s.color} bg={s.bg} />;
+  const cfg = statusChapterConfig[status];
+  if (cfg) return <StatusBadge label={cfg.label} color={cfg.color} bg={cfg.bg} />;
+  // Unknown status: render the raw value in orange so it remains visible
+  return <StatusBadge label={(status || "UNKNOWN").replace(/_/g, " ").toUpperCase()} color="var(--mf-orange)" bg="rgba(255,140,66,0.14)" />;
 }
 
 function StatCard({ icon: Icon, label, value, color, trend, subtitle, compact }: {
@@ -219,7 +240,8 @@ function OverviewTab({
   votes,
   tasks = [],
   sketchPages = [],
-  plannings = []
+  plannings = [],
+  productionPlans = []
 }: {
   onlineUsers: OnlineUser[];
   chapters: ChapterStatus[];
@@ -231,21 +253,107 @@ function OverviewTab({
   tasks?: TaskApi[];
   sketchPages?: SketchPageApi[];
   plannings?: PlanningApi[];
+  productionPlans?: ProductionPlanResponse[];
 }) {
-  const [selectedSubId, setSelectedSubId] = useState<number | null>(null);
   const [selectedVoteId, setSelectedVoteId] = useState<number | null>(null);
   const publishedCount = chapters.filter(c => c.status === "published").length;
   const pendingRegs = registrations.filter(r => r.status === "PENDING").length;
 
   // Pipeline counts
   const pipeline = {
+    backlog: chapters.filter(c => c.status === "backlog").length,
+    in_production: chapters.filter(c => c.status === "in_production").length,
+    completed: chapters.filter(c => c.status === "completed").length,
+    completed_needs_review: chapters.filter(c => c.status === "completed_needs_review").length,
+    scheduled: chapters.filter(c => c.status === "scheduled").length,
+    published: chapters.filter(c => c.status === "published").length,
+    overdue: chapters.filter(c => c.status === "overdue").length,
     draft: chapters.filter(c => c.status === "draft").length,
     in_review: chapters.filter(c => c.status === "in_review").length,
     approved: chapters.filter(c => c.status === "approved").length,
-    published: chapters.filter(c => c.status === "published").length,
     rejected: chapters.filter(c => c.status === "rejected").length,
   };
   const totalChapters = chapters.length;
+
+  // Production plan status counts (from /api/v1/production-plans → planStatus)
+  const normalizePlanStatus = (s: string | null | undefined) => (s ?? "").toUpperCase();
+  const completedCount = productionPlans.filter(p => normalizePlanStatus(p.planStatus) === "COMPLETED").length;
+  const inProductionCount = productionPlans.filter(p => {
+    const s = normalizePlanStatus(p.planStatus);
+    return s === "IN_PRODUCTION" || s === "ACTIVE";
+  }).length;
+  const extendedCount = productionPlans.filter(p => normalizePlanStatus(p.planStatus) === "EXTENDED").length;
+  const otherCount = Math.max(productionPlans.length - completedCount - inProductionCount - extendedCount, 0);
+
+  const planStatusChartData = [
+    { key: "COMPLETED", label: "Completed", count: completedCount, color: "var(--mf-green)" },
+    { key: "IN_PRODUCTION", label: "In Production", count: inProductionCount, color: "var(--mf-cyan)" },
+    { key: "EXTENDED", label: "Extended", count: extendedCount, color: "var(--mf-orange)" },
+    { key: "OTHER", label: "Other", count: otherCount, color: "var(--mf-magenta)" },
+  ];
+
+  // Resolve CSS variable values at render-time so recharts (which needs literal colors) matches the theme
+  const chartColors = (() => {
+    if (typeof window === "undefined") return { green: "#39FF8A", cyan: "#00F0FF", orange: "#FF8C42", magenta: "#FF2A7A", muted: "#6E5F83", border: "rgba(255,255,255,0.07)", surface: "#251830" };
+    const cs = getComputedStyle(document.documentElement);
+    return {
+      green: cs.getPropertyValue("--mf-green").trim() || "#39FF8A",
+      cyan: cs.getPropertyValue("--mf-cyan").trim() || "#00F0FF",
+      orange: cs.getPropertyValue("--mf-orange").trim() || "#FF8C42",
+      magenta: cs.getPropertyValue("--mf-magenta").trim() || "#FF2A7A",
+      muted: cs.getPropertyValue("--mf-text-muted").trim() || "#6E5F83",
+      border: cs.getPropertyValue("--mf-border").trim() || "rgba(255,255,255,0.07)",
+      surface: cs.getPropertyValue("--mf-bg-surface").trim() || "#251830",
+    };
+  })();
+  const colorByKey: Record<string, string> = {
+    COMPLETED: chartColors.green,
+    IN_PRODUCTION: chartColors.cyan,
+    EXTENDED: chartColors.orange,
+    OTHER: chartColors.magenta,
+  };
+
+  // ── Recent submissions line chart data ────────────────────────────────────
+  // Group submissions by day for the last 14 days, broken down by their status.
+  const submissionsLineData = (() => {
+    const days = 14;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Build an empty day-keyed series for the last `days` days
+    const series: Record<string, { date: string; total: number; approved: number; rejected: number; pending: number }> = {};
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const key = d.toISOString().slice(0, 10); // YYYY-MM-DD
+      series[key] = {
+        date: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+        total: 0,
+        approved: 0,
+        rejected: 0,
+        pending: 0,
+      };
+    }
+
+    const norm = (s: string | null | undefined) => (s ?? "").toUpperCase();
+    for (const sub of submissions) {
+      if (!sub.submittedAt) continue;
+      const t = new Date(sub.submittedAt);
+      if (Number.isNaN(t.getTime())) continue;
+      const key = t.toISOString().slice(0, 10);
+      if (!series[key]) continue; // outside the window
+      series[key].total += 1;
+      const s = norm(sub.nameStatus ?? sub.status);
+      if (s === "APPROVED") series[key].approved += 1;
+      else if (s === "REJECTED") series[key].rejected += 1;
+      else series[key].pending += 1;
+    }
+
+    return Object.values(series);
+  })();
+
+  const submissionsTotalInRange = submissionsLineData.reduce((sum, d) => sum + d.total, 0);
+  const submissionsPeak = submissionsLineData.reduce((max, d) => (d.total > max.total ? d : max), submissionsLineData[0] || { total: 0, date: "" });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -373,49 +481,138 @@ function OverviewTab({
         }}>
           <SectionHeader title="Chapter Pipeline" subtitle="Distribution by status" />
           <div style={{ flex: 1, padding: "0 24px 24px" }}>
-            {/* Minimal Stacked bar */}
+            {/* Minimal Stacked bar (left → right mirrors workflow order) */}
             <div style={{ display: "flex", height: 12, borderRadius: 6, overflow: "hidden", marginBottom: 24, background: "var(--mf-bg-elevated)" }}>
               {[
-                { key: "draft", color: "var(--mf-text-muted)", count: pipeline.draft },
-                { key: "in_review", color: "var(--mf-orange)", count: pipeline.in_review },
-                { key: "approved", color: "var(--mf-cyan)", count: pipeline.approved },
-                { key: "published", color: "var(--mf-green)", count: pipeline.published },
-                { key: "rejected", color: "var(--mf-magenta)", count: pipeline.rejected },
-              ].filter(s => s.count > 0).map(s => (
-                <div key={s.key} style={{
-                  width: `${(s.count / totalChapters) * 100}%`, background: s.color,
-                  transition: "width 0.6s ease", minWidth: s.count > 0 ? 4 : 0,
-                }} />
-              ))}
+                { key: "backlog", count: pipeline.backlog },
+                { key: "in_production", count: pipeline.in_production },
+                { key: "completed", count: pipeline.completed },
+                { key: "completed_needs_review", count: pipeline.completed_needs_review },
+                { key: "scheduled", count: pipeline.scheduled },
+                { key: "published", count: pipeline.published },
+                { key: "overdue", count: pipeline.overdue },
+                { key: "draft", count: pipeline.draft },
+                { key: "in_review", count: pipeline.in_review },
+                { key: "approved", count: pipeline.approved },
+                { key: "rejected", count: pipeline.rejected },
+              ].filter(s => s.count > 0).map(s => {
+                const cfg = statusChapterConfig[s.key] || { color: "var(--mf-text-muted)" };
+                return (
+                  <div key={s.key} style={{
+                    width: `${(s.count / totalChapters) * 100}%`, background: cfg.color,
+                    transition: "width 0.6s ease", minWidth: s.count > 0 ? 4 : 0,
+                  }} />
+                );
+              })}
             </div>
 
             {/* List breakdown */}
             <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               {[
-                { key: "published", label: "Published", color: "var(--mf-green)", count: pipeline.published },
-                { key: "approved", label: "Approved", color: "var(--mf-cyan)", count: pipeline.approved },
-                { key: "in_review", label: "In Review", color: "var(--mf-orange)", count: pipeline.in_review },
-                { key: "draft", label: "Draft", color: "var(--mf-text-muted)", count: pipeline.draft },
-                { key: "rejected", label: "Rejected", color: "var(--mf-magenta)", count: pipeline.rejected },
+                { key: "backlog", label: "Backlog" },
+                { key: "in_production", label: "In Production" },
+                { key: "completed", label: "Completed" },
+                { key: "completed_needs_review", label: "Completed (Needs Review)" },
+                { key: "scheduled", label: "Scheduled" },
+                { key: "published", label: "Published" },
+                { key: "overdue", label: "Overdue" },
+                { key: "draft", label: "Draft" },
+                { key: "in_review", label: "In Review" },
+                { key: "approved", label: "Approved" },
+                { key: "rejected", label: "Rejected" },
               ].map(item => {
-                const pct = totalChapters > 0 ? Math.round((item.count / totalChapters) * 100) : 0;
+                const cfg = statusChapterConfig[item.key] || { color: "var(--mf-text-muted)" };
+                const count = (pipeline as Record<string, number>)[item.key] || 0;
+                const pct = totalChapters > 0 ? Math.round((count / totalChapters) * 100) : 0;
                 return (
                   <div key={item.key} style={{
                     display: "flex", alignItems: "center", justifyContent: "space-between",
                   }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ width: 10, height: 10, borderRadius: "50%", background: item.color }} />
+                      <div style={{ width: 10, height: 10, borderRadius: "50%", background: cfg.color }} />
                       <div style={{ fontSize: 13, fontWeight: 500, color: "var(--mf-text-secondary)" }}>{item.label}</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
                       <div style={{ fontSize: 13, color: "var(--mf-text-muted)" }}>{pct}%</div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--mf-text)", minWidth: 24, textAlign: "right" }}>{item.count}</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--mf-text)", minWidth: 24, textAlign: "right" }}>{count}</div>
                     </div>
                   </div>
                 );
               })}
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Recent Submissions — Line Chart */}
+      <div style={{
+        background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
+        borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column",
+      }}>
+        <SectionHeader
+          title="Recent Submissions"
+          subtitle="Daily submissions over the last 14 days"
+          rightContent={
+            <div style={{ display: "flex", gap: 18, alignItems: "center" }}>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.06em", textTransform: "uppercase" }}>Total (14d)</div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: "var(--mf-cyan)", lineHeight: 1.1 }}>{submissionsTotalInRange}</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.06em", textTransform: "uppercase" }}>Peak day</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)", lineHeight: 1.4 }}>
+                  {submissionsPeak.total > 0 ? `${submissionsPeak.total} • ${submissionsPeak.date}` : "—"}
+                </div>
+              </div>
+            </div>
+          }
+        />
+        <div className="hide-scroll" style={{ padding: "8px 24px 20px" }}>
+          <div style={{ width: "100%", height: 240, background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 10, padding: "12px 8px 4px 0" }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={submissionsLineData} margin={{ top: 8, right: 16, left: -8, bottom: 0 }}>
+                <CartesianGrid stroke={chartColors.border} strokeDasharray="3 3" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fill: chartColors.muted, fontSize: 10, fontWeight: 700 }}
+                  axisLine={{ stroke: chartColors.border }}
+                  tickLine={false}
+                  interval={0}
+                />
+                <YAxis
+                  allowDecimals={false}
+                  tick={{ fill: chartColors.muted, fontSize: 10, fontWeight: 700 }}
+                  axisLine={{ stroke: chartColors.border }}
+                  tickLine={false}
+                  width={32}
+                />
+                <Tooltip
+                  cursor={{ stroke: chartColors.cyan, strokeOpacity: 0.4 }}
+                  contentStyle={{
+                    background: chartColors.surface,
+                    border: `1px solid ${chartColors.border}`,
+                    borderRadius: 8,
+                    fontSize: 12,
+                    color: "#FFFFFF",
+                  }}
+                  labelStyle={{ color: chartColors.muted, fontWeight: 800, fontSize: 11, letterSpacing: "0.04em", marginBottom: 4 }}
+                  itemStyle={{ color: "#FFFFFF", fontWeight: 700 }}
+                />
+                <Legend
+                  wrapperStyle={{ paddingTop: 8, fontSize: 11, fontWeight: 700, color: chartColors.muted }}
+                  iconType="circle"
+                  iconSize={8}
+                />
+                <Line type="monotone" dataKey="total" name="Total" stroke={chartColors.cyan} strokeWidth={2.5} dot={{ r: 3, fill: chartColors.cyan, stroke: chartColors.cyan }} activeDot={{ r: 5 }} />
+                <Line type="monotone" dataKey="approved" name="Approved" stroke={chartColors.green} strokeWidth={2} dot={{ r: 2.5, fill: chartColors.green }} strokeDasharray="0" />
+                <Line type="monotone" dataKey="pending" name="Pending" stroke={chartColors.orange} strokeWidth={2} dot={{ r: 2.5, fill: chartColors.orange }} />
+                <Line type="monotone" dataKey="rejected" name="Rejected" stroke={chartColors.magenta} strokeWidth={2} dot={{ r: 2.5, fill: chartColors.magenta }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          {submissions.length === 0 && (
+            <div style={{ padding: "24px 0 8px", textAlign: "center", color: "var(--mf-text-muted)", fontSize: 13 }}>No submissions found.</div>
+          )}
         </div>
       </div>
 
@@ -455,145 +652,85 @@ function OverviewTab({
           background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
           borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column",
         }}>
-          <SectionHeader title="Production Plans" subtitle="Overview of production plans" />
+          <SectionHeader title="Production Plans" subtitle="Overview of production plans (from /api/v1/production-plans)" />
           <div style={{ flex: 1, padding: "16px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
-            {/* Production Plans Progress */}
+            {/* Production Plans Bar Chart */}
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", marginBottom: 8 }}>
-                <span>Production Plans Status</span>
-                <span>{plannings.filter(p => p.status === "COMPLETED" || p.status === "completed").length}/{Math.max(plannings.length, 1)} Completed</span>
+                <span>Production Plans by Status</span>
+                <span>{productionPlans.length} Total</span>
               </div>
-              <div style={{ width: "100%", height: 8, background: "var(--mf-bg-elevated)", borderRadius: 4, overflow: "hidden", display: "flex", marginBottom: 8 }}>
-                <div style={{
-                  width: `${(plannings.filter(p => p.status === "COMPLETED" || p.status === "completed").length / Math.max(plannings.length, 1)) * 100}%`,
-                  background: "var(--mf-green)"
-                }} title="Completed" />
-                <div style={{
-                  width: `${(plannings.filter(p => p.status === "IN_PRODUCTION" || p.status === "in_production" || p.status === "ACTIVE" || p.status === "active").length / Math.max(plannings.length, 1)) * 100}%`,
-                  background: "var(--mf-cyan)"
-                }} title="In Production" />
-                <div style={{
-                  width: `${(plannings.filter(p => p.status === "EXTENDED" || p.status === "extended").length / Math.max(plannings.length, 1)) * 100}%`,
-                  background: "var(--mf-orange)"
-                }} title="Extended" />
+              <div style={{ width: "100%", height: 180, background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, padding: "12px 8px 4px 0" }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={planStatusChartData} margin={{ top: 8, right: 12, left: -8, bottom: 0 }}>
+                    <CartesianGrid stroke={chartColors.border} strokeDasharray="3 3" vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      tick={{ fill: chartColors.muted, fontSize: 10, fontWeight: 700 }}
+                      axisLine={{ stroke: chartColors.border }}
+                      tickLine={false}
+                      interval={0}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tick={{ fill: chartColors.muted, fontSize: 10, fontWeight: 700 }}
+                      axisLine={{ stroke: chartColors.border }}
+                      tickLine={false}
+                      width={28}
+                    />
+                    <Tooltip
+                      cursor={{ fill: chartColors.surface, opacity: 0.5 }}
+                      contentStyle={{
+                        background: chartColors.surface,
+                        border: `1px solid ${chartColors.border}`,
+                        borderRadius: 8,
+                        fontSize: 12,
+                        color: "#FFFFFF",
+                      }}
+                      labelStyle={{ color: chartColors.muted, fontWeight: 800, fontSize: 11, letterSpacing: "0.04em", marginBottom: 4 }}
+                      itemStyle={{ color: "#FFFFFF", fontWeight: 700 }}
+                      formatter={(value: number) => [value, "Plans"]}
+                    />
+                    <Bar dataKey="count" radius={[6, 6, 0, 0]} maxBarSize={48}>
+                      {planStatusChartData.map(entry => (
+                        <Cell key={entry.key} fill={colorByKey[entry.key]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
-              <div style={{ display: "flex", gap: 12, fontSize: 10, color: "var(--mf-text-muted)", fontWeight: 600 }}>
+              <div style={{ display: "flex", gap: 12, fontSize: 10, color: "var(--mf-text-muted)", fontWeight: 600, marginTop: 8, flexWrap: "wrap" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--mf-green)" }} /> Completed</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--mf-cyan)" }} /> In Production</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--mf-orange)" }} /> Extended</div>
+                {otherCount > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 4 }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--mf-magenta)" }} /> Other</div>
+                )}
               </div>
             </div>
 
             {/* Plannings list */}
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.06em", textTransform: "uppercase" }}>Active Production Plans</div>
-              {plannings.slice(0, 3).map(plan => (
-                <div key={plan.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "6px 10px", background: "var(--mf-bg-elevated)", borderRadius: 6, border: "1px solid var(--mf-border)" }}>
-                  <span style={{ fontWeight: 600, color: "var(--mf-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "70%" }}>{plan.title || "Untitled Plan"}</span>
-                  <StatusBadge
-                    label={(plan.status || "ACTIVE").toUpperCase()}
-                    color={plan.status === "ACTIVE" || plan.status === "COMPLETED" ? "var(--mf-green)" : "var(--mf-orange)"}
-                    bg="transparent"
-                  />
-                </div>
-              ))}
-              {plannings.length === 0 && (
+              {productionPlans.slice(0, 3).map(plan => {
+                const planStatus = (plan.planStatus || "").toUpperCase();
+                const isGood = planStatus === "COMPLETED" || planStatus === "ACTIVE";
+                return (
+                  <div key={plan.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "6px 10px", background: "var(--mf-bg-elevated)", borderRadius: 6, border: "1px solid var(--mf-border)" }}>
+                    <span style={{ fontWeight: 600, color: "var(--mf-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "70%" }}>{plan.title || "Untitled Plan"}</span>
+                    <StatusBadge
+                      label={planStatus || "ACTIVE"}
+                      color={isGood ? "var(--mf-green)" : "var(--mf-orange)"}
+                      bg="transparent"
+                    />
+                  </div>
+                );
+              })}
+              {productionPlans.length === 0 && (
                 <div style={{ fontSize: 11, color: "var(--mf-text-muted)", fontStyle: "italic" }}>No active plans.</div>
               )}
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* Recent Submissions Frame */}
-      <div style={{
-        background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
-        borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column",
-      }}>
-        <SectionHeader title="Recent Submissions" subtitle="Monitor latest chapters submitted to the system" />
-        <TableHeader columns={[
-          { label: "Manga", width: "25%" },
-          { label: "Title", width: "25%" },
-          { label: "Status", width: "20%" },
-          { label: "Updated", width: "30%", align: "right" },
-        ]} />
-        <div className="hide-scroll" style={{ maxHeight: 400, overflowY: "auto" }}>
-          {submissions.slice(0, 10).map(sub => {
-            const mangaTitle = sub.title || sub.project?.name || sub.project?.title || "Untitled";
-            const mColor = ["#FF2A7A", "#39FF8A", "#00F0FF", "#FF8C42"][sub.id % 4] || "var(--mf-cyan)";
-            const statusLower = (sub.status || "draft").toLowerCase();
-            const isSelected = selectedSubId === sub.id;
-
-            // Extract the most accurate name available
-            let submitterName = sub.submittedByName;
-            if (!submitterName) {
-              const submitterId = sub.submittedById;
-              if (submitterId) {
-                const foundUser = onlineUsers.find(u => u.id === submitterId);
-                const foundReg = registrations.find(r => r.id === submitterId);
-                submitterName = foundUser?.name || (foundReg?.firstName ? `${foundReg.firstName} ${foundReg.lastName || ""}`.trim() : null) || `User #${submitterId}`;
-              } else {
-                submitterName = "Unknown User";
-              }
-            }
-
-            return (
-              <div key={sub.id} style={{ borderBottom: "1px solid var(--mf-border)", display: "flex", flexDirection: "column" }}>
-                <div
-                  onClick={() => setSelectedSubId(isSelected ? null : sub.id)}
-                  style={{
-                    display: "flex", alignItems: "center", padding: "16px 24px",
-                    cursor: "pointer", background: isSelected ? "var(--mf-bg-elevated)" : "transparent",
-                    transition: "background 0.2s"
-                  }}
-                  onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = "var(--mf-bg-elevated)" }}
-                  onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "transparent" }}
-                >
-                  <div style={{ flex: "0 0 25%", fontWeight: 700, color: "var(--mf-text)", paddingRight: 10 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <div style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: `${mColor}20`, border: `1px solid ${mColor}40`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <BookOpen size={14} color={mColor} />
-                      </div>
-                      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontSize: 14, color: mColor, fontWeight: 800, letterSpacing: "-0.01em" }} title={mangaTitle}>{mangaTitle}</span>
-                    </div>
-                  </div>
-                  <div style={{ flex: "0 0 25%", paddingRight: 10, display: "flex", alignItems: "center" }}>
-                    <span style={{
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                      fontWeight: 600, fontSize: 13, color: "var(--mf-text)", opacity: 0.95
-                    }} title={sub.title || sub.submissionType || "Untitled"}>{sub.title || sub.submissionType || "Untitled"}</span>
-                  </div>
-                  <div style={{ flex: "0 0 20%" }}>
-                    {statusChapterConfig[statusLower] ? <ChapterStatusBadge status={statusLower} /> : (
-                      <StatusBadge label={sub.status || "UNKNOWN"} color="var(--mf-orange)" bg="rgba(255,140,66,0.14)" />
-                    )}
-                  </div>
-                  <div style={{ flex: "0 0 30%", fontSize: 12, color: "var(--mf-text-muted)", textAlign: "right" }}>
-                    {formatSafeDate(sub.submittedAt, { month: 'short', day: 'numeric', year: 'numeric' })}
-                  </div>
-                </div>
-                {/* Expanded Details */}
-                {isSelected && (
-                  <div style={{ padding: "20px 24px", background: "var(--mf-bg-base)", fontSize: 13, color: "var(--mf-text-secondary)", borderTop: "1px dashed var(--mf-border)", cursor: "default" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                      <div><strong style={{ color: "var(--mf-text-muted)" }}>Raw DB Status:</strong> <span style={{ color: "var(--mf-orange)", fontWeight: 700 }}>{sub.status || "N/A"}</span></div>
-                      <div><strong style={{ color: "var(--mf-text-muted)" }}>Submission ID:</strong> #{sub.id}</div>
-                      <div><strong style={{ color: "var(--mf-text-muted)" }}>Submitted By:</strong> {submitterName}</div>
-                      <div>
-                        <strong style={{ color: "var(--mf-text-muted)" }}>Content URL:</strong>{" "}
-                        {sub.note ? (
-                          <a href={sub.note} target="_blank" rel="noreferrer" style={{ color: "var(--mf-cyan)", textDecoration: "none", fontWeight: 600 }}>View Content ↗</a>
-                        ) : "N/A"}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {submissions.length === 0 && (
-            <div style={{ padding: 40, textAlign: "center", color: "var(--mf-text-muted)", fontSize: 13 }}>No submissions found.</div>
-          )}
         </div>
       </div>
     </div >
@@ -626,9 +763,9 @@ function ChapterMonitorTab({ chapters }: { chapters: ChapterStatus[] }) {
       {/* Top stats */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 18 }}>
         <StatCard icon={BookOpen} label="Total Chapters" value={chapters.length} color="var(--mf-cyan)" />
-        <StatCard icon={Clock} label="In Review" value={chapters.filter(c => c.status === "in_review").length} color="var(--mf-orange)" />
+        <StatCard icon={Activity} label="In Production" value={chapters.filter(c => c.status === "in_production").length} color="var(--mf-cyan)" />
         <StatCard icon={CheckCircle} label="Published" value={chapters.filter(c => c.status === "published").length} color="var(--mf-green)" />
-        <StatCard icon={AlertTriangle} label="Rejected" value={chapters.filter(c => c.status === "rejected").length} color="var(--mf-magenta)" />
+        <StatCard icon={AlertTriangle} label="Overdue" value={chapters.filter(c => c.status === "overdue").length} color="var(--mf-magenta)" />
       </div>
 
       {/* Table + detail layout */}
@@ -657,10 +794,16 @@ function ChapterMonitorTab({ chapters }: { chapters: ChapterStatus[] }) {
             <div style={{ display: "flex", gap: 5, flexWrap: "wrap", flex: 1 }}>
               {[
                 { key: "all", label: "All", count: chapters.length },
+                { key: "backlog", label: "Backlog" },
+                { key: "in_production", label: "In Production" },
+                { key: "completed", label: "Completed" },
+                { key: "completed_needs_review", label: "Needs Review" },
+                { key: "scheduled", label: "Scheduled" },
+                { key: "published", label: "Published" },
+                { key: "overdue", label: "Overdue" },
                 { key: "draft", label: "Draft" },
                 { key: "in_review", label: "In Review" },
                 { key: "approved", label: "Approved" },
-                { key: "published", label: "Published" },
                 { key: "rejected", label: "Rejected" },
               ].map(f => (
                 <button
@@ -1263,7 +1406,9 @@ function UserManagementTab({ managedUsers, onAddRole, onRemoveRole, onToggleStat
 // ─── Tab 4: Submissions Monitor ──────────────────────────────────────────────
 
 function SubmissionsTab({ chapters }: { chapters: ChapterStatus[] }) {
-  const submissions = chapters.filter(c => c.status !== "draft");
+  // Only show chapters that have moved past the early production stages
+  const hiddenStatuses: ChapterStatus["status"][] = ["backlog", "in_production", "completed", "draft", "in_review"];
+  const submissions = chapters.filter(c => !hiddenStatuses.includes(c.status));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18, height: "100%" }}>
@@ -1697,6 +1842,7 @@ export function AdminDashboard() {
   const [sketchTasks, setSketchTasks] = useState<SketchTaskApi[]>([]);
   const [sketchPages, setSketchPages] = useState<SketchPageApi[]>([]);
   const [plannings, setPlannings] = useState<PlanningApi[]>([]);
+  const [productionPlans, setProductionPlans] = useState<ProductionPlanResponse[]>([]);
   const [projects, setProjects] = useState<ProjectFromApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1767,9 +1913,10 @@ export function AdminDashboard() {
       getSketchTasks().catch(() => []),
       getSketchPages().catch(() => []),
       getPlannings().catch(() => []),
-      getProjects().catch(() => [])
+      getProjects().catch(() => []),
+      getProductionPlans().catch(() => []),
     ])
-      .then(([accounts, chapterRows, subRows, workflowSubRows, reviewRows, voteRows, taskRows, sketchTaskRows, sketchPageRows, planningRows, projectRows]) => {
+      .then(([accounts, chapterRows, subRows, workflowSubRows, reviewRows, voteRows, taskRows, sketchTaskRows, sketchPageRows, planningRows, projectRows, productionPlanRows]) => {
         if (cancelled) return;
         const nonAdminAccounts = accounts.filter(a => {
           const hasAdminSystem = a.systemRole?.some(r => r.roleName === "ADMIN" || r.roleName === "MANAGER");
@@ -1780,9 +1927,23 @@ export function AdminDashboard() {
 
         const projectsList = projectRows || [];
         const mappedChapters = chapterRows.map((chapter, index) => {
-          const rawStatus = (chapter.chapterStatus || "draft").toLowerCase();
-          const allowed = ["draft", "in_review", "approved", "published", "rejected"];
-          const status = (allowed.includes(rawStatus) ? rawStatus : "draft") as ChapterStatus["status"];
+          const rawStatus = (chapter.chapterStatus || "backlog").toLowerCase();
+          const allowed: ChapterStatus["status"][] = [
+            "backlog",
+            "in_production",
+            "completed",
+            "completed_needs_review",
+            "scheduled",
+            "published",
+            "overdue",
+            "draft",
+            "in_review",
+            "approved",
+            "rejected",
+          ];
+          const status = (allowed.includes(rawStatus as ChapterStatus["status"])
+            ? rawStatus
+            : "backlog") as ChapterStatus["status"];
 
           const foundProj = projectsList.find(p => p.id === chapter.projectId);
           const mangaName = foundProj?.title || foundProj?.name || "Unknown Manga";
@@ -1821,6 +1982,7 @@ export function AdminDashboard() {
         setSketchPages(sketchPageRows || []);
         setPlannings(planningRows || []);
         setProjects(projectsList);
+        setProductionPlans(productionPlanRows || []);
         setManagedUsers(users.map(user => ({
           id: user.id,
           name: user.name,
@@ -1947,6 +2109,7 @@ export function AdminDashboard() {
               tasks={tasks}
               sketchPages={sketchPages}
               plannings={plannings}
+              productionPlans={productionPlans}
             />
           )}
           {!loading && !error && currentTab === "chapters" && (

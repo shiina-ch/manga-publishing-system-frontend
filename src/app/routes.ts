@@ -6,6 +6,7 @@ import { Login } from "../pages/auth/Login";
 import { Register } from "../pages/auth/Register";
 import { UserProfile } from "../pages/profile/UserProfile";
 import { AdminDashboard } from "../pages/admin/AdminDashboard";
+import { ProductionPlanSummary } from "../pages/admin/ProductionPlanSummary";
 import { EditorDashboard } from "../pages/editor/EditorDashboard";
 import { BoardApproval } from "../pages/board/BoardApproval";
 import { BoardProposalsPage } from "../pages/board/BoardProposalsPage";
@@ -27,7 +28,10 @@ export const router = createBrowserRouter([
       },
       {
         element: createElement(ProtectedRoute, { allowedRoles: ["ADMIN"] }),
-        children: [{ path: "admin", Component: AdminDashboard }],
+        children: [
+          { path: "admin", Component: AdminDashboard },
+          { path: "admin/production-plans", Component: ProductionPlanSummary },
+        ],
       },
       {
         element: createElement(ProtectedRoute, { allowedRoles: ["ADMIN", "MANAGER"] }),
