@@ -77,7 +77,24 @@ function PendingApprovalsView() {
     setError(null);
     try {
       const [subs, revs] = await Promise.all([getSubmissions(), getSubmissionReviews()]);
-      const filtered = subs.filter(s => BOARD_STATUSES.includes(normalizeStatus(s.status)));
+      
+      const reviewMap = new Map<number, number>();
+      for (const r of revs) {
+        if (r.decision === "REJECTED" || r.decision === "REJECT") {
+          const subId = Number(r.submissionId);
+          reviewMap.set(subId, (reviewMap.get(subId) || 0) + 1);
+        }
+      }
+      
+      const updatedSubs = subs.map(s => {
+        const rejectCount = reviewMap.get(s.id) || 0;
+        if (rejectCount >= 2 && s.status !== "APPROVED") {
+          return { ...s, status: "REJECTED" };
+        }
+        return s;
+      });
+
+      const filtered = updatedSubs.filter(s => BOARD_STATUSES.includes(normalizeStatus(s.status)));
       setSubmissions(filtered);
       setAllReviews(revs);
       setSelected(prev => {

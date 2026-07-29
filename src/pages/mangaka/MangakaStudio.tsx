@@ -13,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "react-toastify";
-import { getMangakaSubmissions, type SubmissionApi, submitIdea } from "../../services/workflowApi";
+import { getMangakaSubmissions, getChapters, type SubmissionApi, type ChapterApi, type TaskApi, submitIdea } from "../../services/workflowApi";
 import { tokenStorage } from "../../storage/tokenStorage";
 
 function submissionTitle(submission: SubmissionApi): string {
@@ -62,13 +62,32 @@ function EmptyState({
   );
 }
 
-function ProductionSchedule() {
+function MangakaTasks({ tasks }: { tasks: any[] }) {
+  if (tasks.length === 0) {
+    return (
+      <EmptyState
+        icon={Calendar}
+        title="No tasks assigned"
+        description="When your Tantou assigns you a chapter, tasks will appear here."
+      />
+    );
+  }
+
   return (
-    <EmptyState
-      icon={Calendar}
-      title="No production schedule available"
-      description="A Mangaka-scoped production schedule is not available from the current frontend API contract."
-    />
+    <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+      {tasks.map(t => (
+        <div key={t.id} style={{ padding: 16, background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            <div style={{ fontSize: 13, color: "var(--mf-text-secondary)", fontWeight: 700 }}>{t.chapterTitle}</div>
+            <div style={{ fontSize: 12, fontWeight: 900, color: "var(--mf-cyan)", background: "var(--mf-cyan-dim)", padding: "4px 8px", borderRadius: 4 }}>
+              {t.status}
+            </div>
+          </div>
+          <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 8 }}>{t.title}</div>
+          {t.description && <div style={{ fontSize: 13, color: "var(--mf-text-muted)" }}>{t.description}</div>}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -106,10 +125,12 @@ function SubmittedChaptersList({
   submissions,
   loading,
   error,
+  onSubmissionClick
 }: {
   submissions: SubmissionApi[];
   loading: boolean;
   error: string | null;
+  onSubmissionClick: (s: SubmissionApi) => void;
 }) {
   if (loading) {
     return <div style={{ color: "var(--mf-text-muted)", textAlign: "center", padding: 36 }}>Loading submissions...</div>;
@@ -134,7 +155,11 @@ function SubmittedChaptersList({
           : "Files unavailable";
 
         return (
-          <div key={submission.id} style={{ padding: "18px 20px", background: "var(--mf-bg-surface)", borderRadius: 14, border: "1px solid var(--mf-border)", display: "flex", alignItems: "center", gap: 20 }}>
+          <div
+            key={submission.id}
+            onClick={() => onSubmissionClick(submission)}
+            style={{ padding: "18px 20px", background: "var(--mf-bg-surface)", borderRadius: 14, border: "1px solid var(--mf-border)", display: "flex", alignItems: "center", gap: 20, cursor: "pointer", transition: "transform 0.1s, box-shadow 0.1s", ...{ ":hover": { boxShadow: "0 4px 12px rgba(0,0,0,0.1)", transform: "translateY(-2px)" } } }}
+          >
             <div style={{ width: 56, height: 70, borderRadius: 8, background: "linear-gradient(160deg, var(--mf-magenta-dim), var(--mf-bg-deep))", border: "1px solid var(--mf-magenta)30", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
               <FileText size={22} color="var(--mf-magenta)" style={{ opacity: 0.7 }} />
             </div>
@@ -268,6 +293,87 @@ function SubmitIdeaModal({
   );
 }
 
+function SubmissionDetailsModal({
+  submission,
+  onClose
+}: {
+  submission: SubmissionApi;
+  onClose: () => void;
+}) {
+  const rawStatus = submission.status || "PENDING";
+  const statusKey = rawStatus.toLowerCase();
+  const status = chapterStatusMap[statusKey] || { label: rawStatus, color: "var(--mf-cyan)" };
+  const files = submission.files || [];
+
+  return (
+    <div style={{
+      position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+      background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
+    }}>
+      <div style={{
+        background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
+        borderRadius: 16, width: "100%", maxWidth: 600, boxShadow: "0 20px 40px rgba(0,0,0,0.4)",
+        maxHeight: "92vh", overflowY: "auto", display: "flex", flexDirection: "column"
+      }}>
+        <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--mf-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 900 }}>{submissionTitle(submission)}</div>
+            <div style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4 }}>Submission Details</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)" }}>
+            <X size={18} />
+          </button>
+        </div>
+
+        <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={{ padding: "12px", background: "var(--mf-bg-deep)", borderRadius: 10, border: "1px solid var(--mf-border)" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 4 }}>STATUS</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: status.color }}>{status.label}</div>
+            </div>
+            <div style={{ padding: "12px", background: "var(--mf-bg-deep)", borderRadius: 10, border: "1px solid var(--mf-border)" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 4 }}>DATE SUBMITTED</div>
+              <div style={{ fontSize: 13 }}>{formatSubmissionDate(submission.submittedAt)}</div>
+            </div>
+          </div>
+
+          {(submission.note || submission.description) && (
+            <div style={{ padding: "12px", background: "var(--mf-bg-deep)", borderRadius: 10, border: "1px solid var(--mf-border)" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 6 }}>SYNOPSIS / NOTE</div>
+              <div style={{ fontSize: 13, color: "var(--mf-text-secondary)", lineHeight: 1.5 }}>
+                {submission.note || submission.description}
+              </div>
+            </div>
+          )}
+
+          {files.length > 0 && (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8 }}>ATTACHED FILES ({files.length})</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {files.map((file, idx) => {
+                  const name = file.originalName || file.originalFilename || file.fileName || file.filename || "Unknown file";
+                  const size = typeof file.size === "number" ? file.size : file.fileSize;
+                  const sizeStr = size ? `${(size / 1024).toFixed(1)} KB` : "";
+                  return (
+                    <div key={idx} style={{ padding: "10px 14px", background: "var(--mf-bg-deep)", border: "1px solid var(--mf-border)", borderRadius: 8, display: "flex", alignItems: "center", gap: 12 }}>
+                      <FileText size={16} color="var(--mf-cyan)" />
+                      <div style={{ flex: 1, overflow: "hidden" }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+                        {sizeStr && <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 2 }}>{sizeStr}</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SubmitView({
   submissions,
   loading,
@@ -280,6 +386,7 @@ function SubmitView({
   onRefreshRequested: () => void;
 }) {
   const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [selectedSubmission, setSelectedSubmission] = useState<SubmissionApi | null>(null);
   const [showSuccessConfirmation, setShowSuccessConfirmation] = useState(false);
 
   const openSubmitModal = () => {
@@ -337,7 +444,12 @@ function SubmitView({
       )}
 
       <div style={{ flex: 1, overflowY: "auto" }}>
-        <SubmittedChaptersList submissions={submissions} loading={loading} error={error} />
+        <SubmittedChaptersList
+          submissions={submissions}
+          loading={loading}
+          error={error}
+          onSubmissionClick={setSelectedSubmission}
+        />
       </div>
 
       {showSubmitModal && (
@@ -348,6 +460,13 @@ function SubmitView({
             setShowSubmitModal(false);
             onRefreshRequested();
           }}
+        />
+      )}
+
+      {selectedSubmission && (
+        <SubmissionDetailsModal
+          submission={selectedSubmission}
+          onClose={() => setSelectedSubmission(null)}
         />
       )}
     </div>
@@ -380,15 +499,32 @@ export function MangakaStudio() {
     let cancelled = false;
     Promise.resolve()
       .then(() => {
-        if (cancelled) return [];
+        if (cancelled) return { rows: [], reviews: [] };
         setSubmissions([]);
         setSubmissionsError(null);
         setSubmissionsLoading(true);
-        return getMangakaSubmissions(authenticatedAccountId);
+        return Promise.all([
+          getMangakaSubmissions(authenticatedAccountId),
+          import("../../services/workflowApi").then(m => m.getSubmissionReviews())
+        ]).then(([rows, reviews]) => ({ rows, reviews }));
       })
-      .then(rows => {
+      .then(({ rows, reviews }) => {
         if (!cancelled) {
-          setSubmissions(rows);
+          const reviewMap = new Map<number, number>();
+          for (const r of reviews) {
+            if (r.decision === "REJECTED" || r.decision === "REJECT") {
+              const subId = Number(r.submissionId);
+              reviewMap.set(subId, (reviewMap.get(subId) || 0) + 1);
+            }
+          }
+          const updatedRows = rows.map(s => {
+            const rejectCount = reviewMap.get(s.id) || 0;
+            if (rejectCount >= 2 && s.status !== "APPROVED") {
+              return { ...s, status: "REJECTED" };
+            }
+            return s;
+          });
+          setSubmissions(updatedRows);
           setSubmissionsError(null);
         }
       })
@@ -404,6 +540,40 @@ export function MangakaStudio() {
     };
   }, [authenticatedAccountId, refreshKey]);
 
+  const [tasks, setTasks] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (authenticatedAccountId === undefined) return;
+
+    // First, collect project IDs that belong to this Mangaka
+    const projectIds = new Set<number>();
+    submissions.forEach(submission => {
+      if (typeof submission.project?.id === "number") projectIds.add(submission.project.id);
+    });
+    try {
+      const cachedStr = window.localStorage.getItem("project_mangaka_assignments") || "{}";
+      const cached = JSON.parse(cachedStr);
+      for (const [pId, assignment] of Object.entries(cached)) {
+        if ((assignment as any).id === authenticatedAccountId) projectIds.add(Number(pId));
+      }
+    } catch (e) { }
+
+    // Fetch chapters and extract tasks for those projects
+    getChapters().then(allChapters => {
+      const myTasks: any[] = [];
+      allChapters.forEach(ch => {
+        if (ch.projectId && projectIds.has(ch.projectId)) {
+          if (ch.tasks) {
+            ch.tasks.forEach(t => {
+              myTasks.push({ ...t, chapterTitle: ch.title || `Chapter ${ch.chapterNumber}` });
+            });
+          }
+        }
+      });
+      setTasks(myTasks);
+    }).catch(console.error);
+  }, [submissions, authenticatedAccountId]);
+
   const projectCount = useMemo(() => {
     const projectIds = new Set<number>();
     submissions.forEach(submission => {
@@ -414,12 +584,12 @@ export function MangakaStudio() {
     return projectIds.size;
   }, [submissions]);
 
-  const deadlineCount = 0;
+  const taskCount = tasks.length;
 
   const navBadges = useMemo<Record<string, number>>(() => ({
     "My Projects": projectCount,
-    "Deadlines": deadlineCount,
-  }), [projectCount, deadlineCount]);
+    "Tasks": taskCount,
+  }), [projectCount, taskCount]);
 
   const hasAuthenticatedAccount = authenticatedAccountId !== undefined;
   const submissionsViewError = hasAuthenticatedAccount
@@ -430,7 +600,7 @@ export function MangakaStudio() {
   const handleNavClick = (label: string) => {
     setActiveNav(label);
     if (label === "My Projects") setActiveTab("schedule");
-    else if (label === "Deadlines") setActiveTab("schedule");
+    else if (label === "Tasks") setActiveTab("schedule");
     else if (label === "Script Drafts") setActiveTab("script");
   };
 
@@ -488,7 +658,7 @@ export function MangakaStudio() {
             />
           ) : (
             <>
-              {activeTab === "schedule" && <ProductionSchedule />}
+              {activeTab === "schedule" && <MangakaTasks tasks={tasks} />}
               {activeTab === "script" && <ScriptDrafts />}
               {activeTab === "delegate" && <DelegationPanel />}
               {activeTab === "compile" && <PageCompilation />}

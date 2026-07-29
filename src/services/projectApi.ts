@@ -1,4 +1,6 @@
 import { apiRequest } from "./api";
+import { tokenStorage } from "../storage/tokenStorage";
+import type { ChapterApi } from "./workflowApi";
 
 export interface ProductionPlan {
   id: number;
@@ -14,6 +16,7 @@ export interface ProductionPlan {
   approvalStatus?: string | null;
   startDate?: string | null;
   endDate?: string | null;
+  chapters?: ChapterApi[] | null;
 }
 
 export interface ProjectAccountSummary {
@@ -104,9 +107,19 @@ export interface CreateChapterPayload {
   publishDate: string;
 }
 
-export async function createChapter(projectId: number, payload: CreateChapterPayload): Promise<void> {
-  await apiRequest<null>(`/workflow/project/${projectId}/chapter/create`, {
+export async function createChapter(projectId: number, payload: CreateChapterPayload): Promise<ChapterApi> {
+  const accountId = tokenStorage.getAccount()?.id;
+  if (!accountId) throw new Error("Authentication required to create a chapter");
+
+  return apiRequest<ChapterApi>(`/workflow/chapters?requesterId=${accountId}`, {
     method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateChapter(chapterId: number, payload: CreateChapterPayload): Promise<ChapterApi> {
+  return apiRequest<ChapterApi>(`/chapters/${chapterId}`, {
+    method: "PUT",
     body: JSON.stringify(payload),
   });
 }

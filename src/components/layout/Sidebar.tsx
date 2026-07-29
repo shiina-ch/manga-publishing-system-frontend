@@ -5,7 +5,7 @@ import {
   BookOpen, Hash, Bell, ChevronDown, ChevronRight,
   Plus, Edit3, Users, PenTool, Brush, Home, Search,
   FileText, Clock, AlertTriangle, CheckCircle, BarChart3, Layers, Star,
-  Inbox, Shield, Activity, UserPlus, Eye, User, LogOut
+  Inbox, Shield, Activity, UserPlus, Eye, User, LogOut, CheckSquare
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { logout } from "../../services/adminApi";
@@ -69,7 +69,7 @@ const roleConfig: Record<LayoutRole, RoleConfig> = {
     label: "Mangaka", color: "var(--mf-magenta)", icon: PenTool,
     nav: [
       { icon: Layers, label: "My Projects" },
-      { icon: AlertTriangle, label: "Deadlines", badgeColor: "var(--mf-orange)" },
+      { icon: CheckSquare, label: "Tasks", badgeColor: "var(--mf-orange)" },
       { icon: FileText, label: "Script Drafts" },
       { icon: CheckCircle, label: "Submissions" },
     ],

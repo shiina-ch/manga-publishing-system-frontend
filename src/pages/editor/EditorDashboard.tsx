@@ -8,6 +8,7 @@ import {
 import {
   getSubmissionById,
   getWorkflowSubmissions,
+  getSubmissions,
   getMangakaSubmissions,
   reviewSubmissionByTantou,
   submitToBoard,
@@ -134,6 +135,22 @@ function needsSubmissionDetailLookup(submission: SubmissionApi): boolean {
 }
 
 function submitterName(submission: SubmissionApi, lookup: AuthorLookupState): string {
+  if (submission.submittedByName && submission.submittedByName !== "null null" && submission.submittedByName.trim() !== "") {
+    return submission.submittedByName;
+  }
+  if (submission.submittedBy) {
+    const nameStr = [submission.submittedBy.firstName, submission.submittedBy.lastName].filter(Boolean).join(" ").trim();
+    if (nameStr && nameStr !== "null null") return nameStr;
+    if (submission.submittedBy.email) return submission.submittedBy.email;
+    if (submission.submittedBy.username) return submission.submittedBy.username;
+    if (submission.submittedBy.name) return submission.submittedBy.name;
+  }
+  // If the backend injects an unmapped field, try to find it (as a last resort)
+  const anySub = submission as any;
+  if (anySub.mangakaName) return anySub.mangakaName;
+  if (anySub.authorName) return anySub.authorName;
+  if (anySub.creatorName) return anySub.creatorName;
+
   const resolvedSubmission = submissionForAuthorResolution(submission, lookup);
   const nested = nestedAuthorAccount(resolvedSubmission);
   const nestedName = accountDisplayName(nested);
@@ -142,7 +159,10 @@ function submitterName(submission: SubmissionApi, lookup: AuthorLookupState): st
   if (lookup.loadingDetailIds.has(submission.id)) return "Loading author...";
 
   const id = authorId(resolvedSubmission);
-  if (!id) return "N/A";
+  if (!id) {
+    const keys = Object.keys(submission).filter(k => submission[k as keyof SubmissionApi] != null);
+    return "N/A (keys: " + keys.join(", ") + ")";
+  }
   if (lookup.names[id]?.name) return lookup.names[id].name;
   if (lookup.loadingIds.has(id)) return "Loading author...";
   if (lookup.failedIds.has(id)) return `Mangaka #${id}`;
@@ -251,7 +271,7 @@ function filterSubmissions(submissions: SubmissionApi[], filter: string): Submis
     const status = normalizeStatus(submission.status);
     if (filter === "New Proposals") return status === "pending" || status === "pending_tantou_review" || status === "submitted";
     if (filter === "In Revision") return status === "revision" || status === "in_revision";
-    if (filter === "Escalated to Board") return status === "pending_board_review" || status === "on_going";
+    if (filter === "Escalated to Board") return status === "pending_board_review" || status === "on_going" || status === "rejected";
     if (filter === "Approved") return status === "approved";
     return true;
   });
@@ -313,6 +333,7 @@ function ProposalFeed({
   authorLookup,
   onTantouEscalate,
   onStartBoardVoting,
+  onReview,
 }: {
   filter: string;
   submissions: SubmissionApi[];
@@ -321,6 +342,7 @@ function ProposalFeed({
   authorLookup: AuthorLookupState;
   onTantouEscalate: (submission: SubmissionApi) => void;
   onStartBoardVoting: (submission: SubmissionApi) => void;
+  onReview?: (submission: SubmissionApi) => void;
 }) {
   const [selected, setSelected] = useState<number | null>(null);
   const filtered = useMemo(() => filterSubmissions(submissions, filter), [filter, submissions]);
@@ -458,12 +480,14 @@ function ProposalFeed({
             >
               {escalatingId === selectedSubmission.id ? <><Loader2 size={15} /> {canTantouEscalate ? "Escalating..." : "Starting voting..."}</> : canRunPrimaryAction ? <><ArrowUpRight size={15} /> {proposalActionLabel(selectedSubmission.status, filter)}</> : <><CheckCircle size={15} /> {proposalActionLabel(selectedSubmission.status, filter)}</>}
             </button>
-            <button
-              disabled
-              style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 24px", background: "transparent", border: "1px solid rgba(255, 128, 0, 0.5)", borderRadius: 100, color: "var(--mf-orange)", fontSize: 14, fontWeight: 800, cursor: "not-allowed", opacity: 0.7 }}
-            >
-              <RotateCcw size={15} /> Request Revision
-            </button>
+            {onReview && (
+              <button
+                onClick={() => onReview(selectedSubmission)}
+                style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 24px", background: "transparent", border: "1px solid rgba(255, 128, 0, 0.5)", borderRadius: 100, color: "var(--mf-orange)", fontSize: 14, fontWeight: 800, cursor: "pointer", opacity: 0.9 }}
+              >
+                <RotateCcw size={15} /> Review & Revise
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -728,21 +752,21 @@ function ApprovedList({
                         </div>
                       )}
 
-                      {/* Action button */}
-                      {isAssignedToMe && relatedProject && (
-                        <div style={{ marginTop: 4 }}>
+                      {/* Action buttons */}
+                      <div style={{ marginTop: 4, display: "flex", gap: 10 }}>
+                        {isAssignedToMe && relatedProject && (
                           <button
                             onClick={() => setPlanProjectId(relatedProject.id)}
                             style={{
                               display: "flex", alignItems: "center", gap: 8, padding: "10px 18px",
-                              background: "var(--mf-cyan)", color: "#000", border: "none", borderRadius: 8,
-                              fontSize: 13, fontWeight: 800, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,230,230,0.3)"
+                              background: "var(--mf-bg-surface)", color: "var(--mf-text)", border: "1px solid var(--mf-border)", borderRadius: 8,
+                              fontSize: 13, fontWeight: 800, cursor: "pointer"
                             }}
                           >
-                            Create Production Plan
+                            Production Plan
                           </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
 
                     {/* RIGHT — File thumbnails */}
@@ -810,6 +834,71 @@ function ApprovedList({
           onSuccess={() => setPlanProjectId(null)}
         />
       )}
+    </div>
+  );
+}
+
+function ProjectDetailsModal({
+  project,
+  onClose
+}: {
+  project: ProjectFromApi;
+  onClose: () => void;
+}) {
+  const plan = project.productionPlan;
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 1200, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: "min(600px, 100%)", maxHeight: "90vh", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 16, overflowY: "auto", display: "flex", flexDirection: "column", boxShadow: "0 20px 50px rgba(0,0,0,0.5)" }}>
+        <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--mf-border)", display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: "var(--mf-bg-surface)", zIndex: 1 }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 900 }}>{project.title || "Project Details"}</div>
+            <div style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4 }}>Production Plan Information</div>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)" }}>
+            <X size={18} />
+          </button>
+        </div>
+        <div style={{ padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+          {project.description && (
+            <div style={{ padding: 16, background: "var(--mf-bg-deep)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
+              <div style={{ fontSize: 10, fontWeight: 900, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.05em" }}>DESCRIPTION</div>
+              <div style={{ fontSize: 13, color: "var(--mf-text-secondary)", lineHeight: 1.5 }}>{project.description}</div>
+            </div>
+          )}
+          {plan && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div style={{ padding: 16, background: "var(--mf-bg-deep)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
+                  <div style={{ fontSize: 10, fontWeight: 900, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.05em" }}>PRIORITY</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: plan.priority === "High" ? "var(--mf-magenta)" : "var(--mf-cyan)" }}>{plan.priority || "Medium"}</div>
+                </div>
+                <div style={{ padding: 16, background: "var(--mf-bg-deep)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
+                  <div style={{ fontSize: 10, fontWeight: 900, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.05em" }}>DEADLINE</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--mf-text)" }}>{formatDateTime(plan.deadline)}</div>
+                </div>
+              </div>
+              {plan.milestones && (
+                <div style={{ padding: 16, background: "var(--mf-bg-deep)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
+                  <div style={{ fontSize: 10, fontWeight: 900, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.05em" }}>MILESTONES</div>
+                  <div style={{ fontSize: 13, color: "var(--mf-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{plan.milestones}</div>
+                </div>
+              )}
+              {plan.chapterTimeline && (
+                <div style={{ padding: 16, background: "var(--mf-bg-deep)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
+                  <div style={{ fontSize: 10, fontWeight: 900, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.05em" }}>CHAPTER TIMELINE</div>
+                  <div style={{ fontSize: 13, color: "var(--mf-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{plan.chapterTimeline}</div>
+                </div>
+              )}
+            </div>
+          )}
+          <div style={{ padding: 16, background: "var(--mf-bg-deep)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
+            <div style={{ fontSize: 10, fontWeight: 900, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.05em" }}>ASSIGNED MANGAKA</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--mf-text)" }}>
+              {project.mangaka ? project.mangaka.name : "Not assigned yet"}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1053,16 +1142,52 @@ function ProductionPlanList() {
   const [projects, setProjects] = useState<ProjectFromApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Dialog state
   const [assignChapterPlanId, setAssignChapterPlanId] = useState<number | null>(null);
   const [assignChapterProjectId, setAssignChapterProjectId] = useState<number | null>(null);
+  const [assignChapterId, setAssignChapterId] = useState<number | null>(null);
+  const [viewProjectId, setViewProjectId] = useState<number | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const allProjects = await getProjects();
+      // Use dynamic import so it doesn't break static chunking further up
+      const { getChapters } = await import("../../services/workflowApi");
+      const [allProjects, allChapters] = await Promise.all([
+        getProjects(),
+        getChapters().catch(() => []) // Fallback to empty array if fails
+      ]);
+
+      const projectChapters = new Map<number, any>();
+      for (const ch of allChapters) {
+        if (ch.projectId) projectChapters.set(ch.projectId, ch);
+      }
+
+      // Restore Mangaka from Chapters AND Cache
+      try {
+        const cachedStr = window.localStorage.getItem("project_mangaka_assignments") || "{}";
+        const cached = JSON.parse(cachedStr);
+        for (const p of allProjects) {
+          const ch = projectChapters.get(p.id);
+
+          if (ch) {
+            if (!p.mangaka && ch.ownerId) {
+              p.mangaka = { id: ch.ownerId, name: ch.ownerName || "Assigned Mangaka" };
+            }
+            if (ch.chapterStatus) p.projectWorkflowStatus = ch.chapterStatus;
+            if (ch.publishDate && p.productionPlan) p.productionPlan.deadline = ch.publishDate;
+            (p as any).cachedChapterId = ch.id;
+          } else if (cached[p.id]) {
+            if (!p.mangaka) p.mangaka = { id: cached[p.id].id, name: cached[p.id].name };
+            if (cached[p.id].status) p.projectWorkflowStatus = cached[p.id].status;
+            if (cached[p.id].deadline && p.productionPlan) p.productionPlan.deadline = cached[p.id].deadline;
+            if (cached[p.id].chapterId) (p as any).cachedChapterId = cached[p.id].chapterId;
+          }
+        }
+      } catch (e) { }
+
       // Filter only projects that have a production plan
       const withPlans = allProjects.filter(p => p.productionPlan != null);
       setProjects(withPlans);
@@ -1116,7 +1241,16 @@ function ProductionPlanList() {
             {projects.map((p) => {
               const plan = p.productionPlan!;
               return (
-                <div key={p.id} style={{ background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                <div
+                  key={p.id}
+                  onClick={() => setViewProjectId(p.id)}
+                  style={{
+                    background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
+                    borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column",
+                    cursor: "pointer", transition: "transform 0.1s, box-shadow 0.1s",
+                    ...{ ":hover": { boxShadow: "0 4px 12px rgba(0,0,0,0.1)", transform: "translateY(-2px)" } }
+                  }}
+                >
                   <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--mf-border)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                       <div style={{ fontSize: 15, fontWeight: 900, color: "var(--mf-text)", letterSpacing: "-0.01em" }}>{p.title || `Project #${p.id}`}</div>
@@ -1142,15 +1276,19 @@ function ProductionPlanList() {
                       </div>
                       <div style={{ fontSize: 12, color: "var(--mf-text-secondary)" }}>{p.mangaka ? p.mangaka.name : "No Mangaka"}</div>
                     </div>
-                    <button
-                      onClick={() => {
-                        setAssignChapterPlanId(plan.id);
-                        setAssignChapterProjectId(p.id);
-                      }}
-                      style={{ padding: "8px 16px", borderRadius: 8, background: "var(--mf-cyan)", border: "none", color: "#000", fontSize: 12, fontWeight: 800, cursor: "pointer" }}
-                    >
-                      + Assign Chapter
-                    </button>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setAssignChapterPlanId(plan.id);
+                          setAssignChapterProjectId(p.id);
+                          setAssignChapterId((p as any).cachedChapterId || null);
+                        }}
+                        style={{ padding: "8px 16px", borderRadius: 8, background: p.mangaka ? "var(--mf-bg-surface)" : "var(--mf-cyan)", border: p.mangaka ? "1px solid var(--mf-border-bright)" : "none", color: p.mangaka ? "var(--mf-text)" : "#000", fontSize: 12, fontWeight: 800, cursor: "pointer" }}
+                      >
+                        {p.mangaka ? "Update Chapter" : "+ Assign Chapter"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -1163,15 +1301,26 @@ function ProductionPlanList() {
         <CreateChapterDialog
           projectId={assignChapterProjectId}
           planId={assignChapterPlanId}
+          chapterId={assignChapterId}
+          initialTitle={projects.find(p => p.id === assignChapterProjectId)?.title || ""}
           onClose={() => {
             setAssignChapterPlanId(null);
             setAssignChapterProjectId(null);
+            setAssignChapterId(null);
           }}
           onSuccess={() => {
             setAssignChapterPlanId(null);
             setAssignChapterProjectId(null);
+            setAssignChapterId(null);
             void loadData();
           }}
+        />
+      )}
+
+      {viewProjectId && projects.find(p => p.id === viewProjectId) && (
+        <ProjectDetailsModal
+          project={projects.find(p => p.id === viewProjectId)!}
+          onClose={() => setViewProjectId(null)}
         />
       )}
     </div>
@@ -1192,14 +1341,35 @@ export function EditorDashboard() {
   const [submissionDetails, setSubmissionDetails] = useState<Record<number, SubmissionApi>>({});
   const [loadingDetailIds, setLoadingDetailIds] = useState<Set<number>>(new Set());
   const [failedDetailIds, setFailedDetailIds] = useState<Set<number>>(new Set());
+  const [reviewingSubmission, setReviewingSubmission] = useState<SubmissionApi | null>(null);
 
   const loadSubmissions = useCallback(async () => {
     setLoading(true);
     setError(null);
     setActionError(null);
     try {
-      const rows = await getWorkflowSubmissions();
-      setSubmissions(rows);
+      const [rows, reviews] = await Promise.all([
+        getSubmissions(),
+        import("../../services/workflowApi").then(m => m.getSubmissionReviews())
+      ]);
+
+      const reviewMap = new Map<number, number>();
+      for (const r of reviews) {
+        if (r.decision === "REJECTED" || r.decision === "REJECT") {
+          const subId = Number(r.submissionId);
+          reviewMap.set(subId, (reviewMap.get(subId) || 0) + 1);
+        }
+      }
+
+      const updatedRows = rows.map(s => {
+        const rejectCount = reviewMap.get(s.id) || 0;
+        if (rejectCount >= 2 && s.status !== "APPROVED") {
+          return { ...s, status: "REJECTED" };
+        }
+        return s;
+      });
+
+      setSubmissions(updatedRows);
     } catch (err) {
       const message = err && typeof err === "object" && "message" in err ? String(err.message) : "Failed to load submissions.";
       setError(message);
@@ -1436,11 +1606,23 @@ export function EditorDashboard() {
                 }}
                 onTantouEscalate={(submission) => void handleTantouEscalate(submission)}
                 onStartBoardVoting={(submission) => void handleStartBoardVoting(submission)}
+                onReview={(submission) => setReviewingSubmission(submission)}
               />
             )}
           </div>
         )}
       </div>
+
+      {reviewingSubmission && (
+        <ReviewModal
+          submission={reviewingSubmission}
+          onClose={() => setReviewingSubmission(null)}
+          onDone={() => {
+            setReviewingSubmission(null);
+            void loadSubmissions();
+          }}
+        />
+      )}
     </AppLayout>
   );
 }

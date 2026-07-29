@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { AlertCircle, FileText, Loader2, Save, X } from "lucide-react";
 import { toast } from "react-toastify";
-import { createChapter, assignMangakaToProject, type CreateChapterPayload } from "../../services/projectApi";
+import { createChapter, updateChapter, assignMangakaToProject, type CreateChapterPayload } from "../../services/projectApi";
 import { searchAccountByEmail } from "../../services/accountApi";
 import { UserPlus } from "lucide-react";
 
 interface CreateChapterDialogProps {
   projectId: number;
   planId: number;
+  chapterId?: number | null;
+  initialTitle?: string;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -24,12 +26,12 @@ const fieldStyle = {
   fontSize: 13,
 } as const;
 
-export function CreateChapterDialog({ projectId, planId, onClose, onSuccess }: CreateChapterDialogProps) {
+export function CreateChapterDialog({ projectId, planId, chapterId, initialTitle, onClose, onSuccess }: CreateChapterDialogProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [chapterNumber, setChapterNumber] = useState(1);
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(initialTitle || "");
   const [targetPageCount, setTargetPageCount] = useState(20);
   const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
   const [endDate, setEndDate] = useState("");
@@ -61,12 +63,13 @@ export function CreateChapterDialog({ projectId, planId, onClose, onSuccess }: C
     const end = new Date(endDate);
     const pub = new Date(publishDate);
 
-    if (end < start) {
-      setError("End Date cannot be before Start Date.");
+    if (end <= start) {
+      setError("End Date (Deadline) must be strictly after Start Date.");
       return;
     }
-    if (pub < end) {
-      setError("Publish Date cannot be before End Date.");
+    const twoDaysAfterEnd = new Date(end.getTime() + 2 * 24 * 60 * 60 * 1000);
+    if (pub < twoDaysAfterEnd) {
+      setError("Publish Date must be at least 2 days after Deadline.");
       return;
     }
 
@@ -102,17 +105,38 @@ export function CreateChapterDialog({ projectId, planId, onClose, onSuccess }: C
         publishDate,
       };
 
-      await createChapter(projectId, payload);
+      let savedChapterId: number | null = chapterId || null;
+      if (chapterId) {
+        const updated = await updateChapter(chapterId, payload);
+        if (updated && updated.id) savedChapterId = updated.id;
+      } else {
+        const created = await createChapter(projectId, payload);
+        if (created && created.id) savedChapterId = created.id;
+      }
 
       if (finalMangakaId) {
         try {
+          // If updating, we might not need to assign again, but doing it is safe
           await assignMangakaToProject(projectId, finalMangakaId);
-          toast.success("Chapter assigned & Mangaka assigned to Project successfully!");
+          // Workaround: cache assigned mangaka because backend Project entity has @JsonIgnore on mangaka
+          try {
+             const cachedStr = localStorage.getItem("project_mangaka_assignments") || "{}";
+             const cached = JSON.parse(cachedStr);
+             cached[projectId] = { 
+               id: finalMangakaId, 
+               name: mangakaEmail || `Mangaka #${finalMangakaId}`,
+               status: "MANGAKA_ASSIGNED",
+               deadline: payload.endDate,
+               chapterId: savedChapterId
+             };
+             localStorage.setItem("project_mangaka_assignments", JSON.stringify(cached));
+          } catch (e) {}
+          toast.success(chapterId ? "Chapter updated successfully!" : "Chapter assigned & Mangaka assigned to Project successfully!");
         } catch (assignErr: any) {
-          toast.error("Chapter assigned, but failed to assign Mangaka: " + (assignErr.message || "Unknown error"));
+          toast.error("Chapter saved, but failed to assign Mangaka: " + (assignErr.message || "Unknown error"));
         }
       } else {
-        toast.success("Chapter assigned successfully! Default tasks generated.");
+        toast.success(chapterId ? "Chapter updated successfully!" : "Chapter assigned successfully! Default tasks generated.");
       }
 
       onSuccess();
@@ -130,7 +154,7 @@ export function CreateChapterDialog({ projectId, planId, onClose, onSuccess }: C
         <div style={{ padding: "18px 24px", borderBottom: "1px solid var(--mf-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ fontSize: 17, fontWeight: 900, display: "flex", alignItems: "center", gap: 10 }}>
             <FileText size={18} color="var(--mf-cyan)" />
-            Assign New Chapter
+            {chapterId ? "Update Assigned Chapter" : "Assign New Chapter"}
           </div>
           <button type="button" onClick={onClose} disabled={saving} aria-label="Close" style={{ background: "none", border: "none", color: "var(--mf-text-muted)", cursor: saving ? "not-allowed" : "pointer" }}>
             <X size={18} />

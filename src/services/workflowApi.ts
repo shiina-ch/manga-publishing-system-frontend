@@ -10,7 +10,9 @@ export interface ChapterApi {
   projectId?: number | null;
   ownerId?: number | null;
   ownerName?: string | null;
+  tasks?: TaskApi[] | null;
 }
+
 
 export interface SubmissionApi {
   id: number;
@@ -107,6 +109,7 @@ export interface TaskApi {
   description: string | null;
   status: string | null;
   deadline: string | null;
+  taskType?: string | null;
 }
 
 export interface SketchTaskApi {
