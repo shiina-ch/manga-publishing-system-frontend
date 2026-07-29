@@ -26,6 +26,7 @@ const statusConfig: Record<string, { label: string; color: string; bg: string }>
   in_revision:           { label: "In Revision",        color: "var(--mf-orange)",  bg: "rgba(255,140,66,0.14)" },
   revision:              { label: "In Revision",        color: "var(--mf-orange)",  bg: "rgba(255,140,66,0.14)" },
   pending_board_review:  { label: "Voting In Progress", color: "var(--mf-green)",   bg: "var(--mf-green-dim)" },
+  processing:            { label: "Voting In Progress", color: "var(--mf-green)",   bg: "var(--mf-green-dim)" },
   on_going:              { label: "Pending to Board",   color: "var(--mf-magenta)", bg: "var(--mf-magenta-dim)" },
   approved:              { label: "Approved by Board",  color: "var(--mf-magenta)", bg: "var(--mf-magenta-dim)" },
   rejected:              { label: "Rejected",           color: "var(--mf-red)",     bg: "rgba(255,42,122,0.14)" },
@@ -353,7 +354,7 @@ function ProposalFeed({ submissions, escalatingId, error, authorLookup, onApprov
   onApprove: (s: SubmissionApi)=>void; onStartBoardVoting: (s: SubmissionApi)=>void; onReview?: (s: SubmissionApi)=>void;
 }) {
   const [selected, setSelected] = useState<number|null>(null);
-  const filtered = useMemo(()=>submissions.filter(s=>{ const st=normalizeStatus(s.nameStatus??s.status); return st==="pending"||st==="pending_tantou_review"||st==="submitted"||st==="pending_board_review"||st==="approved"||st==="rejected"; }), [submissions]);
+  const filtered = useMemo(()=>submissions.filter(s=>{ const st=normalizeStatus(s.nameStatus??s.status); return st==="pending"||st==="pending_tantou_review"||st==="submitted"||st==="pending_board_review"||st==="processing"||st==="approved"||st==="rejected"; }), [submissions]);
   const selectedSubmission = filtered.find(s=>s.id===selected)||filtered[0];
   const effectiveSelected = selectedSubmission?.id??null;
 
@@ -364,7 +365,7 @@ function ProposalFeed({ submissions, escalatingId, error, authorLookup, onApprov
   );
 
   const selectedStatus = normalizeStatus(selectedSubmission?.nameStatus??selectedSubmission?.status);
-  const canApprove = ["pending","pending_tantou_review","submitted","pending_board_review"].includes(selectedStatus);
+  const canApprove = ["pending","pending_tantou_review","submitted","pending_board_review","processing"].includes(selectedStatus);
   const resolvedSelected = selectedSubmission ? submissionForAuthorResolution(selectedSubmission, authorLookup) : selectedSubmission;
   const files = resolvedSelected?.files||[];
 
