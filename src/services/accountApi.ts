@@ -39,3 +39,17 @@ export async function getAccountProfile(accountId: number): Promise<AccountProfi
   
   return json.data;
 }
+
+export async function searchAccountByEmail(email: string): Promise<{ id: number; email: string; firstName?: string; lastName?: string }> {
+  const res = await fetch(`${BASE_URL}/accounts/search?email=${encodeURIComponent(email)}`, {
+    method: "GET",
+    headers: authHeaders(),
+  });
+  
+  const json = await res.json();
+  if (!res.ok || json.code !== 200) {
+    throw new Error(json.message || "Failed to search account");
+  }
+  
+  return json.data;
+}

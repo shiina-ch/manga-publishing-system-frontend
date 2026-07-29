@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Calendar, CheckCircle, Edit3, Loader2, Package, RefreshCw, Save, UserPlus, X } from "lucide-react";
 import { toast } from "react-toastify";
-import { getAllAccounts, type AdminAccount } from "../../services/adminApi";
+import type { AdminAccount } from "../../services/adminApi";
+import { searchAccountByEmail } from "../../services/accountApi";
 import {
   assignTantouToProject,
   getProjectById,
@@ -208,7 +209,14 @@ function isAlreadyAssignedError(error: unknown): boolean {
 
 function mergeProjectLists(current: ProjectFromApi[], incoming: ProjectFromApi[]): ProjectFromApi[] {
   const currentById = new Map(current.map(project => [project.id, project]));
-  return incoming.map(project => ({ ...currentById.get(project.id), ...project }));
+  return incoming.map(project => {
+    const existing = currentById.get(project.id);
+    return {
+      ...existing,
+      ...project,
+      createdAt: project.createdAt || existing?.createdAt,
+    };
+  });
 }
 
 function accountOption(account: AdminAccount): string {
@@ -286,6 +294,7 @@ function ProjectDetailsDialog({ project, assignmentCache, loading, error, saving
     const payload: UpdateProjectPayload = { title: trimmedTitle, description: description.trim() };
     const trimmedStatus = status.trim();
     if (trimmedStatus) payload.status = trimmedStatus;
+    else if (project?.status) payload.status = project.status; // Prevent wiping status in backend
     if (await onSave(payload)) setEditing(false);
   };
 
@@ -350,18 +359,42 @@ interface AssignmentDialogProps {
 }
 
 function AssignmentDialog({ accounts, loading, accountsError, assignmentError, assigning, onClose, onConfirm }: AssignmentDialogProps) {
-  const [selectedId, setSelectedId] = useState("");
+  const [emailSearch, setEmailSearch] = useState("");
   const [manualId, setManualId] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
-  const confirm = async () => {
-    const id = Number(selectedId || manualId.trim());
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchMessage, setSearchMessage] = useState<string | null>(null);
+
+  const handleSearchAndAssign = async () => {
+    let id = Number(manualId.trim());
+
+    if (!id && emailSearch.trim()) {
+      setSearchLoading(true);
+      setSearchMessage(null);
+      setValidationError(null);
+      try {
+        const found = await searchAccountByEmail(emailSearch.trim());
+        if (found && found.id) {
+          id = found.id;
+        } else {
+          setSearchMessage("No account found with this email.");
+          setSearchLoading(false);
+          return;
+        }
+      } catch (e: any) {
+        setSearchMessage(e.message || "Failed to search account");
+        setSearchLoading(false);
+        return;
+      }
+      setSearchLoading(false);
+    }
+
     if (!Number.isInteger(id) || id <= 0) {
-      setValidationError("Select a Tantou Editor or enter a valid positive Tantou account ID.");
+      setValidationError("Enter a valid Tantou email or a positive Tantou account ID.");
       return;
     }
     setValidationError(null);
-    const selectedAccount = selectedId ? accounts.find(account => account.id === id) : undefined;
-    await onConfirm(id, selectedAccount);
+    await onConfirm(id);
   };
 
   return (
@@ -369,12 +402,11 @@ function AssignmentDialog({ accounts, loading, accountsError, assignmentError, a
       <div style={{ width: "min(480px, 100%)", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border-bright)", borderRadius: 16, boxShadow: "0 24px 70px rgba(0,0,0,0.5)" }}>
         <div style={{ padding: "18px 20px", borderBottom: "1px solid var(--mf-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div style={{ fontSize: 17, fontWeight: 900 }}>Assign Tantou</div><button onClick={onClose} disabled={assigning} aria-label="Close assignment dialog" style={{ background: "none", border: "none", color: "var(--mf-text-muted)", cursor: assigning ? "not-allowed" : "pointer" }}><X size={18} /></button></div>
         <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 15 }}>
-          {loading && <div style={{ display: "flex", alignItems: "center", gap: 7, color: "var(--mf-text-muted)", fontSize: 12 }}><Loader2 size={14} className="mf-spin" /> Loading Tantou Editor accounts…</div>}
-          {!loading && accounts.length > 0 && <label style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)" }}>TANTOU EDITOR<select value={selectedId} onChange={event => setSelectedId(event.target.value)} disabled={assigning} style={fieldStyle}><option value="">Select a Tantou Editor</option>{accounts.map(account => <option key={account.id} value={account.id}>{accountOption(account)}</option>)}</select></label>}
-          {accountsError && <div style={{ padding: "10px 12px", borderRadius: 8, color: "var(--mf-orange)", background: "rgba(255,140,66,0.08)", border: "1px solid rgba(255,140,66,0.3)", fontSize: 12, lineHeight: 1.5 }}>{accountsError}</div>}
-          <label style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)" }}>TANTOU ACCOUNT ID<input type="number" min={1} step={1} value={manualId} onChange={event => setManualId(event.target.value)} disabled={assigning || Boolean(selectedId)} placeholder="Enter a positive account ID" style={{ ...fieldStyle, opacity: selectedId ? 0.55 : 1 }} /></label>
+          <label style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)" }}>TANTOU EMAIL SEARCH<input type="email" value={emailSearch} onChange={event => setEmailSearch(event.target.value)} disabled={assigning || Boolean(manualId)} placeholder="Enter Tantou's email" style={{ ...fieldStyle, opacity: manualId ? 0.55 : 1 }} /></label>
+          {searchMessage && <div style={{ padding: "10px 12px", borderRadius: 8, color: "var(--mf-orange)", background: "rgba(255,140,66,0.08)", border: "1px solid rgba(255,140,66,0.3)", fontSize: 12, lineHeight: 1.5 }}>{searchMessage}</div>}
+          <label style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)" }}>OR TANTOU ACCOUNT ID<input type="number" min={1} step={1} value={manualId} onChange={event => setManualId(event.target.value)} disabled={assigning || Boolean(emailSearch)} placeholder="Enter a positive account ID directly" style={{ ...fieldStyle, opacity: emailSearch ? 0.55 : 1 }} /></label>
           {(validationError || assignmentError) && <div style={{ padding: "10px 12px", borderRadius: 8, color: "var(--mf-magenta)", background: "rgba(255,42,122,0.08)", border: "1px solid rgba(255,42,122,0.25)", fontSize: 12 }}>{validationError || assignmentError}</div>}
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 9 }}><button onClick={onClose} disabled={assigning} style={{ ...actionButtonStyle, background: "transparent", color: "var(--mf-text)", border: "1px solid var(--mf-border)", cursor: assigning ? "not-allowed" : "pointer" }}>Cancel</button><button onClick={() => void confirm()} disabled={assigning || loading} style={{ ...actionButtonStyle, cursor: assigning || loading ? "not-allowed" : "pointer", opacity: assigning || loading ? 0.65 : 1 }}>{assigning ? <Loader2 size={13} className="mf-spin" /> : <UserPlus size={13} />}{assigning ? "Assigning…" : "Confirm"}</button></div>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 9 }}><button onClick={onClose} disabled={assigning} style={{ ...actionButtonStyle, background: "transparent", color: "var(--mf-text)", border: "1px solid var(--mf-border)", cursor: assigning ? "not-allowed" : "pointer" }}>Cancel</button><button onClick={() => void handleSearchAndAssign()} disabled={assigning || searchLoading} style={{ ...actionButtonStyle, cursor: assigning || searchLoading ? "not-allowed" : "pointer", opacity: assigning || searchLoading ? 0.65 : 1 }}>{(assigning || searchLoading) ? <Loader2 size={13} className="mf-spin" /> : <UserPlus size={13} />}{(assigning || searchLoading) ? "Assigning…" : "Confirm"}</button></div>
         </div>
       </div>
     </div>
@@ -428,7 +460,26 @@ export function ActiveProjectsView() {
     try {
       const result = await getProjects();
       if (mounted.current && listRequest.current === requestId) {
-        const incoming = Array.isArray(result) ? result : [];
+        let incoming = Array.isArray(result) ? result : [];
+
+        const missingCreatedAt = incoming.some(p => !p.createdAt);
+        if (missingCreatedAt) {
+          try {
+            const { getSubmissions } = await import("../../services/workflowApi");
+            const submissions = await getSubmissions();
+            incoming = incoming.map(project => {
+              if (project.createdAt) return project;
+              const sub = submissions.find(s => s.title === project.title && s.status === "APPROVED");
+              if (sub && (sub.reviewedAt || sub.submittedAt)) {
+                return { ...project, createdAt: sub.reviewedAt || sub.submittedAt };
+              }
+              return project;
+            });
+          } catch (e) {
+            // Ignore error if submissions cannot be loaded
+          }
+        }
+
         setProjects(current => mergeProjectLists(current, incoming));
         persistBackendAssignments(incoming);
       }
@@ -454,11 +505,13 @@ export function ActiveProjectsView() {
     try {
       const result = await getProjectById(projectId);
       if (mounted.current && detailRequest.current === requestId) {
-        setDetails(current => current?.id === projectId ? { ...current, ...result } : result);
+        const existing = projects.find(p => p.id === projectId);
+        const finalResult = { ...result, createdAt: result.createdAt || existing?.createdAt };
+        setDetails(current => current?.id === projectId ? { ...current, ...finalResult } : finalResult);
         setProjects(current => current.map(project => (
-          project.id === projectId ? { ...project, ...result } : project
+          project.id === projectId ? { ...project, ...finalResult } : project
         )));
-        persistBackendAssignments([result]);
+        persistBackendAssignments([finalResult]);
       }
     } catch (loadError: unknown) {
       if (mounted.current && detailRequest.current === requestId) setDetailsError(errorMessage(loadError, "Failed to load project details."));
@@ -474,9 +527,11 @@ export function ActiveProjectsView() {
     try {
       const updated = await updateProject(details.id, payload);
       if (!mounted.current) return false;
-      setDetails(current => current ? { ...current, ...updated } : updated);
+      const existing = projects.find(p => p.id === updated.id);
+      const finalUpdated = { ...updated, createdAt: updated.createdAt || existing?.createdAt };
+      setDetails(current => current ? { ...current, ...finalUpdated } : finalUpdated);
       setProjects(current => current.map(project => (
-        project.id === updated.id ? { ...project, ...updated } : project
+        project.id === finalUpdated.id ? { ...project, ...finalUpdated } : project
       )));
       toast.success("Project updated successfully.");
       return true;
@@ -494,29 +549,9 @@ export function ActiveProjectsView() {
       return;
     }
 
-    const projectId = project.id;
-    const requestId = ++accountRequest.current;
-    setAssignProjectId(projectId);
-    setAccounts([]);
+    setAssignProjectId(project.id);
     setAccountsError(null);
     setAssignmentError(null);
-    setAccountsLoading(true);
-    try {
-      const result = await getAllAccounts();
-      if (!mounted.current || accountRequest.current !== requestId) return;
-      const editors = result.filter(account => account.systemRole?.some(role => role.roleName?.toUpperCase() === "TANTOU_EDITOR")).sort((a, b) => {
-        const aActive = ["ACTIVE", "ENABLED"].includes(a.status?.toUpperCase());
-        const bActive = ["ACTIVE", "ENABLED"].includes(b.status?.toUpperCase());
-        return aActive === bActive ? accountOption(a).localeCompare(accountOption(b)) : aActive ? -1 : 1;
-      });
-      setAccounts(editors);
-      if (editors.length === 0) setAccountsError("No Tantou Editor accounts were returned. Enter a Tantou account ID below.");
-    } catch (loadError: unknown) {
-      if (!mounted.current || accountRequest.current !== requestId) return;
-      setAccountsError(errorStatus(loadError) === 403 ? "The current backend does not provide an authorized Tantou listing endpoint for Editorial Board accounts. Enter a Tantou account ID below." : errorMessage(loadError, "Failed to load Tantou Editor accounts. Enter a Tantou account ID below."));
-    } finally {
-      if (mounted.current && accountRequest.current === requestId) setAccountsLoading(false);
-    }
   };
 
   const assign = async (tantouId: number, account?: AdminAccount) => {
@@ -560,7 +595,8 @@ export function ActiveProjectsView() {
       }
 
       if (detailResult.status === "fulfilled" && detailResult.value) {
-        const refreshedDetails = detailResult.value;
+        const existing = projects.find(p => p.id === projectId);
+        const refreshedDetails = { ...detailResult.value, createdAt: detailResult.value.createdAt || existing?.createdAt };
         detailRequest.current += 1;
         setDetails(current => current ? { ...current, ...refreshedDetails } : refreshedDetails);
         setProjects(current => current.map(project => (
@@ -611,7 +647,7 @@ export function ActiveProjectsView() {
       {!loading && error && <div style={{ padding: 24, borderRadius: 12, background: "rgba(255,42,122,0.08)", border: "1px solid rgba(255,42,122,0.25)", color: "var(--mf-magenta)", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}><AlertCircle size={24} /><span>{error}</span><button onClick={() => void loadProjects()} style={{ ...actionButtonStyle, background: "var(--mf-bg-surface)", color: "var(--mf-text)", border: "1px solid var(--mf-border)", cursor: "pointer" }}><RefreshCw size={12} /> Retry</button></div>}
       {!loading && !error && projects.length === 0 && <div style={{ padding: "60px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, color: "var(--mf-text-muted)", textAlign: "center" }}><Package size={40} style={{ opacity: 0.35 }} /><div style={{ fontSize: 14, fontWeight: 700 }}>No active projects were returned by the backend.</div><div style={{ fontSize: 12 }}>If a submission was approved after the final vote, this indicates a backend or data issue.</div></div>}
       {!loading && !error && projects.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {projects.map((project, index) => {
             const color = CARD_COLORS[index % CARD_COLORS.length];
             const assignment = resolveProjectAssignment(project, assignmentCache);
@@ -625,27 +661,36 @@ export function ActiveProjectsView() {
                 onKeyDown={event => {
                   if (event.key === "Enter" || event.key === " ") void loadDetails(project.id);
                 }}
-                style={{ padding: 18, borderRadius: 16, background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", cursor: "pointer" }}
-                onMouseEnter={event => { event.currentTarget.style.borderColor = color; }}
-                onMouseLeave={event => { event.currentTarget.style.borderColor = "var(--mf-border)"; }}
+                style={{ padding: "16px 20px", borderRadius: 12, background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", cursor: "pointer", display: "grid", gridTemplateColumns: "260px 1fr 100px 140px", alignItems: "center", gap: 20, transition: "border-color 0.15s, background 0.15s" }}
+                onMouseEnter={event => { event.currentTarget.style.borderColor = color; event.currentTarget.style.background = "var(--mf-bg-elevated)"; }}
+                onMouseLeave={event => { event.currentTarget.style.borderColor = "var(--mf-border)"; event.currentTarget.style.background = "var(--mf-bg-surface)"; }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 5 }}>{project.title || "—"}</div>
-                    <div style={{ fontSize: 11, color: "var(--mf-text-muted)", lineHeight: 1.55 }}>{project.description || "—"}</div>
-                  </div>
-                  <span style={{ padding: "4px 10px", borderRadius: 7, background: `${color}18`, border: `1px solid ${color}40`, color, fontSize: 10, fontWeight: 800, height: "fit-content" }}>{project.status || "—"}</span>
+                {/* Column 1: Title & Date */}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 6 }}>{project.title || "—"}</div>
+                  <div style={{ fontSize: 11, color: "var(--mf-text-muted)", display: "flex", alignItems: "center", gap: 5 }}><Calendar size={11} /> Created {formatDate(project.createdAt)}</div>
                 </div>
-                {project.createdAt && <div style={{ fontSize: 11, color: "var(--mf-text-muted)", display: "flex", alignItems: "center", gap: 5, marginBottom: 10 }}><Calendar size={11} /> Created {formatDate(project.createdAt)}</div>}
-                <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", paddingTop: 12, borderTop: "1px solid var(--mf-border)" }}>
+
+                {/* Column 2: Description */}
+                <div style={{ minWidth: 0, paddingRight: 20 }}>
+                  <div style={{ fontSize: 12, color: "var(--mf-text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{project.description || "—"}</div>
+                </div>
+
+                {/* Column 3: Status */}
+                <div style={{ display: "flex", justifyContent: "center" }}>
+                  <span style={{ padding: "4px 12px", borderRadius: 100, background: `${color}15`, border: `1px solid ${color}30`, color, fontSize: 10, fontWeight: 800, whiteSpace: "nowrap" }}>{project.status || "—"}</span>
+                </div>
+
+                {/* Column 4: Assign Button */}
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
                   {assignment.assigned ? (
                     <button
                       type="button"
                       disabled
                       aria-disabled="true"
-                      style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(0,230,160,0.3)", background: "rgba(0,230,160,0.08)", color: "var(--mf-green)", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", gap: 6, cursor: "default" }}
+                      style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid rgba(0,230,160,0.3)", background: "rgba(0,230,160,0.08)", color: "var(--mf-green)", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", gap: 6, cursor: "default", width: "100%", justifyContent: "center" }}
                     >
-                      <CheckCircle size={12} /> {assignment.displayText ?? "Tantou Assigned"}
+                      <CheckCircle size={13} /> {assignment.displayText ?? "Assigned"}
                     </button>
                   ) : (
                     <button
@@ -655,9 +700,9 @@ export function ActiveProjectsView() {
                         void openAssignment(project);
                       }}
                       onKeyDown={event => event.stopPropagation()}
-                      style={{ ...actionButtonStyle, padding: "7px 12px", cursor: "pointer" }}
+                      style={{ ...actionButtonStyle, padding: "8px 14px", cursor: "pointer", width: "100%", justifyContent: "center", fontSize: 11 }}
                     >
-                      <UserPlus size={12} /> Assign
+                      <UserPlus size={13} /> Assign
                     </button>
                   )}
                 </div>

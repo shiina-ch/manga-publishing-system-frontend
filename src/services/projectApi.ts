@@ -1,5 +1,21 @@
 import { apiRequest } from "./api";
 
+export interface ProductionPlan {
+  id: number;
+  milestones?: string | null;
+  schedule?: string | null;
+  chapterTimeline?: string | null;
+  deadline?: string | null;
+  resources?: string | null;
+  budget?: number | null;
+  assistantAllocation?: string | null;
+  priority?: string | null;
+  risk?: string | null;
+  approvalStatus?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+}
+
 export interface ProjectAccountSummary {
   id?: number | null;
   firstName?: string | null;
@@ -22,6 +38,7 @@ export interface ProjectFromApi {
   targetAudience?: string | null;
   format?: string | null;
   projectWorkflowStatus?: string | null;
+  productionPlan?: ProductionPlan | null;
   tantou?: ProjectAccountSummary | null;
   mangaka?: ProjectAccountSummary | null;
   budget?: number | null;
@@ -58,3 +75,46 @@ export async function assignTantouToProject(projectId: number, tantouId: number)
     method: "POST",
   });
 }
+
+export async function assignMangakaToProject(projectId: number, mangakaId: number): Promise<void> {
+  await apiRequest<null>(`/workflow/project/${projectId}/assign-mangaka/${mangakaId}`, {
+    method: "POST",
+  });
+}
+
+export interface ProductionPlanPayload {
+  milestones?: string;
+  schedule?: string;
+  chapterTimeline?: string;
+  deadline?: string;
+  resources?: string;
+  budget?: number;
+  assistantAllocation?: string;
+  priority?: string;
+  risk?: string;
+}
+
+export interface CreateChapterPayload {
+  planId: number;
+  chapterNumber: number;
+  title: string;
+  targetPageCount: number;
+  startDate: string;
+  endDate: string;
+  publishDate: string;
+}
+
+export async function createChapter(projectId: number, payload: CreateChapterPayload): Promise<void> {
+  await apiRequest<null>(`/workflow/project/${projectId}/chapter/create`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function createProductionPlan(projectId: number, payload: ProductionPlanPayload): Promise<any> {
+  return apiRequest<any>(`/projects/${projectId}/production-plans`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+

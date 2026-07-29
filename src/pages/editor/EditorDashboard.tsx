@@ -17,6 +17,9 @@ import {
 } from "../../services/workflowApi";
 import { tokenStorage } from "../../storage/tokenStorage";
 import { getAccountProfile, type AccountProfile } from "../../services/accountApi";
+import { getProjects, type ProjectFromApi } from "../../services/projectApi";
+import { ProductionPlanDialog } from "./ProductionPlanDialog";
+import { CreateChapterDialog } from "./CreateChapterDialog";
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
   pending: { label: "Pending", color: "var(--mf-cyan)", bg: "var(--mf-cyan-dim)" },
@@ -485,6 +488,18 @@ function ApprovedList({
   const [escalatingId, setEscalatingId] = useState<number | null>(null);
   const [toastMsg, setToastMsg] = useState<{ id: number; text: string; ok: boolean } | null>(null);
 
+  const [projects, setProjects] = useState<ProjectFromApi[]>([]);
+  const [user, setUser] = useState<AccountProfile | null>(null);
+  const [planProjectId, setPlanProjectId] = useState<number | null>(null);
+
+  useEffect(() => {
+    getProjects().then(setProjects).catch(console.error);
+    const account = tokenStorage.getAccount();
+    if (account?.id) {
+      getAccountProfile(account.id).then(setUser).catch(console.error);
+    }
+  }, [submissions]);
+
   function showToast(text: string, ok: boolean) {
     const id = Date.now();
     setToastMsg({ id, text, ok });
@@ -572,6 +587,24 @@ function ApprovedList({
           const isEscalating = escalatingId === s.id;
           const files = s.files || [];
 
+          const relatedProject = s.project?.id ? projects.find(p => p.id === s.project!.id) : projects.find(p => p.title === s.title);
+          const currentUserId = user?.id || tokenStorage.getAccount()?.id;
+
+          let assignedTantouId = relatedProject?.tantou?.id;
+          if (!assignedTantouId && relatedProject) {
+            try {
+              const rawCache = window.localStorage.getItem("board_project_tantou_assignments");
+              if (rawCache) {
+                const parsed = JSON.parse(rawCache);
+                if (parsed[relatedProject.id]?.tantouId) {
+                  assignedTantouId = parsed[relatedProject.id].tantouId;
+                }
+              }
+            } catch (err) { }
+          }
+
+          const isAssignedToMe = Boolean(assignedTantouId && currentUserId && assignedTantouId === currentUserId);
+
           return (
             <div
               key={s.id}
@@ -619,7 +652,7 @@ function ApprovedList({
                   </div>
                   <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 3, display: "flex", alignItems: "center", gap: 10 }}>
                     <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      <User size={10} /> {s.submittedBy?.email || s.submittedBy?.username || "Unknown"}
+                      <User size={10} /> {s.submittedByName || s.submittedBy?.email || s.submittedBy?.username || "Unknown"}
                     </span>
                     <span style={{ opacity: 0.4 }}>·</span>
                     <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -643,91 +676,125 @@ function ApprovedList({
               {isOpen && (
                 <div style={{
                   borderTop: "1px solid var(--mf-border)",
-                  padding: "24px 28px",
-                  display: "flex", flexDirection: "column", gap: 20,
+                  padding: "20px 24px",
                   animation: "approved-dropdown-open 0.22s cubic-bezier(0.4,0,0.2,1)",
                 }}>
-                  {/* Synopsis */}
-                  {(s.contentUrl || s.description || s.note) && (
-                    <div>
-                      <div style={{ fontSize: 10, fontWeight: 900, color: "var(--mf-text-muted)", letterSpacing: "0.07em", marginBottom: 8 }}>SYNOPSIS</div>
-                      <div style={{ fontSize: 13, color: "var(--mf-text-secondary)", lineHeight: 1.65, wordBreak: "break-word" }}>
-                        {s.contentUrl || s.description || s.note}
+                  <div style={{ display: "flex", gap: 40, alignItems: "flex-start" }}>
+
+                    {/* LEFT — Text info & button */}
+                    <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+                      {/* Submitted By */}
+                      <div style={{ padding: "10px 12px", background: "var(--mf-bg-deep)", borderRadius: 10, border: "1px solid var(--mf-border)" }}>
+                        <div style={{ fontSize: 9, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.06em", marginBottom: 3 }}>SUBMITTED BY</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text)", display: "flex", alignItems: "center", gap: 5 }}>
+                          <User size={11} style={{ flexShrink: 0, opacity: 0.6 }} />
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {s.submittedByName || s.submittedBy?.email || s.submittedBy?.username || "Unknown"}
+                          </span>
+                        </div>
                       </div>
-                      {s.contentUrl && isBrowserUrl(s.contentUrl) && (
-                        <a
-                          href={s.contentUrl} target="_blank" rel="noreferrer"
-                          style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", background: "rgba(0,230,230,0.08)", borderRadius: 8, color: "var(--mf-cyan)", fontSize: 12, fontWeight: 700, textDecoration: "none" }}
-                        >
-                          <Link2 size={12} /> Open link
-                        </a>
+                      {/* Date + Status */}
+                      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 8 }}>
+                        <div style={{ padding: "10px 12px", background: "var(--mf-bg-deep)", borderRadius: 10, border: "1px solid var(--mf-border)" }}>
+                          <div style={{ fontSize: 9, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.06em", marginBottom: 3 }}>DATE</div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--mf-text)", display: "flex", alignItems: "center", gap: 4 }}>
+                            <Clock size={10} style={{ flexShrink: 0, opacity: 0.6 }} />
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {formatDateTime(s.submittedAt)}
+                            </span>
+                          </div>
+                        </div>
+                        <div style={{ padding: "10px 12px", background: "var(--mf-bg-deep)", borderRadius: 10, border: "1px solid var(--mf-border)" }}>
+                          <div style={{ fontSize: 9, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.06em", marginBottom: 3 }}>STATUS</div>
+                          <div><StatusBadge status={s.status} /></div>
+                        </div>
+                      </div>
+
+                      {/* Synopsis */}
+                      {(s.contentUrl || s.description || s.note) && (
+                        <div style={{ padding: "12px 14px", background: "var(--mf-bg-deep)", borderRadius: 10, border: "1px solid var(--mf-border)" }}>
+                          <div style={{ fontSize: 9, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.06em", marginBottom: 6 }}>SYNOPSIS</div>
+                          <div style={{ fontSize: 13, color: "var(--mf-text-secondary)", lineHeight: 1.65, wordBreak: "break-word" }}>
+                            {s.contentUrl || s.description || s.note}
+                          </div>
+                          {s.contentUrl && isBrowserUrl(s.contentUrl) && (
+                            <a
+                              href={s.contentUrl} target="_blank" rel="noreferrer"
+                              style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 10px", background: "rgba(0,230,230,0.08)", borderRadius: 6, color: "var(--mf-cyan)", fontSize: 11, fontWeight: 700, textDecoration: "none" }}
+                            >
+                              <Link2 size={11} /> Open link
+                            </a>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Action button */}
+                      {isAssignedToMe && relatedProject && (
+                        <div style={{ marginTop: 4 }}>
+                          <button
+                            onClick={() => setPlanProjectId(relatedProject.id)}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 8, padding: "10px 18px",
+                              background: "var(--mf-cyan)", color: "#000", border: "none", borderRadius: 8,
+                              fontSize: 13, fontWeight: 800, cursor: "pointer", boxShadow: "0 4px 12px rgba(0,230,230,0.3)"
+                            }}
+                          >
+                            Create Production Plan
+                          </button>
+                        </div>
                       )}
                     </div>
-                  )}
 
-                  {/* Files grid */}
-                  {files.length > 0 && (
-                    <div>
-                      <div style={{ fontSize: 10, fontWeight: 900, color: "var(--mf-text-muted)", letterSpacing: "0.07em", marginBottom: 12 }}>UPLOADED FILES ({files.length})</div>
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12 }}>
-                        {files.map((file, idx) => {
-                          const path = filePath(file);
-                          const canPreview = Boolean(path && isImageFile(file));
-                          const isPsd = isPsdFile(file);
-                          return (
-                            <div key={file.id ?? idx} style={{ background: "var(--mf-bg-deep)", border: "1px solid var(--mf-border)", borderRadius: 12, overflow: "hidden" }}>
-                              <div style={{ width: "100%", aspectRatio: "3/4", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", overflow: "hidden" }}>
-                                {canPreview ? (
-                                  <img src={path || ""} alt={fileName(file)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                                ) : (
-                                  <FileText size={32} color="var(--mf-text-muted)" />
-                                )}
-                                {path && (
-                                  <a href={path} target="_blank" rel="noreferrer"
-                                    style={{ position: "absolute", bottom: 6, right: 6, width: 26, height: 26, borderRadius: "50%", background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none" }}
-                                  >
-                                    <ArrowUpRight size={12} />
-                                  </a>
-                                )}
+                    {/* RIGHT — File thumbnails */}
+                    {files.length > 0 && (
+                      <div style={{ flex: 1, minWidth: 0, borderLeft: "1px solid var(--mf-border)", paddingLeft: 32 }}>
+                        <div style={{ fontSize: 9, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.06em", marginBottom: 10 }}>
+                          UPLOADED FILES ({files.length})
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 12 }}>
+                          {files.map((file, idx) => {
+                            const path = filePath(file);
+                            const canPreview = Boolean(path && isImageFile(file));
+                            const isPsd = isPsdFile(file);
+                            return (
+                              <div key={file.id ?? idx} style={{
+                                background: "var(--mf-bg-deep)", border: "1px solid var(--mf-border)",
+                                borderRadius: 12, overflow: "hidden",
+                              }}>
+                                <div style={{
+                                  width: "100%", aspectRatio: "3/4", display: "flex", alignItems: "center", justifyContent: "center",
+                                  position: "relative", overflow: "hidden", background: "var(--mf-bg-surface)",
+                                }}>
+                                  {canPreview ? (
+                                    <img src={path || ""} alt={fileName(file)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                  ) : (
+                                    <FileText size={32} color="var(--mf-text-muted)" />
+                                  )}
+                                  {path && (
+                                    <a href={path} target="_blank" rel="noreferrer"
+                                      style={{
+                                        position: "absolute", bottom: 6, right: 6,
+                                        width: 28, height: 28, borderRadius: 7,
+                                        background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+                                        color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
+                                        textDecoration: "none", transition: "background 0.15s",
+                                      }}
+                                    >
+                                      <ArrowUpRight size={13} />
+                                    </a>
+                                  )}
+                                </div>
+                                <div style={{ padding: "8px 10px" }}>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--mf-text)", wordBreak: "break-word", lineHeight: 1.3, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{fileName(file)}</div>
+                                  <div style={{ fontSize: 10, color: "var(--mf-text-muted)", marginTop: 2 }}>{formatBytes(fileSize(file))} · {fileContentType(file).split("/").pop()?.toUpperCase()}</div>
+                                  {isPsd && <div style={{ fontSize: 9, color: "var(--mf-magenta)", fontWeight: 800, marginTop: 2 }}>NO PREVIEW</div>}
+                                </div>
                               </div>
-                              <div style={{ padding: "8px 10px" }}>
-                                <div style={{ fontSize: 11, fontWeight: 700, color: "var(--mf-text)", wordBreak: "break-word" }}>{fileName(file)}</div>
-                                <div style={{ fontSize: 10, color: "var(--mf-text-muted)", marginTop: 2 }}>{formatBytes(fileSize(file))} · {fileContentType(file).split("/").pop()?.toUpperCase()}</div>
-                                {isPsd && <div style={{ fontSize: 10, color: "var(--mf-magenta)", fontWeight: 800, marginTop: 3 }}>NO PREVIEW</div>}
-                              </div>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  )}
-
-                  {/* Action button */}
-                  <div style={{ paddingTop: 4 }}>
-                    <button
-                      onClick={() => void handleEscalate(s)}
-                      disabled={isEscalating}
-                      style={{
-                        display: "inline-flex", alignItems: "center", gap: 8,
-                        padding: "12px 28px",
-                        background: isEscalating
-                          ? "var(--mf-bg-deep)"
-                          : "linear-gradient(135deg, var(--mf-cyan), #0099ff)",
-                        border: isEscalating ? "1px solid var(--mf-border)" : "none",
-                        borderRadius: 100,
-                        color: isEscalating ? "var(--mf-text-muted)" : "#000",
-                        fontSize: 14, fontWeight: 900,
-                        cursor: isEscalating ? "not-allowed" : "pointer",
-                        boxShadow: isEscalating ? "none" : "0 4px 20px rgba(0,230,230,0.3)",
-                        transition: "transform 0.1s, box-shadow 0.2s",
-                      }}
-                      onMouseEnter={(e) => { if (!isEscalating) e.currentTarget.style.transform = "scale(1.03)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.transform = "none"; }}
-                    >
-                      {isEscalating
-                        ? <><Loader2 size={15} style={{ animation: "editor-spin 1s linear infinite" }} /> Submitting...</>
-                        : <><ArrowUpRight size={15} /> Escalate to Board</>}
-                    </button>
+                    )}
                   </div>
                 </div>
               )}
@@ -735,6 +802,14 @@ function ApprovedList({
           );
         })}
       </div>
+
+      {planProjectId && (
+        <ProductionPlanDialog
+          projectId={planProjectId}
+          onClose={() => setPlanProjectId(null)}
+          onSuccess={() => setPlanProjectId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -974,31 +1049,27 @@ function ReviewModal({
   );
 }
 
-function TantorSubmissions() {
-  const [submissions, setSubmissions] = useState<SubmissionApi[]>([]);
+function ProductionPlanList() {
+  const [projects, setProjects] = useState<ProjectFromApi[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<SubmissionApi | null>(null);
-  const [reviewDone, setReviewDone] = useState<number[]>([]);
+  
+  // Dialog state
+  const [assignChapterPlanId, setAssignChapterPlanId] = useState<number | null>(null);
+  const [assignChapterProjectId, setAssignChapterProjectId] = useState<number | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const all = await getMangakaSubmissions();
-      // Filter: submittedBy has MANGAKA role AND status is SUBMITTED
-      const filtered = all.filter((s) => {
-        const statusUpper = (s.status || "").toUpperCase();
-        if (statusUpper !== "SUBMITTED") return false;
-        const by = s.submittedBy;
-        if (!by || !Array.isArray(by.systemRole)) return false;
-        return by.systemRole.some((r) => r.roleName === "MANGAKA");
-      });
-      setSubmissions(filtered);
+      const allProjects = await getProjects();
+      // Filter only projects that have a production plan
+      const withPlans = allProjects.filter(p => p.productionPlan != null);
+      setProjects(withPlans);
     } catch (err) {
-      const message = err && typeof err === "object" && "message" in err ? String(err.message) : "Failed to load submissions.";
+      const message = err && typeof err === "object" && "message" in err ? String(err.message) : "Failed to load projects/plans.";
       setError(message);
-      setSubmissions([]);
+      setProjects([]);
     } finally {
       setLoading(false);
     }
@@ -1006,19 +1077,13 @@ function TantorSubmissions() {
 
   useEffect(() => { void loadData(); }, [loadData]);
 
-  function handleReviewDone() {
-    if (selected) setReviewDone((prev) => [...prev, selected.id]);
-    setSelected(null);
-    void loadData();
-  }
-
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* Header */}
       <div style={{ padding: "20px 32px", borderBottom: "1px solid var(--mf-border)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
         <div>
-          <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.01em", margin: 0 }}>Mangaka Submissions</h2>
-          <p style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4 }}>Submissions with SUBMITTED status from Mangaka artists</p>
+          <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.01em", margin: 0 }}>Production Plans</h2>
+          <p style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4 }}>Overview of active production plans and chapter assignments</p>
         </div>
         <button
           onClick={() => void loadData()}
@@ -1032,7 +1097,7 @@ function TantorSubmissions() {
       <div className="editor-minimal-scrollbar" style={{ flex: 1, overflowY: "auto", padding: "24px 32px" }}>
         {loading && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "var(--mf-text-muted)", paddingTop: 60 }}>
-            <Loader2 size={20} style={{ animation: "editor-spin 1s linear infinite" }} /> Loading submissions...
+            <Loader2 size={20} style={{ animation: "editor-spin 1s linear infinite" }} /> Loading production plans...
           </div>
         )}
         {!loading && error && (
@@ -1040,110 +1105,73 @@ function TantorSubmissions() {
             <AlertTriangle size={16} /> {error}
           </div>
         )}
-        {!loading && !error && submissions.length === 0 && (
+        {!loading && !error && projects.length === 0 && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, color: "var(--mf-text-muted)", paddingTop: 60 }}>
             <Inbox size={44} style={{ opacity: 0.25 }} />
-            <p style={{ fontSize: 14 }}>No pending submissions from Mangaka artists</p>
+            <p style={{ fontSize: 14 }}>No production plans found</p>
           </div>
         )}
-        {!loading && !error && submissions.length > 0 && (
-          <div style={{ background: "var(--mf-bg-surface)", borderRadius: 16, border: "1px solid var(--mf-border)", overflow: "hidden" }}>
-            {/* Table Header */}
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 180px 180px 110px 160px",
-              gap: 0,
-              padding: "12px 20px",
-              background: "var(--mf-bg-elevated)",
-              borderBottom: "1px solid var(--mf-border)",
-            }}>
-              {["TITLE", "SUBMITTED BY", "FILES", "STATUS", "SUBMITTED AT"].map((h) => (
-                <div key={h} style={{ fontSize: 10, fontWeight: 900, color: "var(--mf-text-muted)", letterSpacing: "0.07em" }}>{h}</div>
-              ))}
-            </div>
-            {/* Table Rows */}
-            {submissions.map((s, idx) => {
-              const reviewed = reviewDone.includes(s.id);
-              const files = s.files || [];
-              const firstFile = files[0] ?? null;
-              const email = s.submittedBy?.email || s.submittedBy?.username || "N/A";
+        {!loading && !error && projects.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 16 }}>
+            {projects.map((p) => {
+              const plan = p.productionPlan!;
               return (
-                <button
-                  key={s.id}
-                  onClick={() => !reviewed && setSelected(s)}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 180px 180px 110px 160px",
-                    gap: 0,
-                    width: "100%",
-                    padding: "16px 20px",
-                    background: reviewed ? "rgba(0,230,180,0.04)" : "transparent",
-                    border: "none",
-                    borderBottom: idx < submissions.length - 1 ? "1px solid var(--mf-border)" : "none",
-                    cursor: reviewed ? "default" : "pointer",
-                    textAlign: "left",
-                    alignItems: "center",
-                    transition: "background 0.12s",
-                  }}
-                  onMouseEnter={(e) => { if (!reviewed) e.currentTarget.style.background = "var(--mf-bg-elevated)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = reviewed ? "rgba(0,230,180,0.04)" : "transparent"; }}
-                >
-                  {/* Title */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
-                    <div style={{ width: 40, height: 40, borderRadius: 10, background: "var(--mf-bg-deep)", border: "1px solid var(--mf-border)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                      <FileText size={20} color="var(--mf-text-muted)" />
+                <div key={p.id} style={{ background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                  <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--mf-border)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                      <div style={{ fontSize: 15, fontWeight: 900, color: "var(--mf-text)", letterSpacing: "-0.01em" }}>{p.title || `Project #${p.id}`}</div>
+                      <span style={{ padding: "3px 10px", background: plan.priority === "High" ? "rgba(255,42,122,0.1)" : "var(--mf-cyan-dim)", color: plan.priority === "High" ? "var(--mf-magenta)" : "var(--mf-cyan)", fontSize: 10, fontWeight: 800, borderRadius: 100, border: `1px solid ${plan.priority === "High" ? "rgba(255,42,122,0.3)" : "var(--mf-cyan)35"}` }}>
+                        {plan.priority || "Medium"} Priority
+                      </span>
                     </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)", marginBottom: 2 }}>{displayText(s.title, "Untitled Submission")}</div>
-                      <div style={{ fontSize: 11, color: "var(--mf-text-muted)" }}>{formatDateTime(s.submittedAt)}</div>
-                    </div>
-                  </div>
-                  {/* Submitted By Email */}
-                  <div style={{ paddingRight: 16 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <User size={12} color="var(--mf-cyan)" />
-                      <span style={{ fontSize: 12, color: "var(--mf-text-secondary)", wordBreak: "break-all" }}>{email}</span>
-                    </div>
-                  </div>
-                  {/* Files */}
-                  <div style={{ paddingRight: 16 }}>
-                    {firstFile ? (
-                      <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
-                        <FileText size={12} color="var(--mf-text-muted)" style={{ flexShrink: 0, marginTop: 2 }} />
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", wordBreak: "break-word" }}>{fileName(firstFile)}</div>
-                          <div style={{ fontSize: 10, color: "var(--mf-cyan)", marginTop: 2, wordBreak: "break-all", lineHeight: 1.4 }}>{filePath(firstFile) || "No path"}</div>
-                          {files.length > 1 && <div style={{ fontSize: 10, color: "var(--mf-text-muted)", marginTop: 2 }}>+{files.length - 1} more</div>}
-                        </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 900, color: "var(--mf-text-muted)", marginBottom: 4 }}>PROJECT STATUS</div>
+                        <div style={{ fontSize: 13, color: "var(--mf-text-secondary)" }}>{p.projectWorkflowStatus || "N/A"}</div>
                       </div>
-                    ) : (
-                      <span style={{ fontSize: 12, color: "var(--mf-text-muted)" }}>No files</span>
-                    )}
+                      <div>
+                        <div style={{ fontSize: 10, fontWeight: 900, color: "var(--mf-text-muted)", marginBottom: 4 }}>DEADLINE</div>
+                        <div style={{ fontSize: 13, color: "var(--mf-text-secondary)" }}>{formatDateTime(plan.deadline)}</div>
+                      </div>
+                    </div>
                   </div>
-                  {/* Status */}
-                  <div>
-                    <span style={{ padding: "3px 10px", background: "var(--mf-cyan-dim)", color: "var(--mf-cyan)", fontSize: 10, fontWeight: 800, borderRadius: 100, letterSpacing: "0.06em", border: "1px solid var(--mf-cyan)35", whiteSpace: "nowrap" }}>
-                      {s.status || "N/A"}
-                    </span>
+                  <div style={{ padding: "16px 24px", background: "var(--mf-bg-elevated)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: "50%", background: "var(--mf-magenta-dim)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-magenta)", fontWeight: 800, fontSize: 12 }}>
+                        {p.mangaka ? (p.mangaka.name?.[0] || "M") : "N/A"}
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--mf-text-secondary)" }}>{p.mangaka ? p.mangaka.name : "No Mangaka"}</div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setAssignChapterPlanId(plan.id);
+                        setAssignChapterProjectId(p.id);
+                      }}
+                      style={{ padding: "8px 16px", borderRadius: 8, background: "var(--mf-cyan)", border: "none", color: "#000", fontSize: 12, fontWeight: 800, cursor: "pointer" }}
+                    >
+                      + Assign Chapter
+                    </button>
                   </div>
-                  {/* Submitted At */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <Clock size={11} color="var(--mf-text-muted)" />
-                    <span style={{ fontSize: 11, color: "var(--mf-text-muted)" }}>{formatDateTime(s.submittedAt)}</span>
-                  </div>
-                </button>
+                </div>
               );
             })}
           </div>
         )}
       </div>
 
-      {/* Review Modal */}
-      {selected && (
-        <ReviewModal
-          submission={selected}
-          onClose={() => setSelected(null)}
-          onDone={handleReviewDone}
+      {assignChapterPlanId && assignChapterProjectId && (
+        <CreateChapterDialog
+          projectId={assignChapterProjectId}
+          planId={assignChapterPlanId}
+          onClose={() => {
+            setAssignChapterPlanId(null);
+            setAssignChapterProjectId(null);
+          }}
+          onSuccess={() => {
+            setAssignChapterPlanId(null);
+            setAssignChapterProjectId(null);
+            void loadData();
+          }}
         />
       )}
     </div>
@@ -1312,7 +1340,7 @@ export function EditorDashboard() {
     }
   }
 
-  const isTantorSubmissionsView = activeNav === "Mangaka Submissions";
+  const isProductionPlanView = activeNav === "Production Plan";
   const isApprovedView = activeNav === "Approved";
 
   return (
@@ -1337,8 +1365,8 @@ export function EditorDashboard() {
         }
       `}</style>
       <div style={{ display: "flex", height: "100%", overflow: "hidden", flexDirection: "column" }}>
-        {/* Top bar — hidden for the Mangaka Submissions view (it has its own header) */}
-        {!isTantorSubmissionsView && (
+        {/* Top bar — hidden for the Production Plan view (it has its own header) */}
+        {!isProductionPlanView && (
           <div style={{ flexShrink: 0, borderBottom: "1px solid var(--mf-border)", background: "var(--mf-bg-base)", display: "flex", alignItems: "center", gap: 10, padding: "14px 22px" }}>
             <div style={{ width: 8, height: 8, borderRadius: "50%", background: activeNav === "Approved" ? "var(--mf-magenta)" : activeNav === "Escalated to Board" ? "var(--mf-green)" : activeNav === "In Revision" ? "var(--mf-orange)" : "var(--mf-cyan)" }} />
             <span style={{ fontSize: 15, fontWeight: 900, letterSpacing: "-0.01em" }}>{activeNav}</span>
@@ -1352,11 +1380,11 @@ export function EditorDashboard() {
           </div>
         )}
 
-        {/* Mangaka Submissions view */}
-        {isTantorSubmissionsView && <TantorSubmissions />}
+        {/* Production Plan view */}
+        {isProductionPlanView && <ProductionPlanList />}
 
         {/* Approved accordion view */}
-        {isApprovedView && !isTantorSubmissionsView && !loading && (
+        {isApprovedView && !isProductionPlanView && !loading && (
           <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
             <ApprovedList
               submissions={submissions}
@@ -1364,15 +1392,15 @@ export function EditorDashboard() {
             />
           </div>
         )}
-        {isApprovedView && !isTantorSubmissionsView && loading && (
+        {isApprovedView && !isProductionPlanView && loading && (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "var(--mf-text-muted)" }}>
             <Loader2 size={18} style={{ animation: "editor-spin 1s linear infinite" }} />
             Loading approved submissions...
           </div>
         )}
 
-        {/* Regular ProposalFeed views (all except Approved & Mangaka Submissions) */}
-        {!isTantorSubmissionsView && !isApprovedView && (
+        {/* Regular ProposalFeed views (all except Approved & Production Plan) */}
+        {!isProductionPlanView && !isApprovedView && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             {loading && (
               <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 10, color: "var(--mf-text-muted)" }}>

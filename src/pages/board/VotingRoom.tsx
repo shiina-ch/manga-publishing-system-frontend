@@ -11,10 +11,11 @@ import {
   type SubmissionApi,
   type SubmissionReviewApi,
 } from "../../services/workflowApi";
+import { getAccountProfile } from "../../services/accountApi";
 import { tokenStorage } from "../../storage/tokenStorage";
 
 // ─── helpers ────────────────────────────────────────────────────────────────
-const VOTING_VISIBLE_STATUSES = ["PENDING_BOARD_REVIEW", "ON_GOING", "APPROVED", "REJECTED"];
+const VOTING_VISIBLE_STATUSES = ["PENDING_BOARD_REVIEW", "APPROVED", "REJECTED"];
 
 function normalizeStatus(status: string | null | undefined): string {
   return (status ?? "").toUpperCase().replace(/-/g, "_");
@@ -22,8 +23,7 @@ function normalizeStatus(status: string | null | undefined): string {
 
 function statusLabel(status: string | null | undefined): string {
   switch (normalizeStatus(status)) {
-    case "PENDING_BOARD_REVIEW": return "Pending";
-    case "ON_GOING": return "Voting In Progress";
+    case "PENDING_BOARD_REVIEW": return "Voting In Progress";
     case "APPROVED": return "Approved";
     case "REJECTED": return "Rejected";
     default: return status ?? "Unknown";
@@ -34,8 +34,7 @@ function statusColor(status: string | null | undefined): string {
   switch (normalizeStatus(status)) {
     case "APPROVED": return "var(--mf-green)";
     case "REJECTED": return "var(--mf-magenta)";
-    case "ON_GOING": return "var(--mf-cyan)";
-    case "PENDING_BOARD_REVIEW": return "var(--mf-orange)";
+    case "PENDING_BOARD_REVIEW": return "var(--mf-cyan)";
     default: return "var(--mf-text-muted)";
   }
 }
@@ -81,6 +80,7 @@ export function VotingRoom() {
   const [structurePass, setStructurePass] = useState(true);
   const [imageFlowPass, setImageFlowPass] = useState(true);
   const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null);
+  const [reviewerNames, setReviewerNames] = useState<Record<number, string>>({});
 
   const showToast = (text: string, ok: boolean) => {
     setToast({ text, ok });
@@ -112,6 +112,25 @@ export function VotingRoom() {
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
+    const reviewerIds = Array.from(new Set(
+      allReviews
+        .map(r => r.reviewerId)
+        .filter((id): id is number => typeof id === "number")
+    ));
+    reviewerIds.forEach(id => {
+      if (!reviewerNames[id]) {
+        getAccountProfile(id).then(profile => {
+          const name = `${profile.firstName || ""} ${profile.lastName || ""}`.trim() || profile.email;
+          if (name) {
+            setReviewerNames(prev => ({ ...prev, [id]: name }));
+          }
+        }).catch(() => {});
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allReviews]);
+
+  useEffect(() => {
     setActionError(null);
     setComment("");
   }, [selectedId]);
@@ -119,7 +138,7 @@ export function VotingRoom() {
   const submission = submissions.find(s => s.id === selectedId) ?? null;
   const reviews = allReviews.filter(r => r.submissionId === selectedId && r.stage === "EDITORIAL_BOARD");
   const files = submission?.files ?? [];
-  const canVote = ["PENDING_BOARD_REVIEW", "ON_GOING"].includes(normalizeStatus(submission?.status));
+  const canVote = ["PENDING_BOARD_REVIEW"].includes(normalizeStatus(submission?.status));
   const currentAccount = tokenStorage.getAccount();
   const currentReviewerId = typeof currentAccount?.id === "number" ? currentAccount.id : null;
   const currentReviewerEmail = currentAccount?.email?.trim().toLowerCase() || null;
@@ -265,8 +284,8 @@ export function VotingRoom() {
                     transition: "border-color 0.15s, background 0.15s",
                   }}
                 >
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "var(--mf-text)", marginBottom: 6, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {s.title || `Submission #${s.id}`}
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)", marginBottom: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {s.title || "Untitled Submission"}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <span style={{ fontSize: 10, color: "var(--mf-text-muted)", display: "flex", alignItems: "center", gap: 3 }}>
@@ -293,13 +312,13 @@ export function VotingRoom() {
             <>
               {/* Header */}
               <div style={{ padding: "16px 24px 13px", borderBottom: "1px solid var(--mf-border)", background: "var(--mf-bg-base)", flexShrink: 0 }}>
-                <h1 style={{ fontSize: 18, fontWeight: 900, marginBottom: 5 }}>
-                  {submission.title || `Submission #${submission.id}`}
+                <h1 style={{ fontSize: 18, fontWeight: 900, marginBottom: 4 }}>
+                  {submission.title || "Untitled Submission"}
                 </h1>
                 <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--mf-text-muted)", alignItems: "center", flexWrap: "wrap" }}>
                   <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <User size={11} />
-                    {submission.submittedBy?.email ?? submission.submittedBy?.username ?? "—"}
+                    {submission.submittedByName || submission.submittedBy?.email || submission.submittedBy?.username || "—"}
                   </span>
                   <span style={{
                     padding: "2px 9px", borderRadius: 100, fontSize: 10, fontWeight: 800,
@@ -327,17 +346,40 @@ export function VotingRoom() {
                     </div>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)" }}>
-                        {[submission.submittedBy?.firstName, submission.submittedBy?.lastName].filter(Boolean).join(" ") || "—"}
+                        {submission.submittedByName || [submission.submittedBy?.firstName, submission.submittedBy?.lastName].filter(Boolean).join(" ") || "—"}
                       </div>
                       <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 2 }}>
                         {submission.submittedBy?.email ?? "—"}
                       </div>
                       <div style={{ fontSize: 10, color: "var(--mf-orange)", fontWeight: 700, marginTop: 2 }}>
-                        {submission.submittedBy?.systemRole?.map(r => r.roleName).join(", ") ?? "—"}
+                        Mangaka
                       </div>
                     </div>
                   </div>
                 </div>
+
+                {/* Escalated by info */}
+                {allReviews.find(r => Number(r.submissionId) === Number(selectedId) && r.stage?.toUpperCase() === "EDITORIAL") && (() => {
+                  const tantouReview = allReviews.find(r => Number(r.submissionId) === Number(selectedId) && r.stage?.toUpperCase() === "EDITORIAL");
+                  return (
+                    <div style={{ padding: 16, background: "var(--mf-bg-surface)", borderRadius: 12, border: "1px solid var(--mf-border)" }}>
+                      <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.07em", marginBottom: 12 }}>ESCALATED BY</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                        <div style={{ width: 40, height: 40, borderRadius: "50%", background: "rgba(0,230,230,0.12)", border: "1px solid rgba(0,230,230,0.3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <User size={18} color="var(--mf-cyan)" />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)" }}>
+                            {tantouReview?.reviewerId ? (reviewerNames[Number(tantouReview.reviewerId)] || submission.reviewerName || tantouReview.reviewerEmail || `Tantou Editor #${tantouReview.reviewerId}`) : "—"}
+                          </div>
+                          <div style={{ fontSize: 10, color: "var(--mf-cyan)", fontWeight: 700, marginTop: 2 }}>
+                            Tantou Editor
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Files */}
                 {files.length > 0 ? (
@@ -402,7 +444,7 @@ export function VotingRoom() {
                   <>
                     {!canVote && (
                       <div style={{ padding: "10px 12px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 10, color: "var(--mf-text-muted)", fontSize: 11, lineHeight: 1.5 }}>
-                        Voting is disabled until backend status is ON_GOING. Current status: {statusLabel(submission.status)}.
+                        Voting is only enabled for submissions that are pending board review. Current status: {statusLabel(submission.status)}.
                       </div>
                     )}
                     <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
@@ -499,7 +541,7 @@ export function VotingRoom() {
                         {/* Reviewer email + decision */}
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
                           <span style={{ fontSize: 11, fontWeight: 700, color: "var(--mf-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 145 }}>
-                            {r.reviewerEmail ?? `Reviewer #${r.reviewerId}`}
+                            {r.reviewerId ? (reviewerNames[Number(r.reviewerId)] || r.reviewerEmail || `Reviewer #${r.reviewerId}`) : (r.reviewerEmail ?? "—")}
                           </span>
                           <span style={{
                             padding: "2px 8px", borderRadius: 100, fontSize: 9, fontWeight: 800,

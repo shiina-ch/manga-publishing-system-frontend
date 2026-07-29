@@ -11,7 +11,7 @@ import { getPlannings, getSubmissions, getSubmissionReviews, type SubmissionApi,
 import { ActiveProjectsView } from "./ActiveProjectsView";
 import { getAccountProfile } from "../../services/accountApi";
 
-const BOARD_STATUSES = ["PENDING_BOARD_REVIEW", "ON_GOING", "APPROVED", "REJECTED"];
+const BOARD_STATUSES = ["PENDING_BOARD_REVIEW", "APPROVED", "REJECTED"];
 
 function normalizeStatus(status: string | null | undefined): string {
   return (status ?? "").toUpperCase().replace(/-/g, "_");
@@ -19,8 +19,7 @@ function normalizeStatus(status: string | null | undefined): string {
 
 function normalizeStatusLabel(status: string | null | undefined): string {
   switch (normalizeStatus(status)) {
-    case "PENDING_BOARD_REVIEW": return "Pending";
-    case "ON_GOING": return "Voting In Progress";
+    case "PENDING_BOARD_REVIEW": return "Voting In Progress";
     case "APPROVED": return "Approved";
     case "REJECTED": return "Rejected";
     default: return status ?? "Unknown";
@@ -31,8 +30,7 @@ function statusColor(status: string | null | undefined): string {
   switch (normalizeStatus(status)) {
     case "APPROVED": return "var(--mf-green)";
     case "REJECTED": return "var(--mf-magenta)";
-    case "ON_GOING": return "var(--mf-cyan)";
-    case "PENDING_BOARD_REVIEW": return "var(--mf-orange)";
+    case "PENDING_BOARD_REVIEW": return "var(--mf-cyan)";
     default: return "var(--mf-text-muted)";
   }
 }
@@ -188,7 +186,7 @@ function PendingApprovalsView() {
               }}
             >
               <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)", marginBottom: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {s.title || `Submission #${s.id}`}
+                {s.title || "Untitled Submission"}
               </div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span style={{ fontSize: 10, color: "var(--mf-text-muted)", display: "flex", alignItems: "center", gap: 3 }}>
@@ -215,12 +213,12 @@ function PendingApprovalsView() {
             {/* Header */}
             <div style={{ padding: "16px 24px 13px", borderBottom: "1px solid var(--mf-border)", background: "var(--mf-bg-base)", flexShrink: 0 }}>
               <h1 style={{ fontSize: 18, fontWeight: 900, marginBottom: 4 }}>
-                {submission.title || `Submission #${submission.id}`}
+                {submission.title || "Untitled Submission"}
               </h1>
               <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--mf-text-muted)", alignItems: "center" }}>
                 <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   <User size={11} />
-                  {submission.submittedBy?.email ?? submission.submittedBy?.username ?? "—"}
+                  {submission.submittedByName || submission.submittedBy?.email || submission.submittedBy?.username || "—"}
                 </span>
                 <span style={{
                   padding: "2px 9px", borderRadius: 100, fontSize: 10, fontWeight: 800,
@@ -247,13 +245,13 @@ function PendingApprovalsView() {
                   </div>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)" }}>
-                      {[submission.submittedBy?.firstName, submission.submittedBy?.lastName].filter(Boolean).join(" ") || "—"}
+                      {submission.submittedByName || [submission.submittedBy?.firstName, submission.submittedBy?.lastName].filter(Boolean).join(" ") || "—"}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 2 }}>
                       {submission.submittedBy?.email ?? "—"}
                     </div>
                     <div style={{ fontSize: 10, color: "var(--mf-orange)", fontWeight: 700, marginTop: 2 }}>
-                      {submission.submittedBy?.systemRole?.map(r => r.roleName).join(", ") ?? "—"}
+                      Mangaka
                     </div>
                   </div>
                 </div>
@@ -271,7 +269,7 @@ function PendingApprovalsView() {
                       </div>
                       <div>
                         <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)" }}>
-                          {tantouReview?.reviewerId ? (reviewerNames[Number(tantouReview.reviewerId)] || tantouReview.reviewerEmail || `Tantou Editor #${tantouReview.reviewerId}`) : "—"}
+                          {tantouReview?.reviewerId ? (reviewerNames[Number(tantouReview.reviewerId)] || submission.reviewerName || tantouReview.reviewerEmail || `Tantou Editor #${tantouReview.reviewerId}`) : "—"}
                         </div>
                         <div style={{ fontSize: 10, color: "var(--mf-cyan)", fontWeight: 700, marginTop: 2 }}>
                           Tantou Editor
