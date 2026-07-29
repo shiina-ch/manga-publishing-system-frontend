@@ -9,6 +9,7 @@ import {
 import {
   getSubmissionById,
   getSubmissions,
+  requestRevisionByLeader,
   reviewSubmissionByBoard,
   submitToBoard,
   type AccountSummaryApi,
@@ -25,6 +26,8 @@ const statusConfig: Record<string, { label: string; color: string; bg: string }>
   submitted:             { label: "Pending Review",     color: "var(--mf-cyan)",    bg: "var(--mf-cyan-dim)" },
   in_revision:           { label: "In Revision",        color: "var(--mf-orange)",  bg: "rgba(255,140,66,0.14)" },
   revision:              { label: "In Revision",        color: "var(--mf-orange)",  bg: "rgba(255,140,66,0.14)" },
+  request_revision:      { label: "In Revision",        color: "var(--mf-orange)",  bg: "rgba(255,140,66,0.14)" },
+  requested_revision:    { label: "In Revision",        color: "var(--mf-orange)",  bg: "rgba(255,140,66,0.14)" },
   pending_board_review:  { label: "Voting In Progress", color: "var(--mf-green)",   bg: "var(--mf-green-dim)" },
   processing:            { label: "Voting In Progress", color: "var(--mf-green)",   bg: "var(--mf-green-dim)" },
   on_going:              { label: "Pending to Board",   color: "var(--mf-magenta)", bg: "var(--mf-magenta-dim)" },
@@ -253,7 +256,45 @@ function FileCard({ file }: { file: SubmissionFileApi }) {
   );
 }
 
+function useIsLeaderBoard(): boolean {
+  const [isLeaderBoard, setIsLeaderBoard] = useState(false);
+
+  useEffect(() => {
+    async function checkRole() {
+      const rawAccount = localStorage.getItem("mangaflow_account");
+      if (!rawAccount) return;
+      let accountId: number | null = null;
+      try {
+        const parsed = JSON.parse(rawAccount);
+        accountId = parsed?.id || (typeof parsed === "number" ? parsed : null);
+      } catch {
+        if (/^\d+$/.test(rawAccount)) accountId = Number(rawAccount);
+      }
+
+      if (accountId) {
+        try {
+          const profile: any = await getAccountProfile(accountId);
+          const hasLeader =
+            profile?.roleName === "LEADER_BOARD" ||
+            (Array.isArray(profile?.systemRole) && profile.systemRole.some((r: any) => r?.roleName === "LEADER_BOARD")) ||
+            profile?.systemRole?.roleName === "LEADER_BOARD" ||
+            tokenStorage.hasRole("LEADER_BOARD");
+          setIsLeaderBoard(Boolean(hasLeader));
+          return;
+        } catch {
+          // fallback to token storage check
+        }
+      }
+      setIsLeaderBoard(tokenStorage.hasRole("LEADER_BOARD"));
+    }
+    void checkRole();
+  }, []);
+
+  return isLeaderBoard;
+}
+
 function ReviewModal({ submission, onClose, onDone }: { submission: SubmissionApi; onClose: ()=>void; onDone: ()=>void }) {
+  const isLeaderBoard = useIsLeaderBoard();
   const [pacingPass, setPacingPass] = useState(true);
   const [structurePass, setStructurePass] = useState(true);
   const [imageFlowPass, setImageFlowPass] = useState(true);
@@ -262,12 +303,20 @@ function ReviewModal({ submission, onClose, onDone }: { submission: SubmissionAp
   const [submitError, setSubmitError] = useState<string|null>(null);
   const files = submission.files || [];
 
-  async function handleDecision(decision: "APPROVE"|"REJECT") {
+  async function handleDecision(decision: "APPROVE"|"REJECT"|"REVISION") {
     const reviewerId = tokenStorage.getAccount()?.id;
     if (!reviewerId) { setSubmitError("Cannot review: account ID not found."); return; }
+    if (decision === "REVISION" && !comment.trim()) {
+      setSubmitError("Comment is required for requesting revision.");
+      return;
+    }
     setSubmitting(true); setSubmitError(null);
     try {
-      await reviewSubmissionByBoard({ submissionId: submission.id, reviewerId, decision, comment, pacingPass, structurePass, imageFlowPass });
+      if (decision === "REVISION") {
+        await requestRevisionByLeader(submission.id, reviewerId, comment.trim());
+      } else {
+        await reviewSubmissionByBoard({ submissionId: submission.id, reviewerId, decision, comment, pacingPass, structurePass, imageFlowPass });
+      }
       onDone();
     } catch (err) {
       setSubmitError(err && typeof err === "object" && "message" in err ? String(err.message) : "Review failed.");
@@ -339,6 +388,11 @@ function ReviewModal({ submission, onClose, onDone }: { submission: SubmissionAp
             <button onClick={()=>void handleDecision("APPROVE")} disabled={submitting} style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"14px 24px", background:"var(--mf-orange)", border:"none", borderRadius:10, color:"#000", fontSize:13, fontWeight:800, cursor:submitting?"not-allowed":"pointer", opacity:submitting?0.7:1 }}>
               {submitting?<Loader2 size={15}/>:<ThumbsUp size={15}/>} APPROVE
             </button>
+            {isLeaderBoard && (
+              <button onClick={()=>void handleDecision("REVISION")} disabled={submitting} style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"14px 24px", background:"rgba(255,140,66,0.15)", border:"1px solid var(--mf-orange)", borderRadius:10, color:"var(--mf-orange)", fontSize:13, fontWeight:800, cursor:submitting?"not-allowed":"pointer", opacity:submitting?0.7:1 }}>
+                {submitting?<Loader2 size={15}/>:<RotateCcw size={15}/>} REVISION
+              </button>
+            )}
             <button onClick={()=>void handleDecision("REJECT")} disabled={submitting} style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", gap:8, padding:"14px 24px", background:"transparent", border:"1px solid rgba(255,255,255,0.15)", borderRadius:10, color:"var(--mf-text)", fontSize:13, fontWeight:800, cursor:submitting?"not-allowed":"pointer" }}>
               {submitting?<Loader2 size={15}/>:<ThumbsDown size={15}/>} REJECT
             </button>
@@ -353,8 +407,9 @@ function ProposalFeed({ submissions, escalatingId, error, authorLookup, onApprov
   submissions: SubmissionApi[]; escalatingId: number|null; error: string|null; authorLookup: AuthorLookupState;
   onApprove: (s: SubmissionApi)=>void; onStartBoardVoting: (s: SubmissionApi)=>void; onReview?: (s: SubmissionApi)=>void;
 }) {
+  const isLeaderBoard = useIsLeaderBoard();
   const [selected, setSelected] = useState<number|null>(null);
-  const filtered = useMemo(()=>submissions.filter(s=>{ const st=normalizeStatus(s.nameStatus??s.status); return st==="pending"||st==="pending_tantou_review"||st==="submitted"||st==="pending_board_review"||st==="processing"||st==="approved"||st==="rejected"; }), [submissions]);
+  const filtered = useMemo(()=>submissions.filter(s=>{ const st=normalizeStatus(s.nameStatus??s.status); return st==="pending"||st==="pending_tantou_review"||st==="submitted"||st==="pending_board_review"||st==="processing"||st==="approved"||st==="rejected"||st==="in_revision"||st==="revision"||st==="request_revision"||st==="requested_revision"; }), [submissions]);
   const selectedSubmission = filtered.find(s=>s.id===selected)||filtered[0];
   const effectiveSelected = selectedSubmission?.id??null;
 
@@ -365,7 +420,7 @@ function ProposalFeed({ submissions, escalatingId, error, authorLookup, onApprov
   );
 
   const selectedStatus = normalizeStatus(selectedSubmission?.nameStatus??selectedSubmission?.status);
-  const canApprove = ["pending","pending_tantou_review","submitted","pending_board_review","processing"].includes(selectedStatus);
+  const canApprove = ["pending","pending_tantou_review","submitted","pending_board_review","processing","in_revision","revision","request_revision","requested_revision"].includes(selectedStatus);
   const resolvedSelected = selectedSubmission ? submissionForAuthorResolution(selectedSubmission, authorLookup) : selectedSubmission;
   const files = resolvedSelected?.files||[];
 
@@ -430,6 +485,42 @@ function ProposalFeed({ submissions, escalatingId, error, authorLookup, onApprov
               {files.length===0 ? <div style={{ display:"flex", alignItems:"center", gap:8, color:"var(--mf-text-muted)", fontSize:13, padding:10 }}><Image size={15}/> No uploaded files found.</div>
                 : <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(180px, 1fr))", gap:16 }}>{files.map((file,i)=><FileCard key={file.id??`${fileName(file)}-${i}`} file={file}/>)}</div>}
             </Section>
+            {(() => {
+              const detail = authorLookup.detailBySubmissionId[selectedSubmission.id];
+              const reviewsList = detail?.reviews || resolvedSelected?.reviews || selectedSubmission?.reviews || [];
+              if (!reviewsList.length) return null;
+              return (
+                <Section title={`REVIEWS & COMMENTS (${reviewsList.length})`}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {reviewsList.map((r, i) => {
+                      const dec = (r.decision || "").toUpperCase();
+                      const color = dec === "APPROVED" ? "var(--mf-green)" : dec === "REJECTED" ? "var(--mf-red)" : "var(--mf-orange)";
+                      const reviewerName = r.reviewerName || r.reviewerEmail || (r.reviewerId ? `Reviewer #${r.reviewerId}` : "Reviewer");
+                      return (
+                        <div key={r.id || i} style={{ padding: "12px 16px", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 10 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                            <span style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>{reviewerName}</span>
+                            <span style={{ fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 4, background: `${color}20`, color, border: `1px solid ${color}40` }}>
+                              {r.decision || "REVIEWED"}
+                            </span>
+                          </div>
+                          {r.comment && (
+                            <div style={{ fontSize: 13, color: "var(--mf-text-secondary)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                              {r.comment}
+                            </div>
+                          )}
+                          {r.reviewedAt && (
+                            <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 6, display: "flex", alignItems: "center", gap: 4 }}>
+                              <Clock size={11} /> {formatDateTime(r.reviewedAt)}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Section>
+              );
+            })()}
           </div>
           {!["approved", "rejected"].includes(selectedStatus) && (
             <div style={{ position:"sticky", bottom:0, padding:"16px 40px", borderTop:"1px solid rgba(255,255,255,0.05)", background:"rgba(10,10,10,0.85)", backdropFilter:"blur(12px)", display:"flex", alignItems:"center", gap:12, zIndex:10 }}>
@@ -474,7 +565,7 @@ export function BoardProposalsPage() {
   useEffect(()=>{ void loadSubmissions(); },[loadSubmissions]);
 
   useEffect(()=>{
-    const ids=submissions.filter(needsSubmissionDetailLookup).map(s=>s.id).filter(id=>!submissionDetails[id]&&!loadingDetailIds.has(id)&&!failedDetailIds.has(id));
+    const ids=submissions.map(s=>s.id).filter(id=>!submissionDetails[id]&&!loadingDetailIds.has(id)&&!failedDetailIds.has(id));
     if(!ids.length)return;
     setLoadingDetailIds(cur=>new Set([...cur,...ids]));
     ids.forEach(id=>{

@@ -4,10 +4,10 @@ import { AppLayout } from "../../components/layout/AppLayout";
 import {
   DollarSign,
   User, Clock, TrendingUp,
-  Star, Package, AlertCircle, Loader2, Image, RefreshCw, FileX,
+  Star, Package, AlertCircle, Loader2, Image, RefreshCw, FileX, ChevronLeft, ChevronRight, X
 } from "lucide-react";
-import { getProjects } from "../../services/projectApi";
-import { getPlannings, getSubmissions, getSubmissionReviews, type SubmissionApi, type SubmissionReviewApi } from "../../services/workflowApi";
+import { getProjects, getProductionPlans, getPublishedChapters, type ProjectFromApi, type ProductionPlanResponse } from "../../services/projectApi";
+import { getSubmissions, getSubmissionReviews, type SubmissionApi, type SubmissionReviewApi } from "../../services/workflowApi";
 import { ActiveProjectsView } from "./ActiveProjectsView";
 import { getAccountProfile } from "../../services/accountApi";
 
@@ -418,29 +418,45 @@ function PendingApprovalsView() {
   );
 }
 
-
 // --- Publishing Calendar View ---
 function PublishingCalendarView() {
-  const daysInJuly = 31;
-  const firstDay = 3; // July 1, 2026 is Wednesday
-  const today = 2;
-  const [eventsByDay, setEventsByDay] = useState<Record<number, { title: string; color: string }[]>>({});
+  const [currentDate, setCurrentDate] = useState(new Date()); // Start with current month
+  const currentYear = currentDate.getFullYear();
+  const currentMonth = currentDate.getMonth();
+  
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+  const firstDay = new Date(currentYear, currentMonth, 1).getDay(); // 0 is Sunday
+  
+  const todayDate = new Date();
+  const isCurrentMonth = todayDate.getFullYear() === currentYear && todayDate.getMonth() === currentMonth;
+  const today = isCurrentMonth ? todayDate.getDate() : -1;
+
+  const [eventsByDay, setEventsByDay] = useState<Record<number, any[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const [selectedChapter, setSelectedChapter] = useState<any | null>(null);
+
+  const prevMonth = () => setCurrentDate(new Date(currentYear, currentMonth - 1, 1));
+  const nextMonth = () => setCurrentDate(new Date(currentYear, currentMonth + 1, 1));
+  const monthName = currentDate.toLocaleString('default', { month: 'long' });
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    getPlannings()
-      .then(rows => {
+    getPublishedChapters()
+      .then(chapters => {
         if (cancelled) return;
         const colors = ["var(--mf-green)", "var(--mf-cyan)", "var(--mf-orange)", "var(--mf-magenta)"];
-        const grouped = rows.reduce<Record<number, { title: string; color: string }[]>>((acc, row, index) => {
-          const date = row.startDate ? new Date(row.startDate) : null;
+        const grouped = chapters.reduce<Record<number, any[]>>((acc, chapter, index) => {
+          const date = chapter.publishDate ? new Date(chapter.publishDate) : null;
           if (!date || Number.isNaN(date.getTime())) return acc;
-          const day = date.getDate();
-          acc[day] = [...(acc[day] || []), { title: row.title || `Planning #${row.id}`, color: colors[index % colors.length] }];
+          // Filter to only include chapters in the currently viewed month
+          if (date.getFullYear() === currentYear && date.getMonth() === currentMonth) {
+            const day = date.getDate();
+            acc[day] = [...(acc[day] || []), { ...chapter, color: colors[index % colors.length] }];
+          }
           return acc;
         }, {});
         setEventsByDay(grouped);
@@ -452,7 +468,7 @@ function PublishingCalendarView() {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [currentYear, currentMonth]);
 
   if (loading) {
     return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-text-muted)" }}>Loading publishing calendar...</div>;
@@ -463,17 +479,27 @@ function PublishingCalendarView() {
   }
 
   return (
-    <div style={{ padding: "24px 28px", overflowY: "auto", flex: 1 }}>
+    <div style={{ padding: "24px 28px", overflowY: "auto", flex: 1, position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
         <div>
           <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em" }}>Publishing Calendar</h2>
-          <p style={{ fontSize: 13, color: "var(--mf-text-muted)", marginTop: 3 }}>July 2026 — Scheduled Releases</p>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 4 }}>
+            <button onClick={prevMonth} style={{ background: "transparent", border: "none", color: "var(--mf-text-muted)", cursor: "pointer", display: "flex", padding: 0 }}>
+              <ChevronLeft size={18} />
+            </button>
+            <span style={{ fontSize: 13, color: "var(--mf-text-muted)", fontWeight: 700, minWidth: 100, textAlign: "center" }}>
+              {monthName} {currentYear} — Scheduled Releases
+            </span>
+            <button onClick={nextMonth} style={{ background: "transparent", border: "none", color: "var(--mf-text-muted)", cursor: "pointer", display: "flex", padding: 0 }}>
+              <ChevronRight size={18} />
+            </button>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", maxWidth: "50%" }}>
           {Object.values(eventsByDay).flat().map((e, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: e.color }}>
               <div style={{ width: 8, height: 8, borderRadius: 2, background: e.color }} />
-              <span style={{ color: "var(--mf-text-muted)" }}>{e.title}</span>
+              <span style={{ color: "var(--mf-text-muted)", textOverflow: "ellipsis", whiteSpace: "nowrap", overflow: "hidden", maxWidth: 100 }}>{e.title}</span>
             </div>
           ))}
         </div>
@@ -486,7 +512,7 @@ function PublishingCalendarView() {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
           {[...Array(firstDay)].map((_, i) => <div key={`empty-${i}`} style={{ minHeight: 80, borderRight: "1px solid var(--mf-border)", borderBottom: "1px solid var(--mf-border)" }} />)}
-          {[...Array(daysInJuly)].map((_, i) => {
+          {[...Array(daysInMonth)].map((_, i) => {
             const day = i + 1;
             const events = eventsByDay[day] || [];
             const isToday = day === today;
@@ -494,46 +520,94 @@ function PublishingCalendarView() {
               <div key={day} style={{ minHeight: 80, padding: 8, borderRight: "1px solid var(--mf-border)", borderBottom: "1px solid var(--mf-border)", background: isToday ? "rgba(255,42,122,0.06)" : "transparent", position: "relative" }}>
                 <div style={{ fontSize: 12, fontWeight: isToday ? 900 : 600, color: isToday ? "var(--mf-magenta)" : "var(--mf-text-muted)", marginBottom: 5, width: 24, height: 24, borderRadius: "50%", background: isToday ? "var(--mf-magenta)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>{day}</div>
                 {events.map((ev, ei) => (
-                  <div key={ei} style={{ padding: "2px 6px", background: `${ev.color}20`, border: `1px solid ${ev.color}40`, borderRadius: 4, fontSize: 9, color: ev.color, fontWeight: 700, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.title}</div>
+                  <div
+                    key={ei}
+                    onClick={() => setSelectedChapter(ev)}
+                    style={{ padding: "2px 6px", background: `${ev.color}20`, border: `1px solid ${ev.color}40`, borderRadius: 4, fontSize: 9, color: ev.color, fontWeight: 700, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}
+                  >
+                    {ev.title}
+                  </div>
                 ))}
               </div>
             );
           })}
         </div>
       </div>
+
+      {selectedChapter && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}>
+          <div style={{ background: "var(--mf-bg-base)", width: 400, borderRadius: 16, border: "1px solid var(--mf-border)", overflow: "hidden", boxShadow: "0 20px 40px rgba(0,0,0,0.4)" }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--mf-border)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--mf-bg-surface)" }}>
+              <div style={{ fontSize: 15, fontWeight: 900 }}>Chapter Details</div>
+              <button onClick={() => setSelectedChapter(null)} style={{ background: "transparent", border: "none", color: "var(--mf-text-muted)", cursor: "pointer", display: "flex" }}>
+                <X size={18} />
+              </button>
+            </div>
+            <div style={{ padding: 20 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 900, marginBottom: 16, color: selectedChapter.color || "var(--mf-text)" }}>{selectedChapter.title || "Untitled Chapter"}</h3>
+              <div style={{ display: "grid", gap: 12, fontSize: 13 }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "var(--mf-text-muted)" }}>Owner</span>
+                  <span style={{ fontWeight: 800 }}>{selectedChapter.ownerName || "—"}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "var(--mf-text-muted)" }}>Priority</span>
+                  <span style={{ fontWeight: 800 }}>{selectedChapter.priority || "—"}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "var(--mf-text-muted)" }}>Status</span>
+                  <span style={{ fontWeight: 800, color: "var(--mf-cyan)" }}>{selectedChapter.chapterStatus || "—"}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "var(--mf-text-muted)" }}>Target Pages</span>
+                  <span style={{ fontWeight: 800 }}>{selectedChapter.targetPageCount || "—"}</span>
+                </div>
+                <hr style={{ border: "none", borderTop: "1px solid var(--mf-border)", margin: "4px 0" }} />
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "var(--mf-text-muted)" }}>Start Date</span>
+                  <span style={{ fontWeight: 800 }}>{selectedChapter.startDate ? new Date(selectedChapter.startDate).toLocaleDateString() : "—"}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "var(--mf-text-muted)" }}>End Date</span>
+                  <span style={{ fontWeight: 800 }}>{selectedChapter.endDate ? new Date(selectedChapter.endDate).toLocaleDateString() : "—"}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "var(--mf-text-muted)" }}>Publish Date</span>
+                  <span style={{ fontWeight: 800, color: "var(--mf-magenta)" }}>{selectedChapter.publishDate ? new Date(selectedChapter.publishDate).toLocaleDateString() : "—"}</span>
+                </div>
+              </div>
+            </div>
+            <div style={{ padding: "12px 20px", borderTop: "1px solid var(--mf-border)", background: "var(--mf-bg-surface)", textAlign: "right" }}>
+              <button onClick={() => setSelectedChapter(null)} style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "var(--mf-orange)", color: "#000", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-// --- Budget Overview View ---
-function BudgetOverviewView() {
-  const [items, setItems] = useState<{ project: string; allocated: number; spent: number; color: string }[]>([]);
+// --- Project Plans View ---
+function ProjectPlansView() {
+  const [projects, setProjects] = useState<ProjectFromApi[]>([]);
+  const [plans, setPlans] = useState<ProductionPlanResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const totalAllocated = items.reduce((s, b) => s + b.allocated, 0);
-  const totalSpent = items.reduce((s, b) => s + b.spent, 0);
-  const remaining = totalAllocated - totalSpent;
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    getProjects()
-      .then(projects => {
+    Promise.all([getProjects(), getProductionPlans()])
+      .then(([projData, planData]) => {
         if (cancelled) return;
-        setItems(projects.flatMap((project, index) => {
-          if (typeof project.allocated !== "number" || typeof project.budget !== "number" || project.allocated <= 0) return [];
-          const colors = ["var(--mf-cyan)", "var(--mf-orange)", "var(--mf-magenta)", "var(--mf-green)"];
-          return [{
-            project: project.title || `Project ID ${project.id}`,
-            allocated: project.allocated,
-            spent: project.budget,
-            color: colors[index % colors.length],
-          }];
-        }));
+        setProjects(projData);
+        setPlans(planData);
       })
-      .catch((err: { message?: string }) => {
-        if (!cancelled) setError(err.message || "Failed to load project budget data.");
+      .catch((err: any) => {
+        if (!cancelled) setError(err.message || "Failed to load project plans.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -542,7 +616,7 @@ function BudgetOverviewView() {
   }, []);
 
   if (loading) {
-    return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-text-muted)" }}>Loading project budgets...</div>;
+    return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-text-muted)" }}>Loading projects and plans...</div>;
   }
 
   if (error) {
@@ -552,49 +626,84 @@ function BudgetOverviewView() {
   return (
     <div style={{ padding: "24px 28px", overflowY: "auto", flex: 1 }}>
       <div style={{ marginBottom: 22 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em" }}>Budget Overview</h2>
-        <p style={{ fontSize: 13, color: "var(--mf-text-muted)", marginTop: 3 }}>FY2026 Q3 — All Active Projects</p>
+        <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em" }}>Project Plans</h2>
+        <p style={{ fontSize: 13, color: "var(--mf-text-muted)", marginTop: 3 }}>Overview of all projects and their associated production plans</p>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 24 }}>
-        {[
-          { label: "Total Allocated", value: `$${totalAllocated.toLocaleString()}`, color: "var(--mf-cyan)", icon: DollarSign },
-          { label: "Total Spent", value: `$${totalSpent.toLocaleString()}`, color: "var(--mf-orange)", icon: TrendingUp },
-          { label: "Remaining", value: `$${remaining.toLocaleString()}`, color: "var(--mf-green)", icon: Star },
-        ].map(s => {
-          const Icon = s.icon;
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        {projects.length === 0 && (
+          <div style={{ padding: 24, background: "var(--mf-bg-surface)", borderRadius: 14, border: "1px solid var(--mf-border)", color: "var(--mf-text-muted)", textAlign: "center" }}>
+            No projects found.
+          </div>
+        )}
+        {projects.map(project => {
+          const projectPlans = plans.filter(p => p.projectId === project.id);
           return (
-            <div key={s.label} style={{ padding: 20, background: "var(--mf-bg-surface)", borderRadius: 14, border: "1px solid var(--mf-border)" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                <div style={{ width: 32, height: 32, borderRadius: 9, background: `${s.color}18`, display: "flex", alignItems: "center", justifyContent: "center" }}><Icon size={16} color={s.color} /></div>
-                <span style={{ fontSize: 11, color: "var(--mf-text-muted)", fontWeight: 600 }}>{s.label}</span>
+            <div key={project.id} style={{ background: "var(--mf-bg-surface)", borderRadius: 14, border: "1px solid var(--mf-border)", overflow: "hidden" }}>
+              <div style={{ padding: "16px 20px", background: "rgba(255,255,255,0.02)", borderBottom: "1px solid var(--mf-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: "var(--mf-cyan)" }}>{project.title || `Project #${project.id}`}</div>
+                  <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 4 }}>
+                    Status: {project.status || "Unknown"} | Format: {project.format || "N/A"}
+                  </div>
+                </div>
+                <div style={{ padding: "4px 10px", borderRadius: 100, background: "rgba(0, 240, 255, 0.1)", color: "var(--mf-cyan)", fontSize: 11, fontWeight: 800 }}>
+                  {projectPlans.length} Plans
+                </div>
               </div>
-              <div style={{ fontSize: 24, fontWeight: 900, color: s.color }}>{s.value}</div>
+              <div style={{ padding: 20 }}>
+                {projectPlans.length === 0 ? (
+                  <div style={{ fontSize: 12, color: "var(--mf-text-muted)", fontStyle: "italic" }}>No production plans for this project.</div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
+                    {projectPlans.map(plan => (
+                      <div key={plan.id} style={{ padding: 14, background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                          <div style={{ fontSize: 14, fontWeight: 800, color: "var(--mf-text)" }}>{plan.title || `Plan #${plan.id}`}</div>
+                          <div style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: "var(--mf-cyan-dim)", color: "var(--mf-cyan)", fontWeight: 700 }}>
+                            {plan.planStatus || "Unknown Status"}
+                          </div>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 11, color: "var(--mf-text-muted)" }}>
+                          <div>Start Date: <strong style={{ color: "var(--mf-text)" }}>{plan.startDate ? new Date(plan.startDate).toLocaleDateString() : "TBD"}</strong></div>
+                          <div>End Date: <strong style={{ color: "var(--mf-text)" }}>{plan.endDate ? new Date(plan.endDate).toLocaleDateString() : "TBD"}</strong></div>
+                          <div>Deadline Date: <strong style={{ color: "var(--mf-text)" }}>{plan.deadlineDate ? new Date(plan.deadlineDate).toLocaleDateString() : "TBD"}</strong></div>
+                          <div>Publish Date: <strong style={{ color: "var(--mf-text)" }}>{plan.publishDate ? new Date(plan.publishDate).toLocaleDateString() : "TBD"}</strong></div>
+                        </div>
+                        {plan.chapters && plan.chapters.length > 0 && (
+                          <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed var(--mf-border)" }}>
+                            <div style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.06em" }}>CHAPTERS ({plan.chapters.length})</div>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                              {plan.chapters.map(chapter => (
+                                <div key={chapter.id} style={{ display: "flex", flexDirection: "column", gap: 8, padding: "10px 12px", background: "var(--mf-bg-surface)", borderRadius: 6, border: "1px solid var(--mf-border)" }}>
+                                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                    <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)" }}>
+                                      {chapter.chapterNumber != null ? `Chapter ${chapter.chapterNumber}` : "Chapter"} - {chapter.title || "Untitled"}
+                                    </div>
+                                    <div style={{ fontSize: 10, padding: "2px 6px", borderRadius: 4, background: "rgba(0, 240, 255, 0.1)", color: "var(--mf-cyan)", fontWeight: 700 }}>
+                                      {chapter.chapterStatus || "Unknown"}
+                                    </div>
+                                  </div>
+                                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 10, color: "var(--mf-text-muted)" }}>
+                                    <div>Start Date: <strong style={{ color: "var(--mf-text)" }}>{chapter.startDate ? new Date(chapter.startDate).toLocaleDateString() : "TBD"}</strong></div>
+                                    <div>End Date: <strong style={{ color: "var(--mf-text)" }}>{chapter.endDate ? new Date(chapter.endDate).toLocaleDateString() : "TBD"}</strong></div>
+                                    <div>Deadline: <strong style={{ color: "var(--mf-text)" }}>{chapter.deadline ? new Date(chapter.deadline).toLocaleDateString() : "TBD"}</strong></div>
+                                    <div>Publish Date: <strong style={{ color: "var(--mf-text)" }}>{chapter.publishDate ? new Date(chapter.publishDate).toLocaleDateString() : "TBD"}</strong></div>
+                                    <div>Pages: <strong style={{ color: "var(--mf-text)" }}>{chapter.targetPageCount || "N/A"}</strong></div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {items.length === 0 && (
-          <div style={{ padding: 24, background: "var(--mf-bg-surface)", borderRadius: 14, border: "1px solid var(--mf-border)", color: "var(--mf-text-muted)", textAlign: "center" }}>
-            No project budget rows found in the database.
-          </div>
-        )}
-        {items.map(b => (
-          <div key={b.project} style={{ padding: "16px 20px", background: "var(--mf-bg-surface)", borderRadius: 14, border: "1px solid var(--mf-border)", display: "flex", alignItems: "center", gap: 20 }}>
-            <div style={{ width: 10, height: 10, borderRadius: "50%", background: b.color, flexShrink: 0 }} />
-            <div style={{ width: 160, flexShrink: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)" }}>{b.project}</div>
-              <div style={{ fontSize: 11, color: "var(--mf-text-muted)" }}>${b.spent.toLocaleString()} / ${b.allocated.toLocaleString()}</div>
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ height: 8, background: "var(--mf-bg-elevated)", borderRadius: 100, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${(b.spent / b.allocated) * 100}%`, background: b.color, borderRadius: 100 }} />
-              </div>
-            </div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: b.color, width: 44, textAlign: "right" }}>{Math.round((b.spent / b.allocated) * 100)}%</div>
-            <div style={{ fontSize: 11, color: "var(--mf-green)", fontWeight: 700, width: 80, textAlign: "right" }}>+${(b.allocated - b.spent).toLocaleString()}</div>
-          </div>
-        ))}
       </div>
     </div>
   );
@@ -606,7 +715,7 @@ export function BoardApproval() {
     switch (searchParams.get("tab")) {
       case "active-projects": return "Active Projects";
       case "publishing-calendar": return "Publishing Calendar";
-      case "budget-overview": return "Budget Overview";
+      case "project-plans": return "Project Plans";
       default: return "Pending Approvals";
     }
   })();
@@ -623,7 +732,7 @@ export function BoardApproval() {
           {activeNav === "Pending Approvals" && <PendingApprovalsView />}
           {activeNav === "Active Projects" && <ActiveProjectsView />}
           {activeNav === "Publishing Calendar" && <PublishingCalendarView />}
-          {activeNav === "Budget Overview" && <BudgetOverviewView />}
+          {activeNav === "Project Plans" && <ProjectPlansView />}
         </div>
       </div>
     </AppLayout>

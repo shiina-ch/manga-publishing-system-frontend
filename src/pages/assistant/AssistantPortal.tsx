@@ -1,34 +1,26 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
+import { toast } from "react-toastify";
 import { AppLayout } from "../../components/layout/AppLayout";
 import {
-  Brush, Layers, Send, CheckCircle, AlertTriangle,
-  Plus, Eraser, Pipette, ZoomIn, ZoomOut,
-  RotateCcw, Eye, EyeOff, Lock, Unlock, X, ClipboardList
+  ClipboardList, CheckCircle, AlertTriangle, Send,
+  FileText, Upload, Link as LinkIcon, Image as ImageIcon,
+  Clock, User, X, Sparkles, CheckSquare, Layers, Folder,
+  ShieldCheck, RefreshCw, File as FileIcon
 } from "lucide-react";
-import { getSubTasksForAssignee, taskToAssistantTask, type AssistantTask } from "../../services/workflowApi";
+import {
+  getAssignedSubTasks,
+  submitSubTask,
+  taskToAssistantTask,
+  type AssistantTask
+} from "../../services/workflowApi";
 import { tokenStorage } from "../../storage/tokenStorage";
-
-const allTasks = [
-  { id: 1, page: 4, panel: "A", label: "Draw Background — Cyberpunk City", tags: ["Background Art"], mangaka: "Kishimoto-san", due: "Jun 20", priority: "high", status: "active" },
-  { id: 2, page: 1, panel: "A", label: "Color — Opening Wide Shot", tags: ["Coloring", "Screentone"], mangaka: "Kishimoto-san", due: "Jun 18", priority: "high", status: "active" },
-  { id: 3, page: 2, panel: "B", label: "Screentone — Rain Effect", tags: ["Screentone"], mangaka: "Kishimoto-san", due: "Jun 22", priority: "medium", status: "pending" },
-  { id: 4, page: 3, panel: "A", label: "Effects — Speed Lines + FX", tags: ["Effects"], mangaka: "Kishimoto-san", due: "Jun 25", priority: "low", status: "pending" },
-  { id: 5, page: 2, panel: "A", label: "Color — Dialogue Scene", tags: ["Coloring"], mangaka: "Kishimoto-san", due: "Jun 19", priority: "medium", status: "submitted" },
-];
-
-const canvasLayers = [
-  { id: 1, name: "Line Art (from Mangaka)", locked: true, visible: true, opacity: 100 },
-  { id: 2, name: "BG Color Base", locked: false, visible: true, opacity: 100 },
-  { id: 3, name: "Building Neons", locked: false, visible: true, opacity: 85 },
-  { id: 4, name: "Street Details", locked: false, visible: true, opacity: 90 },
-  { id: 5, name: "Atmosphere / Fog", locked: false, visible: true, opacity: 60 },
-];
 
 const tagColor: Record<string, string> = {
   "Background Art": "var(--mf-cyan)",
   "Coloring": "var(--mf-magenta)",
   "Screentone": "var(--mf-orange)",
   "Effects": "var(--mf-green)",
+  "Production": "var(--mf-cyan)",
 };
 
 const priorityColor: Record<string, string> = {
@@ -39,141 +31,31 @@ const priorityColor: Record<string, string> = {
 
 const statusMap: Record<string, { label: string; color: string }> = {
   active: { label: "In Progress", color: "var(--mf-cyan)" },
+  in_progress: { label: "In Progress", color: "var(--mf-cyan)" },
   pending: { label: "Pending", color: "var(--mf-text-muted)" },
   submitted: { label: "Submitted", color: "var(--mf-green)" },
+  todo: { label: "To Do", color: "var(--mf-text-muted)" },
+  review: { label: "Review", color: "var(--mf-orange)" },
+  done: { label: "Done", color: "var(--mf-green)" },
 };
 
-function drawCyberpunkBackground(ctx: CanvasRenderingContext2D, w: number, h: number) {
-  // Sky gradient
-  const sky = ctx.createLinearGradient(0, 0, 0, h);
-  sky.addColorStop(0, "#080615");
-  sky.addColorStop(0.45, "#0F0A20");
-  sky.addColorStop(1, "#1A0D2E");
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, w, h);
-
-  // Stars
-  for (let i = 0; i < 60; i++) {
-    const sx = Math.random() * w;
-    const sy = Math.random() * h * 0.5;
-    const sr = Math.random() * 1.2 + 0.3;
-    ctx.beginPath();
-    ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.6 + 0.2})`;
-    ctx.fill();
-  }
-
-  // Buildings
-  const buildings = [
-    { x: 0, y: 320, w: 70, h: 280 },
-    { x: 80, y: 260, w: 55, h: 340 },
-    { x: 145, y: 340, w: 45, h: 260 },
-    { x: 200, y: 200, w: 80, h: 400 },
-    { x: 290, y: 280, w: 60, h: 320 },
-    { x: 360, y: 150, w: 90, h: 450 },
-    { x: 460, y: 240, w: 55, h: 360 },
-    { x: 525, y: 270, w: 75, h: 330 },
-  ];
-
-  buildings.forEach((b, i) => {
-    const buildingGrad = ctx.createLinearGradient(b.x, b.y, b.x + b.w, b.y);
-    const hue = 250 + i * 12;
-    buildingGrad.addColorStop(0, `hsl(${hue}, 35%, 10%)`);
-    buildingGrad.addColorStop(1, `hsl(${hue}, 30%, 7%)`);
-    ctx.fillStyle = buildingGrad;
-    ctx.fillRect(b.x, b.y, b.w, b.h);
-
-    // Windows
-    const cols = Math.floor(b.w / 12);
-    const rowCount = Math.floor(b.h / 16);
-    for (let row = 1; row < rowCount; row++) {
-      for (let col = 0; col < cols; col++) {
-        if (Math.random() > 0.45) continue;
-        const wx = b.x + col * 12 + 3;
-        const wy = b.y + row * 16 + 2;
-        const colors = ["#00F0FF", "#FF2A7A", "#FFD700", "#39FF8A", "#FFFFFF"];
-        const wc = colors[Math.floor(Math.random() * colors.length)];
-        ctx.fillStyle = wc;
-        ctx.globalAlpha = Math.random() * 0.5 + 0.3;
-        ctx.fillRect(wx, wy, 5, 6);
-        ctx.globalAlpha = 1;
-      }
-    }
-
-    // Rooftop antennae
-    ctx.strokeStyle = `hsl(${hue}, 30%, 20%)`;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(b.x + b.w / 2, b.y);
-    ctx.lineTo(b.x + b.w / 2, b.y - 20 - Math.random() * 30);
-    ctx.stroke();
-  });
-
-  // Ground / street
-  const groundGrad = ctx.createLinearGradient(0, h * 0.75, 0, h);
-  groundGrad.addColorStop(0, "#0A0618");
-  groundGrad.addColorStop(1, "#050310");
-  ctx.fillStyle = groundGrad;
-  ctx.fillRect(0, h * 0.75, w, h * 0.25);
-
-  // Street neon glow reflections
-  const neons = [
-    { x: 0, color: "#FF2A7A" },
-    { x: w * 0.4, color: "#00F0FF" },
-    { x: w * 0.75, color: "#39FF8A" },
-  ];
-  neons.forEach(n => {
-    const g = ctx.createRadialGradient(n.x, h * 0.76, 0, n.x, h * 0.76, 200);
-    g.addColorStop(0, `${n.color}40`);
-    g.addColorStop(1, "transparent");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, h * 0.72, w, h * 0.28);
-  });
-
-  // Horizontal scanline overlay
-  for (let y = 0; y < h; y += 4) {
-    ctx.fillStyle = "rgba(0,0,0,0.08)";
-    ctx.fillRect(0, y, w, 1);
-  }
-
-  // Panel border
-  ctx.strokeStyle = "rgba(255,255,255,0.12)";
-  ctx.lineWidth = 3;
-  ctx.strokeRect(2, 2, w - 4, h - 4);
-}
-
 export function AssistantPortal() {
-  const [activeNav, setActiveNav] = useState("My Assignments");
-  const [selectedTask, setSelectedTask] = useState<number | null>(null);
-  const [viewingTask, setViewingTask] = useState<AssistantTask | null>(null);
-  const [allTasksFromApi, setAllTasksFromApi] = useState<AssistantTask[]>([]);
-  const [layers, setLayers] = useState(canvasLayers);
-  const [activeTool, setActiveTool] = useState("brush");
-  const [brushSize, setBrushSize] = useState(12);
-  const [submitted, setSubmitted] = useState<Set<number>>(new Set([5]));
-  const [zoom, setZoom] = useState(100);
-  const [activeColor, setActiveColor] = useState("#00F0FF");
+  const [activeNav, setActiveNav] = useState("My Task");
+  const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
+  const [allTasks, setAllTasks] = useState<AssistantTask[]>([]);
+  const [submittedTasks, setSubmittedTasks] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const isDrawingRef = useRef(false);
-  const lastPosRef = useRef({ x: 0, y: 0 });
-  const historyRef = useRef<ImageData[]>([]);
-  const bgDrawnRef = useRef(false);
+  // Form submission state
+  const [submitNote, setSubmitNote] = useState("");
+  const [submissionType, setSubmissionType] = useState("FINAL");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [filePreview, setFilePreview] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Draw background once on mount
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || bgDrawnRef.current) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    drawCyberpunkBackground(ctx, canvas.width, canvas.height);
-    bgDrawnRef.current = true;
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
+  const fetchTasks = async () => {
     setLoading(true);
     setError(null);
     const account = tokenStorage.getAccount();
@@ -183,497 +65,544 @@ export function AssistantPortal() {
       return;
     }
 
-    getSubTasksForAssignee(account.id, account.id)
-      .then((tasks) => {
-        if (cancelled) return;
-        const mapped = tasks.map(taskToAssistantTask);
-        setAllTasksFromApi(mapped);
-        if (mapped.length > 0) {
-          setSelectedTask(mapped[0].id);
+    try {
+      const tasks = await getAssignedSubTasks(account.id);
+      const mapped = tasks.map(taskToAssistantTask);
+      setAllTasks(mapped);
+
+      // Track already submitted tasks
+      const submittedIds = new Set<number>();
+      mapped.forEach(t => {
+        if (t.status === "submitted" || t.status === "completed") {
+          submittedIds.add(t.id);
         }
-      })
-      .catch((err: { message?: string }) => {
-        if (!cancelled) setError(err.message || "Failed to load assistant tasks.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
       });
-    return () => { cancelled = true; };
+      setSubmittedTasks(submittedIds);
+
+      if (mapped.length > 0 && selectedTaskId === null) {
+        setSelectedTaskId(mapped[0].id);
+      }
+    } catch (err: any) {
+      setError(err?.message || "Failed to load assigned sub-tasks.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void fetchTasks();
   }, []);
 
-  const getPos = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: (e.clientX - rect.left) * (canvas.width / rect.width),
-      y: (e.clientY - rect.top) * (canvas.height / rect.height),
-    };
-  }, []);
+  const activeTask = allTasks.find(t => t.id === selectedTaskId) || null;
 
-  const saveHistory = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    historyRef.current.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
-    if (historyRef.current.length > 40) historyRef.current.shift();
-  }, []);
+  // Reset form when active task changes
+  useEffect(() => {
+    setSubmitNote("");
+    setSubmissionType("FINAL");
+    setSelectedFile(null);
+    setFilePreview(null);
+  }, [selectedTaskId]);
 
-  const startDraw = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (activeTool !== "brush" && activeTool !== "eraser") return;
-    saveHistory();
-    isDrawingRef.current = true;
-    lastPosRef.current = getPos(e);
-  }, [activeTool, getPos, saveHistory]);
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      if (file.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setFilePreview(reader.result as string);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        setFilePreview(null);
+      }
+    }
+  };
 
-  const onDraw = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!isDrawingRef.current) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const pos = getPos(e);
-
-    ctx.beginPath();
-    ctx.moveTo(lastPosRef.current.x, lastPosRef.current.y);
-    ctx.lineTo(pos.x, pos.y);
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-
-    if (activeTool === "eraser") {
-      ctx.globalCompositeOperation = "destination-out";
-      ctx.strokeStyle = "rgba(0,0,0,1)";
-      ctx.lineWidth = brushSize * 2.5;
-    } else {
-      ctx.globalCompositeOperation = "source-over";
-      ctx.strokeStyle = activeColor;
-      ctx.lineWidth = brushSize;
-      ctx.shadowColor = activeColor;
-      ctx.shadowBlur = brushSize > 6 ? 8 : 0;
+  const handleWorkSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeTask) return;
+    
+    const account = tokenStorage.getAccount();
+    if (!account || !account.id) {
+      toast.error("User not logged in");
+      return;
     }
 
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-    ctx.globalCompositeOperation = "source-over";
-    lastPosRef.current = pos;
-  }, [activeTool, brushSize, activeColor, getPos]);
+    if (!selectedFile && !submitNote.trim()) {
+      toast.error("Please attach a file or add submission notes.");
+      return;
+    }
 
-  const stopDraw = useCallback(() => {
-    isDrawingRef.current = false;
-  }, []);
+    setSubmitting(true);
+    try {
+      await submitSubTask(activeTask.id, {
+        requesterId: account.id,
+        note: submitNote,
+        files: selectedFile ? [selectedFile] : [],
+      });
 
-  const handleUndo = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || historyRef.current.length === 0) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const prev = historyRef.current.pop()!;
-    ctx.putImageData(prev, 0, 0);
-  }, []);
-
-  const handleNavClick = (label: string) => {
-    setActiveNav(label);
+      toast.success(`Sub-task "${activeTask.label}" submitted successfully!`);
+      setSubmittedTasks(prev => new Set([...prev, activeTask.id]));
+      setAllTasks(prev => prev.map(t => t.id === activeTask.id ? { ...t, status: "submitted" } : t));
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to submit work.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const tasks = activeNav === "In Progress"
-    ? allTasksFromApi.filter(t => t.status === "active" || t.status === "in_progress")
-    : activeNav === "Submitted"
-      ? allTasksFromApi.filter(t => submitted.has(t.id) || t.status === "submitted")
-      : allTasksFromApi;
-
-  const activeTask = allTasksFromApi.find(t => t.id === selectedTask);
-
-  const toggleLayerVisibility = (id: number) => {
-    setLayers(prev => prev.map(l => l.id === id ? { ...l, visible: !l.visible } : l));
+  const navBadges = {
+    "My Task": allTasks.length,
   };
-  const toggleLayerLock = (id: number) => {
-    setLayers(prev => prev.map(l => l.id === id ? { ...l, locked: !l.locked } : l));
-  };
-
-  const handleSubmit = () => {
-    if (!activeTask) return;
-    setSubmitted(prev => new Set([...prev, activeTask.id]));
-  };
-
-  const toolList = [
-    { id: "brush", icon: Brush, label: "Brush" },
-    { id: "eraser", icon: Eraser, label: "Eraser" },
-    { id: "eyedropper", icon: Pipette, label: "Eyedropper" },
-    { id: "zoom-in", icon: ZoomIn, label: "Zoom In", action: () => setZoom(z => Math.min(400, z + 25)) },
-    { id: "zoom-out", icon: ZoomOut, label: "Zoom Out", action: () => setZoom(z => Math.max(25, z - 25)) },
-    { id: "undo", icon: RotateCcw, label: "Undo", action: handleUndo },
-  ];
 
   return (
-    <AppLayout role="assistant" activeNav={activeNav} onNavClick={handleNavClick}>
-      <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
+    <AppLayout role="assistant" activeNav="My Task" onNavClick={(label) => setActiveNav(label)} navBadges={navBadges}>
+      <div style={{ display: "flex", height: "100%", overflow: "hidden", background: "var(--mf-bg-deep)" }}>
 
-        {/* Left: Task list */}
-        <div style={{ width: 300, flexShrink: 0, borderRight: "1px solid var(--mf-border)", background: "var(--mf-bg-base)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {/* Left Column: Sub-task List */}
+        <div style={{
+          width: 320,
+          flexShrink: 0,
+          borderRight: "1px solid var(--mf-border)",
+          background: "var(--mf-bg-base)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden"
+        }}>
+          {/* List Header */}
           <div style={{ padding: "20px 18px 14px", borderBottom: "1px solid var(--mf-border)" }}>
-            <h2 style={{ fontSize: 17, fontWeight: 900, letterSpacing: "-0.01em" }}>{activeNav}</h2>
-            <p style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 3 }}>Ch.101 — Naruto Returns</p>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+              <h2 style={{ fontSize: 17, fontWeight: 900, letterSpacing: "-0.01em", display: "flex", alignItems: "center", gap: 8, color: "#fff" }}>
+                <ClipboardList size={18} color="var(--mf-green)" />
+                My Task
+              </h2>
+              <span style={{
+                fontSize: 11, fontWeight: 800, color: "var(--mf-green)",
+                background: "var(--mf-green-dim)", padding: "2px 10px", borderRadius: 10,
+                border: "1px solid rgba(57, 255, 138, 0.3)"
+              }}>
+                {allTasks.length} {allTasks.length === 1 ? "task" : "tasks"}
+              </span>
+            </div>
+            <p style={{ fontSize: 12, color: "var(--mf-text-muted)" }}>Assigned sub-tasks from Mangaka</p>
           </div>
 
-          <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px" }}>
+          {/* List Content */}
+          <div style={{ flex: 1, overflowY: "auto", padding: "12px" }}>
             {loading ? (
               <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--mf-text-muted)", fontSize: 13 }}>
-                Loading tasks...
+                <RefreshCw size={20} className="animate-spin" style={{ margin: "0 auto 10px", display: "block" }} />
+                Loading assigned sub-tasks...
               </div>
             ) : error ? (
               <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--mf-magenta)", fontSize: 13 }}>
+                <AlertTriangle size={24} style={{ margin: "0 auto 8px", display: "block" }} />
                 {error}
               </div>
-            ) : tasks.length === 0 ? (
+            ) : allTasks.length === 0 ? (
               <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--mf-text-muted)", fontSize: 13 }}>
-                No tasks found in the database.
+                <CheckSquare size={24} style={{ margin: "0 auto 8px", display: "block", opacity: 0.5 }} />
+                No sub-tasks assigned yet.
               </div>
-            ) : tasks.map(task => {
-              const isSubmitted = submitted.has(task.id);
-              const statusInfo = isSubmitted ? { label: "Submitted", color: "var(--mf-green)" } : statusMap[task.status];
-              const isSelected = selectedTask === task.id;
-              return (
-                <div
-                  key={task.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => { setSelectedTask(task.id); setViewingTask(task); }}
-                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { setSelectedTask(task.id); setViewingTask(task); } }}
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    padding: "16px",
-                    marginBottom: 12,
-                    background: isSelected
-                      ? "linear-gradient(135deg, rgba(0, 240, 255, 0.1), rgba(0, 240, 255, 0.02))"
-                      : "rgba(255,255,255,0.02)",
-                    border: `1px solid ${isSelected ? "rgba(0,240,255,0.4)" : "rgba(255,255,255,0.05)"}`,
-                    borderRadius: 16,
-                    cursor: "pointer",
-                    textAlign: "left",
-                    transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
-                    opacity: isSubmitted ? 0.6 : 1,
-                    boxShadow: isSelected ? "0 10px 30px rgba(0,240,255,0.1)" : "0 4px 12px rgba(0,0,0,0.1)",
-                    position: "relative",
-                    overflow: "hidden"
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isSelected) {
-                      e.currentTarget.style.background = "rgba(255,255,255,0.04)";
-                      e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
-                      e.currentTarget.style.transform = "translateY(-1px)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isSelected) {
-                      e.currentTarget.style.background = "rgba(255,255,255,0.02)";
-                      e.currentTarget.style.borderColor = "rgba(255,255,255,0.05)";
-                      e.currentTarget.style.transform = "none";
-                    }
-                  }}
-                >
-                  {isSelected && (
-                    <div style={{
-                      position: "absolute", top: 0, left: 0, width: 4, height: "100%",
-                      background: "var(--mf-cyan)",
-                      boxShadow: "0 0 12px var(--mf-cyan)"
-                    }} />
-                  )}
+            ) : (
+              allTasks.map(task => {
+                const isSubmitted = submittedTasks.has(task.id) || task.status === "submitted";
+                const isSelected = selectedTaskId === task.id;
+                const statusInfo = isSubmitted ? { label: "Submitted", color: "var(--mf-green)" } : (statusMap[task.status] || statusMap.pending);
 
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8, gap: 8 }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: "#fff", lineHeight: 1.4, flex: 1 }}>{task.label}</span>
+                return (
+                  <div
+                    key={task.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedTaskId(task.id)}
+                    onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setSelectedTaskId(task.id); }}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      padding: "16px",
+                      marginBottom: 10,
+                      background: isSelected
+                        ? "linear-gradient(135deg, rgba(57, 255, 138, 0.1), rgba(57, 255, 138, 0.02))"
+                        : "rgba(255,255,255,0.02)",
+                      border: `1px solid ${isSelected ? "rgba(57, 255, 138, 0.4)" : "rgba(255,255,255,0.06)"}`,
+                      borderRadius: 14,
+                      cursor: "pointer",
+                      textAlign: "left",
+                      transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+                      position: "relative",
+                      overflow: "hidden",
+                      boxShadow: isSelected ? "0 8px 24px rgba(57, 255, 138, 0.08)" : "none"
+                    }}
+                  >
+                    {isSelected && (
+                      <div style={{
+                        position: "absolute", top: 0, left: 0, width: 4, height: "100%",
+                        background: "var(--mf-green)",
+                        boxShadow: "0 0 10px var(--mf-green)"
+                      }} />
+                    )}
+
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8, gap: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: "#fff", lineHeight: 1.4, flex: 1 }}>
+                        {task.label}
+                      </span>
+                      <div
+                        title={`Priority: ${task.priority}`}
+                        style={{
+                          width: 8, height: 8, borderRadius: "50%",
+                          background: priorityColor[task.priority] || priorityColor.low,
+                          flexShrink: 0, marginTop: 4,
+                          boxShadow: `0 0 8px ${priorityColor[task.priority] || priorityColor.low}`
+                        }}
+                      />
+                    </div>
+
+                    <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", marginBottom: 10, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
+                      <Clock size={12} />
+                      Page {task.page} · Due {task.due}
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      {task.tags.map(tag => (
+                        <span key={tag} style={{
+                          padding: "2px 8px",
+                          background: `${tagColor[tag] || "rgba(255,255,255,0.5)"}15`,
+                          border: `1px solid ${tagColor[tag] || "rgba(255,255,255,0.5)"}30`,
+                          borderRadius: 100,
+                          fontSize: 10,
+                          color: tagColor[tag] || "rgba(255,255,255,0.7)",
+                          fontWeight: 700,
+                        }}>
+                          {tag}
+                        </span>
+                      ))}
+                      <span style={{
+                        marginLeft: "auto",
+                        fontSize: 10,
+                        color: statusInfo.color,
+                        fontWeight: 800,
+                        background: `${statusInfo.color}15`,
+                        padding: "2px 8px",
+                        borderRadius: 100,
+                        border: `1px solid ${statusInfo.color}30`
+                      }}>
+                        {statusInfo.label}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Right Column: Work & Task Submission Workspace */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflowY: "auto", padding: "28px 36px", gap: 24 }}>
+          {activeTask ? (
+            <>
+              {/* Task Header Banner */}
+              <div style={{
+                background: "linear-gradient(135deg, rgba(57,255,138,0.08) 0%, rgba(0,240,255,0.03) 100%)",
+                border: "1px solid rgba(57, 255, 138, 0.2)",
+                borderRadius: 18,
+                padding: "22px 28px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 20,
+                flexWrap: "wrap",
+                boxShadow: "0 12px 30px rgba(0,0,0,0.2)"
+              }}>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 800, color: "var(--mf-green)",
+                      background: "var(--mf-green-dim)", padding: "3px 10px", borderRadius: 100,
+                      border: "1px solid rgba(57,255,138,0.3)", letterSpacing: "0.04em"
+                    }}>
+                      Sub-task #{activeTask.id}
+                    </span>
+                  </div>
+                  <h1 style={{ fontSize: 22, fontWeight: 900, color: "#fff", letterSpacing: "-0.01em", margin: 0 }}>
+                    {activeTask.label}
+                  </h1>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  {(() => {
+                    const isSubmitted = submittedTasks.has(activeTask.id) || activeTask.status === "submitted";
+                    const statusInfo = isSubmitted ? { label: "Submitted", color: "var(--mf-green)" } : (statusMap[activeTask.status] || statusMap.pending);
+                    
+                    return (
+                      <div style={{
+                        padding: "8px 16px", borderRadius: 100, background: `${statusInfo.color}15`,
+                        border: `1px solid ${statusInfo.color}40`, color: statusInfo.color,
+                        fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", gap: 8
+                      }}>
+                        {isSubmitted ? <ShieldCheck size={16} /> : <Clock size={16} />}
+                        {statusInfo.label}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Task Details Card */}
+              <div style={{
+                background: "var(--mf-bg-surface)",
+                border: "1px solid var(--mf-border)",
+                borderRadius: 18,
+                padding: "24px 28px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 18
+              }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", letterSpacing: "0.08em", textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
+                  <FileText size={14} color="var(--mf-cyan)" />
+                  Task Information & Instructions
+                </div>
+
+                {/* Info Grid */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
+                  <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", padding: "14px 16px", borderRadius: 12 }}>
+                    <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginBottom: 4 }}>Deadline / Due Date</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--mf-orange)", display: "flex", alignItems: "center", gap: 6 }}>
+                      <Clock size={14} />
+                      {activeTask.due || "No Deadline Set"}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Description Box */}
+                {activeTask.description && (
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.7)", marginBottom: 8 }}>
+                      Mangaka Notes / Instructions:
+                    </div>
+                    <div style={{
+                      padding: "16px 18px",
+                      background: "rgba(0,0,0,0.3)",
+                      border: "1px solid rgba(255,255,255,0.08)",
+                      borderRadius: 12,
+                      fontSize: 13,
+                      lineHeight: 1.6,
+                      color: "rgba(255,255,255,0.85)",
+                      whiteSpace: "pre-wrap"
+                    }}>
+                      {activeTask.description}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Work Submission Panel */}
+              <div style={{
+                background: "var(--mf-bg-surface)",
+                border: "1px solid var(--mf-border)",
+                borderRadius: 18,
+                padding: "24px 28px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 20
+              }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: "#fff", letterSpacing: "0.02em", display: "flex", alignItems: "center", gap: 8 }}>
+                    <Send size={16} color="var(--mf-green)" />
+                    Submit Your Finished Work
+                  </div>
+                  {submittedTasks.has(activeTask.id) && (
+                    <span style={{ fontSize: 11, color: "var(--mf-green)", fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                      <CheckCircle size={13} /> You can resubmit or update your work below
+                    </span>
+                  )}
+                </div>
+
+                <form onSubmit={handleWorkSubmit} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+
+                  {/* Drag & Drop File Upload Area */}
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.06em" }}>
+                      ATTACH WORK FILE (.PNG, .JPG, .PSD, .CLIP, .ZIP, .PDF)
+                    </label>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileChange}
+                      accept="image/*,.psd,.clip,.zip,.pdf"
+                      style={{ display: "none" }}
+                    />
                     <div
-                      title={`Priority: ${task.priority}`}
+                      onClick={() => fileInputRef.current?.click()}
                       style={{
-                        width: 8, height: 8, borderRadius: "50%",
-                        background: priorityColor[task.priority],
-                        flexShrink: 0, marginTop: 4,
-                        boxShadow: `0 0 8px ${priorityColor[task.priority]}`
+                        padding: "28px 20px",
+                        border: "2px dashed rgba(57, 255, 138, 0.3)",
+                        borderRadius: 14,
+                        background: "rgba(57, 255, 138, 0.02)",
+                        textAlign: "center",
+                        cursor: "pointer",
+                        transition: "all 0.2s ease"
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.borderColor = "var(--mf-green)";
+                        e.currentTarget.style.background = "rgba(57, 255, 138, 0.05)";
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.borderColor = "rgba(57, 255, 138, 0.3)";
+                        e.currentTarget.style.background = "rgba(57, 255, 138, 0.02)";
+                      }}
+                    >
+                      <Upload size={28} color="var(--mf-green)" style={{ margin: "0 auto 10px", display: "block" }} />
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", marginBottom: 4 }}>
+                        {selectedFile ? selectedFile.name : "Click or drag & drop to upload artwork file"}
+                      </div>
+                      <div style={{ fontSize: 11, color: "var(--mf-text-muted)" }}>
+                        {selectedFile ? `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB` : "Supports PNG, JPG, PSD, CLIP, ZIP up to 50MB"}
+                      </div>
+                    </div>
+
+                    {/* Image Thumbnail Preview */}
+                    {filePreview && (
+                      <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 12, background: "rgba(0,0,0,0.4)", padding: 10, borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)" }}>
+                        <img src={filePreview} alt="Preview" style={{ width: 60, height: 60, objectFit: "cover", borderRadius: 6 }} />
+                        <div style={{ flex: 1, overflow: "hidden" }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{selectedFile?.name}</div>
+                          <div style={{ fontSize: 10, color: "var(--mf-green)" }}>Ready to submit</div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => { setSelectedFile(null); setFilePreview(null); }}
+                          style={{ background: "rgba(255,255,255,0.05)", border: "none", borderRadius: 6, color: "var(--mf-text-muted)", cursor: "pointer", padding: 6 }}
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Submission Type Selection */}
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.06em" }}>
+                      SUBMISSION TYPE
+                    </label>
+                    <div style={{ position: "relative" }}>
+                      <select
+                        value={submissionType}
+                        onChange={e => setSubmissionType(e.target.value)}
+                        style={{
+                          width: "100%",
+                          padding: "12px 14px",
+                          background: "rgba(255,255,255,0.02)",
+                          border: "1px solid rgba(255,255,255,0.1)",
+                          borderRadius: 10,
+                          color: "#fff",
+                          fontSize: 13,
+                          outline: "none",
+                          appearance: "none",
+                          cursor: "pointer"
+                        }}
+                      >
+                        <option value="ROUGH_SKETCH" style={{ background: "var(--mf-bg-base)", color: "#fff" }}>Rough Sketch</option>
+                        <option value="REVISION" style={{ background: "var(--mf-bg-base)", color: "#fff" }}>Revision</option>
+                        <option value="FINAL" style={{ background: "var(--mf-bg-base)", color: "#fff" }}>Final</option>
+                        <option value="TASK_LEVEL" style={{ background: "var(--mf-bg-base)", color: "#fff" }}>Task Level</option>
+                      </select>
+                      <div style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "var(--mf-text-muted)" }}>
+                        ▼
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Submission Notes Textarea */}
+                  <div>
+                    <label style={{ display: "block", fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.06em" }}>
+                      SUBMISSION REMARKS / NOTES FOR MANGAKA
+                    </label>
+                    <textarea
+                      value={submitNote}
+                      onChange={e => setSubmitNote(e.target.value)}
+                      placeholder="Add details for the Mangaka (e.g. Finished line art for background buildings, added atmospheric fog on separate layer...)"
+                      rows={3}
+                      style={{
+                        width: "100%",
+                        padding: "14px 16px",
+                        background: "rgba(255,255,255,0.02)",
+                        border: "1px solid rgba(255,255,255,0.1)",
+                        borderRadius: 10,
+                        color: "#fff",
+                        fontSize: 13,
+                        outline: "none",
+                        resize: "vertical",
+                        boxSizing: "border-box"
                       }}
                     />
                   </div>
 
-                  <div style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginBottom: 12, fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
-                    <Brush size={12} />
-                    Page {task.page} · Panel {task.panel} · Due {task.due}
-                  </div>
+                  {/* Action Submit Button */}
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    style={{
+                      width: "100%",
+                      padding: "14px",
+                      background: "linear-gradient(135deg, var(--mf-green) 0%, #00E6B4 100%)",
+                      border: "none",
+                      borderRadius: 12,
+                      color: "#000",
+                      fontSize: 14,
+                      fontWeight: 900,
+                      cursor: submitting ? "not-allowed" : "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 10,
+                      letterSpacing: "0.04em",
+                      boxShadow: "0 0 25px rgba(57, 255, 138, 0.35)",
+                      transition: "all 0.2s ease",
+                      opacity: submitting ? 0.7 : 1
+                    }}
+                  >
+                    {submitting ? (
+                      <>
+                        <RefreshCw size={16} className="animate-spin" /> Submitting Work...
+                      </>
+                    ) : (
+                      <>
+                        <Send size={16} /> SUBMIT TASK WORK
+                      </>
+                    )}
+                  </button>
 
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                    {task.tags.map(tag => (
-                      <span key={tag} style={{
-                        padding: "3px 10px",
-                        background: `${tagColor[tag] || "rgba(255,255,255,0.5)"}15`,
-                        border: `1px solid ${tagColor[tag] || "rgba(255,255,255,0.5)"}30`,
-                        borderRadius: 100,
-                        fontSize: 10,
-                        color: tagColor[tag] || "rgba(255,255,255,0.7)",
-                        fontWeight: 700,
-                        letterSpacing: "0.03em"
-                      }}>
-                        {tag}
-                      </span>
-                    ))}
-                    <span style={{
-                      marginLeft: "auto",
-                      fontSize: 11,
-                      color: statusInfo.color,
-                      fontWeight: 800,
-                      background: `${statusInfo.color}15`,
-                      padding: "3px 10px",
-                      borderRadius: 100,
-                      border: `1px solid ${statusInfo.color}30`
-                    }}>
-                      {statusInfo.label}
+                  <div style={{ padding: "10px 14px", background: "rgba(255,255,255,0.02)", borderRadius: 8, display: "flex", alignItems: "center", gap: 8 }}>
+                    <AlertTriangle size={13} color="var(--mf-orange)" />
+                    <span style={{ fontSize: 11, color: "var(--mf-text-muted)", lineHeight: 1.4 }}>
+                      Submitting work will notify the Mangaka and update your sub-task status in the project workspace.
                     </span>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Center: Canvas area */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          {/* Canvas toolbar */}
-          <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--mf-border)", background: "var(--mf-bg-base)", display: "flex", alignItems: "center", gap: 14, flexShrink: 0, flexWrap: "wrap" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--mf-text)" }}>
-              {activeTask ? `Pg ${activeTask.page} · Panel ${activeTask.panel} — ${activeTask.label}` : "Select a task"}
-            </div>
-            <div style={{ height: 18, width: 1, background: "var(--mf-border)" }} />
-            {/* Tools */}
-            <div style={{ display: "flex", gap: 4 }}>
-              {toolList.map(tool => {
-                const Icon = tool.icon;
-                const isActive = activeTool === tool.id;
-                return (
-                  <button
-                    key={tool.id}
-                    onClick={() => {
-                      if (tool.action) { tool.action(); }
-                      else setActiveTool(tool.id);
-                    }}
-                    title={tool.label}
-                    style={{ width: 32, height: 32, borderRadius: 8, background: isActive ? "var(--mf-green-dim)" : "var(--mf-bg-surface)", border: `1px solid ${isActive ? "var(--mf-green)50" : "var(--mf-border)"}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: isActive ? "var(--mf-green)" : "var(--mf-text-muted)" }}
-                  >
-                    <Icon size={14} />
-                  </button>
-                );
-              })}
-            </div>
-            <div style={{ height: 18, width: 1, background: "var(--mf-border)" }} />
-            {/* Brush size */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <button onClick={() => setBrushSize(s => Math.max(1, s - 2))} style={{ width: 24, height: 24, borderRadius: 6, background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--mf-text-muted)", fontSize: 14, fontWeight: 700 }}>−</button>
-              <span style={{ fontSize: 12, color: "var(--mf-text-secondary)", minWidth: 28, textAlign: "center" }}>{brushSize}px</span>
-              <button onClick={() => setBrushSize(s => Math.min(80, s + 2))} style={{ width: 24, height: 24, borderRadius: 6, background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--mf-text-muted)", fontSize: 14, fontWeight: 700 }}>+</button>
-            </div>
-            {/* Color swatches */}
-            <div style={{ display: "flex", gap: 5 }}>
-              {["#00F0FF", "#FF2A7A", "#39FF8A", "#FF8C42", "#FFFFFF", "#9B59B6", "#F1C40F"].map(c => (
-                <button
-                  key={c}
-                  onClick={() => setActiveColor(c)}
-                  style={{ width: 22, height: 22, borderRadius: 5, background: c, border: `2px solid ${activeColor === c ? "#fff" : "transparent"}`, cursor: "pointer", flexShrink: 0, boxShadow: activeColor === c ? `0 0 8px ${c}` : "none", transition: "all 0.12s" }}
-                />
-              ))}
-            </div>
-            {/* Zoom */}
-            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 12, color: "var(--mf-text-secondary)", minWidth: 44, textAlign: "center" }}>{zoom}%</span>
-            </div>
-          </div>
-
-          {/* Drawing canvas */}
-          <div style={{ flex: 1, background: "#0C0912", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
-            {/* Checkerboard grid (shows through transparent erased areas) */}
-            <div style={{ position: "absolute", inset: 0, backgroundImage: "linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)", backgroundSize: "20px 20px" }} />
-
-            <canvas
-              ref={canvasRef}
-              width={600}
-              height={750}
-              style={{
-                width: `${Math.min(600, 600 * zoom / 100)}px`,
-                height: `${Math.min(750, 750 * zoom / 100)}px`,
-                borderRadius: 4,
-                border: "2px solid var(--mf-border-bright)",
-                boxShadow: "0 0 60px rgba(0,0,0,0.8), 0 0 20px rgba(0,240,255,0.08)",
-                cursor: activeTool === "brush" ? "crosshair" : activeTool === "eraser" ? "cell" : "default",
-                display: "block",
-                position: "relative",
-              }}
-              onMouseDown={startDraw}
-              onMouseMove={onDraw}
-              onMouseUp={stopDraw}
-              onMouseLeave={stopDraw}
-            />
-
-            {/* HUD overlay */}
-            <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 8 }}>
-              <div style={{ padding: "4px 10px", background: "rgba(0,0,0,0.7)", border: "1px solid rgba(0,240,255,0.3)", borderRadius: 6, fontSize: 10, color: "var(--mf-cyan)", fontWeight: 700, backdropFilter: "blur(4px)", display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--mf-cyan)", boxShadow: "0 0 6px var(--mf-cyan)" }} />
-                CANVAS ACTIVE · {activeTool.toUpperCase()}
+                </form>
               </div>
+            </>
+          ) : (
+            /* Empty State */
+            <div style={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              textAlign: "center",
+              color: "var(--mf-text-muted)"
+            }}>
+              <ClipboardList size={48} color="var(--mf-green)" style={{ marginBottom: 16, opacity: 0.6 }} />
+              <h3 style={{ fontSize: 18, fontWeight: 800, color: "#fff", marginBottom: 6 }}>No Task Selected</h3>
+              <p style={{ fontSize: 13, maxWidth: 360, lineHeight: 1.5 }}>
+                Select an assigned sub-task from the left list to view instructions and submit your completed work.
+              </p>
             </div>
-
-            <div style={{ position: "absolute", bottom: 12, right: 14, display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", background: "rgba(0,0,0,0.7)", borderRadius: 8, border: "1px solid var(--mf-border)", backdropFilter: "blur(4px)" }}>
-              <div style={{ width: 14, height: 14, borderRadius: 3, background: activeColor, border: "1px solid rgba(255,255,255,0.3)", boxShadow: `0 0 6px ${activeColor}` }} />
-              <span style={{ fontSize: 10, color: "var(--mf-text-secondary)", fontWeight: 700 }}>{activeColor}</span>
-              <span style={{ fontSize: 10, color: "var(--mf-text-muted)" }}>· {brushSize}px</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Right: Layers panel */}
-        <div style={{ width: 256, flexShrink: 0, borderLeft: "1px solid var(--mf-border)", background: "var(--mf-bg-base)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid var(--mf-border)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <Layers size={15} color="var(--mf-green)" />
-              <span style={{ fontSize: 13, fontWeight: 800 }}>Layers</span>
-              <button style={{ marginLeft: "auto", width: 24, height: 24, borderRadius: 6, background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--mf-text-muted)" }}>
-                <Plus size={12} />
-              </button>
-            </div>
-          </div>
-
-          <div style={{ flex: 1, overflowY: "auto", padding: "8px 10px" }}>
-            {[...layers].reverse().map(layer => (
-              <div
-                key={layer.id}
-                style={{
-                  display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", marginBottom: 4,
-                  background: layer.id === 2 ? "var(--mf-green-dim)" : "var(--mf-bg-surface)",
-                  border: `1px solid ${layer.id === 2 ? "var(--mf-green)30" : "var(--mf-border)"}`,
-                  borderRadius: 9, opacity: layer.visible ? 1 : 0.4, transition: "opacity 0.2s",
-                }}
-              >
-                <div style={{ width: 28, height: 28, borderRadius: 6, background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", flexShrink: 0 }} />
-                <div style={{ flex: 1, overflow: "hidden" }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--mf-text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{layer.name}</div>
-                  <div style={{ fontSize: 10, color: "var(--mf-text-muted)" }}>{layer.opacity}%</div>
-                </div>
-                <button onClick={() => toggleLayerVisibility(layer.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--mf-text-muted)", padding: 2 }}>
-                  {layer.visible ? <Eye size={12} /> : <EyeOff size={12} />}
-                </button>
-                <button onClick={() => toggleLayerLock(layer.id)} style={{ background: "none", border: "none", cursor: layer.locked ? "default" : "pointer", color: layer.locked ? "var(--mf-orange)" : "var(--mf-text-muted)", padding: 2 }}>
-                  {layer.locked ? <Lock size={12} /> : <Unlock size={12} />}
-                </button>
-              </div>
-            ))}
-          </div>
-
-          {/* Opacity slider */}
-          <div style={{ padding: "12px 14px", borderTop: "1px solid var(--mf-border)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-              <span style={{ fontSize: 11, color: "var(--mf-text-muted)" }}>Layer Opacity</span>
-              <span style={{ fontSize: 11, color: "var(--mf-text-secondary)", fontWeight: 700 }}>85%</span>
-            </div>
-            <input type="range" min={0} max={100} defaultValue={85} style={{ width: "100%", accentColor: "var(--mf-green)" }} />
-          </div>
-
-          {/* Submit button */}
-          <div style={{ padding: "14px", borderTop: "1px solid var(--mf-border)" }}>
-            {activeTask && submitted.has(activeTask.id) ? (
-              <div style={{ padding: "12px", background: "var(--mf-green-dim)", border: "1px solid var(--mf-green)40", borderRadius: 10, display: "flex", alignItems: "center", gap: 8 }}>
-                <CheckCircle size={15} color="var(--mf-green)" />
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-green)" }}>Draft Submitted!</div>
-                  <div style={{ fontSize: 10, color: "var(--mf-text-muted)", marginTop: 1 }}>Sent to Kishimoto-san</div>
-                </div>
-              </div>
-            ) : (
-              <button
-                onClick={handleSubmit}
-                style={{ width: "100%", padding: "12px", background: "var(--mf-green)", border: "none", borderRadius: 10, color: "#000", fontSize: 13, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, letterSpacing: "0.04em", boxShadow: "0 0 20px rgba(57,255,138,0.35)" }}
-              >
-                <Send size={14} /> SUBMIT PANEL DRAFT
-              </button>
-            )}
-            <div style={{ marginTop: 10, padding: "8px 10px", background: "var(--mf-bg-surface)", borderRadius: 8, display: "flex", alignItems: "center", gap: 7 }}>
-              <AlertTriangle size={11} color="var(--mf-orange)" />
-              <span style={{ fontSize: 10, color: "var(--mf-text-muted)", lineHeight: 1.4 }}>Submitting sends this draft directly to the Mangaka's workspace.</span>
-            </div>
-          </div>
+          )}
         </div>
       </div>
-
-      {/* Task Details Modal */}
-      {viewingTask && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 1200, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", animation: "mf-fade-in 0.2s ease" }} onClick={() => setViewingTask(null)}>
-          <div style={{ width: "100%", maxWidth: 600, maxHeight: "92vh", overflowY: "auto", background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)", borderRadius: 16, boxShadow: "0 20px 40px rgba(0,0,0,0.5)", display: "flex", flexDirection: "column", animation: "mf-slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1)" }} onClick={e => e.stopPropagation()}>
-            {/* Header */}
-            <div style={{ padding: "24px 32px 18px", display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.01)", flexShrink: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: "rgba(0, 240, 255, 0.1)", border: "1px solid rgba(0, 240, 255, 0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-cyan)", flexShrink: 0 }}>
-                  <ClipboardList size={20} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 18, fontWeight: 900, color: "#fff", letterSpacing: "-0.01em" }}>Task Details</div>
-                  <div style={{ fontSize: 12, color: "var(--mf-text-muted)", marginTop: 4 }}>Review details before starting</div>
-                </div>
-              </div>
-              <button onClick={() => setViewingTask(null)} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, cursor: "pointer", color: "var(--mf-text-muted)", width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s ease" }} onMouseEnter={e => { e.currentTarget.style.background = "rgba(0, 240, 255, 0.1)"; e.currentTarget.style.color = "var(--mf-cyan)"; e.currentTarget.style.borderColor = "rgba(0, 240, 255, 0.3)"; }} onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.color = "var(--mf-text-muted)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; }}>
-                <X size={16} />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div style={{ padding: "28px 32px 32px", display: "flex", flexDirection: "column", gap: 24 }}>
-
-              <div style={{ padding: "16px", background: "rgba(0, 240, 255, 0.05)", border: "1px solid rgba(0, 240, 255, 0.15)", borderRadius: 10 }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-cyan)", letterSpacing: "0.08em", marginBottom: 6, textTransform: "uppercase" }}>Parent Task / Mangaka</div>
-                <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", marginBottom: 4 }}>{viewingTask.mangaka}</div>
-                <div style={{ fontSize: 13, color: "var(--mf-text-muted)", display: "flex", alignItems: "center", gap: 8 }}>
-                  <Brush size={14} /> Page {viewingTask.page}
-                  <span style={{ color: "rgba(255,255,255,0.2)" }}>•</span>
-                  Due: {viewingTask.due}
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>SUBTASK TITLE</label>
-                <div style={{ width: "100%", padding: "12px 16px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "#fff", fontSize: 14, fontWeight: 600, boxSizing: "border-box" }}>
-                  {viewingTask.label}
-                </div>
-              </div>
-
-              {viewingTask.description && (
-                <div>
-                  <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>DESCRIPTION / NOTES</label>
-                  <div style={{ width: "100%", padding: "16px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, color: "rgba(255,255,255,0.8)", fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap", boxSizing: "border-box" }}>
-                    {viewingTask.description}
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>TAGS & PRIORITY</label>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                  {viewingTask.tags.map(tag => (
-                    <span key={tag} style={{ padding: "6px 14px", background: "rgba(0, 240, 255, 0.1)", border: "1px solid rgba(0, 240, 255, 0.2)", borderRadius: 100, fontSize: 11, fontWeight: 700, color: "var(--mf-cyan)" }}>
-                      {tag}
-                    </span>
-                  ))}
-                  <span style={{ padding: "6px 14px", background: "rgba(255, 255, 255, 0.05)", border: "1px solid rgba(255, 255, 255, 0.1)", borderRadius: 100, fontSize: 11, fontWeight: 700, color: "var(--mf-text-muted)" }}>
-                    Priority: {viewingTask.priority}
-                  </span>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 8, paddingTop: 24, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                <button onClick={() => setViewingTask(null)} style={{ padding: "12px 20px", background: "transparent", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 10, color: "var(--mf-text)", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "border-color 0.15s ease" }} onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)"} onMouseLeave={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)"}>Cancel</button>
-                <button onClick={() => { setSelectedTask(viewingTask.id); setViewingTask(null); }} style={{ padding: "12px 24px", background: "var(--mf-cyan)", border: "none", borderRadius: 10, color: "#000", fontSize: 13, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, boxShadow: "0 0 15px rgba(0,240,255,0.3)", transition: "all 0.15s ease" }} onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 0 20px rgba(0,240,255,0.4)"; }} onMouseLeave={e => { e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = "0 0 15px rgba(0,240,255,0.3)"; }}>
-                  <Brush size={16} />
-                  Work on Task
-                </button>
-              </div>
-
-            </div>
-          </div>
-        </div>
-      )}
     </AppLayout>
   );
 }
