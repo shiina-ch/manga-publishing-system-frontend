@@ -13,6 +13,7 @@ import {
   getMangakaSubmissions,
   reviewSubmissionByTantou,
   submitToBoard,
+  getReviewsByTaskAndTantou,
   type AccountSummaryApi,
   type SubmissionApi,
   type SubmissionFileApi,
@@ -21,9 +22,10 @@ import { tokenStorage } from "../../storage/tokenStorage";
 import { getAccountProfile, type AccountProfile } from "../../services/accountApi";
 import { getAllAccounts, type AdminAccount } from "../../services/adminApi";
 import { Edit3 as EditIcon, Eye as EyeIcon, ListChecks, Plus, BookOpen } from "lucide-react";
-import { getProjects, getProjectById, getProductionPlans, assignMangakaToProject, assignChapterToMangaka, getProjectsByTantou, updateProjectDetailsByTantou, getProductionPlansByProject, createProductionPlan, createChapter, getChaptersByMangaka, createTaskUnderChapter, createSubTask, getSubTasks, type ProjectFromApi, type ProductionPlanResponse } from "../../services/projectApi";
+import { getProjects, getProjectById, getProductionPlans, assignMangakaToProject, assignChapterToMangaka, getProjectsByTantou, updateProjectDetailsByTantou, getProductionPlansByProject, createProductionPlan, completeProductionPlan, createChapter, completeChapter, updateChapterOverdueStatus, publishChaptersByPlan, getChaptersByMangaka, createTaskUnderChapter, createSubTask, getSubTasks, type ProjectFromApi, type ProductionPlanResponse } from "../../services/projectApi";
 import { ProductionPlanDialog } from "./ProductionPlanDialog";
 import { CreateChapterDialog } from "./CreateChapterDialog";
+import { ExtendTimelineDialog } from "./ExtendTimelineDialog";
 import { Dialog, DialogContent, DialogTitle } from "../../components/ui/dialog";
 
 function MangakaChaptersList() {
@@ -111,7 +113,6 @@ function MangakaChaptersList() {
                 {ch.startDate && <div>Start Date: <strong>{new Date(ch.startDate).toLocaleDateString()}</strong></div>}
                 {ch.endDate && <div>End Date: <strong>{new Date(ch.endDate).toLocaleDateString()}</strong></div>}
                 {ch.deadline && <div>Deadline: <strong>{new Date(ch.deadline).toLocaleDateString()}</strong></div>}
-                {ch.publishDate && <div>Publish Date: <strong>{new Date(ch.publishDate).toLocaleDateString()}</strong></div>}
               </div>
             </div>
           ))}
@@ -139,12 +140,25 @@ function AssignedProjectsList() {
   const [productionPlans, setProductionPlans] = useState<ProductionPlanResponse[]>([]);
   const [loadingPlans, setLoadingPlans] = useState(false);
   const [plansError, setPlansError] = useState<string | null>(null);
+  const [extendingTimelinePlan, setExtendingTimelinePlan] = useState<ProductionPlanResponse | null>(null);
 
   // Created Chapters Modal State
   const [selectedPlanForChapters, setSelectedPlanForChapters] = useState<ProductionPlanResponse | null>(null);
   const [chaptersForPlan, setChaptersForPlan] = useState<any[]>([]);
   const [loadingChapters, setLoadingChapters] = useState(false);
   const [chaptersError, setChaptersError] = useState<string | null>(null);
+
+  const [expandedChapterId, setExpandedChapterId] = useState<number | null>(null);
+  const [viewingFileUrl, setViewingFileUrl] = useState<string | null>(null);
+  const [viewingFileName, setViewingFileName] = useState<string | null>(null);
+
+  const [reviewingSubmissionId, setReviewingSubmissionId] = useState<number | null>(null);
+  const [reviewDecision, setReviewDecision] = useState("APPROVED");
+  const [reviewNote, setReviewNote] = useState("");
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [reviewingTaskId, setReviewingTaskId] = useState<number | null>(null);
+  const [tantouComments, setTantouComments] = useState<any[]>([]);
+  const [loadingTantouComments, setLoadingTantouComments] = useState(false);
 
   // Chapter Detail Modal & Mangaka List State
   const [selectedChapterDetail, setSelectedChapterDetail] = useState<any | null>(null);
@@ -192,6 +206,30 @@ function AssignedProjectsList() {
   useEffect(() => {
     void fetchAssistants();
   }, [fetchAssistants]);
+
+  // Periodic check for overdue chapters and publishing chapters
+  useEffect(() => {
+    const checkOverdueChapters = () => {
+      if (!productionPlans || productionPlans.length === 0) return;
+      
+      productionPlans.forEach(plan => {
+        // Automatically check to publish chapters by plan
+        publishChaptersByPlan(plan.id).catch(console.error);
+        
+        if (plan.chapters && Array.isArray(plan.chapters)) {
+          plan.chapters.forEach(chapter => {
+            // Call API to update overdue status silently
+            updateChapterOverdueStatus(chapter.id).catch(console.error);
+          });
+        }
+      });
+    };
+
+    // Run once immediately (optional, but good for instant check), then every 5 minutes
+    // But the prompt says "every 5 minites call api", so we just set the interval
+    const intervalId = setInterval(checkOverdueChapters, 5 * 60 * 1000);
+    return () => clearInterval(intervalId);
+  }, [productionPlans]);
 
   const fetchSubTasksForCurrentTask = async (taskId: number) => {
     const requesterId = tokenStorage.getAccount()?.id;
@@ -326,6 +364,28 @@ function AssignedProjectsList() {
     setPlansError(null);
   };
 
+  useEffect(() => {
+    if (reviewingTaskId) {
+      const currentUser = tokenStorage.getAccount();
+      if (currentUser?.id) {
+        setLoadingTantouComments(true);
+        getReviewsByTaskAndTantou(reviewingTaskId, currentUser.id)
+          .then(res => {
+            setTantouComments(res || []);
+          })
+          .catch(err => {
+            console.error("Failed to fetch tantou comments:", err);
+            setTantouComments([]);
+          })
+          .finally(() => {
+            setLoadingTantouComments(false);
+          });
+      }
+    } else {
+      setTantouComments([]);
+    }
+  }, [reviewingTaskId]);
+
   const handleFetchPlans = async (projectId: number) => {
     setShowPlansView(true);
     setLoadingPlans(true);
@@ -344,7 +404,7 @@ function AssignedProjectsList() {
   const fetchMangakas = useCallback(async () => {
     try {
       const accounts = await getAllAccounts();
-      const mangakas = accounts.filter(acc => 
+      const mangakas = accounts.filter(acc =>
         acc.systemRole?.some(role => role.roleName?.toUpperCase() === "MANGAKA") ||
         acc.requestedRole?.toUpperCase() === "MANGAKA"
       );
@@ -596,6 +656,42 @@ function AssignedProjectsList() {
     }
   };
 
+  const handlePostReview = async () => {
+    if (!reviewingSubmissionId) return;
+    if (!reviewNote.trim()) {
+      toast.error("Note is required.");
+      return;
+    }
+    const account = tokenStorage.getAccount();
+    if (!account?.id) {
+      toast.error("Authentication required.");
+      return;
+    }
+
+    setSubmittingReview(true);
+    try {
+      const { postSubmissionReview } = await import("../../services/workflowApi");
+      await postSubmissionReview(reviewingSubmissionId, {
+        reviewerId: account.id,
+        decision: reviewDecision,
+        note: reviewNote.trim()
+      });
+      toast.success("Review submitted successfully!");
+      setReviewingSubmissionId(null);
+      setReviewingTaskId(null);
+      setReviewNote("");
+      setReviewDecision("APPROVED");
+      // Refresh data
+      if (activeProjectForPlans) {
+        await handleOpenPlansPage(activeProjectForPlans);
+      }
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to submit review.");
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
   const handleCreatePlan = async () => {
     if (!activeProjectForPlans) return;
     if (!planTitle.trim()) {
@@ -737,13 +833,73 @@ function AssignedProjectsList() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--mf-border)", paddingBottom: 10 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <span style={{ fontSize: 14, fontWeight: 800, color: "var(--mf-cyan)" }}>{plan.title || `Production Plan #${plan.id}`}</span>
+                    {plan.planStatus && (
+                      <span style={{
+                        fontSize: 10,
+                        fontWeight: 800,
+                        padding: "3px 8px",
+                        background: plan.planStatus === "ACTIVE" ? "rgba(0, 240, 255, 0.1)" : "rgba(255, 42, 122, 0.1)",
+                        color: plan.planStatus === "ACTIVE" ? "var(--mf-cyan)" : "var(--mf-magenta)",
+                        borderRadius: 4,
+                        border: `1px solid ${plan.planStatus === "ACTIVE" ? "rgba(0, 240, 255, 0.3)" : "rgba(255, 42, 122, 0.3)"}`,
+                        textTransform: "uppercase"
+                      }}>
+                        {plan.planStatus}
+                      </span>
+                    )}
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                     {plan.approvalStatus && (
                       <span style={{ fontSize: 11, fontWeight: 800, padding: "4px 10px", background: "var(--mf-cyan-dim)", color: "var(--mf-cyan)", borderRadius: 6, border: "1px solid var(--mf-cyan-border)" }}>
                         {plan.approvalStatus}
                       </span>
                     )}
+                    <button
+                      onClick={() => {
+                        setExtendingTimelinePlan(plan);
+                      }}
+                      style={{
+                        padding: "6px 12px",
+                        background: "rgba(0, 240, 255, 0.1)",
+                        border: "1px solid rgba(0, 240, 255, 0.3)",
+                        borderRadius: 6,
+                        color: "var(--mf-cyan)",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Extend Timeline Plan
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (window.confirm("Are you sure you want to end this project?")) {
+                          try {
+                            const tantouId = tokenStorage.getAccount()?.id;
+                            if (!tantouId) throw new Error("No tantou ID found");
+                            await completeProductionPlan(plan.id, tantouId);
+                            toast.success("Plan completed successfully");
+                            if (plan.projectId) {
+                              handleFetchPlans(plan.projectId);
+                            }
+                          } catch (err: any) {
+                            toast.error("Failed to complete plan: " + (err.message || "Unknown error"));
+                          }
+                        }
+                      }}
+                      style={{
+                        padding: "6px 12px",
+                        background: "rgba(255, 42, 122, 0.1)",
+                        border: "1px solid rgba(255, 42, 122, 0.3)",
+                        borderRadius: 6,
+                        color: "var(--mf-magenta)",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Complete Plan
+                    </button>
                     <button
                       onClick={() => void handleFetchCreatedChapters(plan)}
                       style={{
@@ -770,7 +926,8 @@ function AssignedProjectsList() {
                   {plan.budget != null && <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>BUDGET</span> <strong style={{ fontSize: 13 }}>${plan.budget}</strong></div>}
                   {plan.startDate && <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>START DATE</span> <strong style={{ fontSize: 13 }}>{new Date(plan.startDate).toLocaleString()}</strong></div>}
                   {plan.endDate && <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>END DATE</span> <strong style={{ fontSize: 13 }}>{new Date(plan.endDate).toLocaleString()}</strong></div>}
-                  {plan.deadline && <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>DEADLINE</span> <strong style={{ fontSize: 13 }}>{new Date(plan.deadline).toLocaleString()}</strong></div>}
+                  {(plan.deadlineDate || plan.deadline) && <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>DEADLINE DATE</span> <strong style={{ fontSize: 13 }}>{new Date(plan.deadlineDate || plan.deadline || "").toLocaleString()}</strong></div>}
+                  {plan.publishDate && <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>PUBLISH DATE</span> <strong style={{ fontSize: 13 }}>{new Date(plan.publishDate).toLocaleString()}</strong></div>}
                   {plan.risk && <div><span style={{ color: "var(--mf-text-muted)", fontSize: 11, display: "block" }}>RISK ASSESSMENT</span> <strong style={{ fontSize: 13 }}>{plan.risk}</strong></div>}
                 </div>
 
@@ -808,17 +965,135 @@ function AssignedProjectsList() {
                 {plan.chapters && plan.chapters.length > 0 && (
                   <div style={{ marginTop: 8, paddingTop: 10, borderTop: "1px dashed var(--mf-border)" }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: "var(--mf-cyan)", marginBottom: 8 }}>CHAPTER WORKFLOW ({plan.chapters.length})</div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 8 }}>
-                      {plan.chapters.map(c => (
-                        <div key={c.id} style={{ fontSize: 12, background: "var(--mf-bg-base)", padding: "10px 12px", borderRadius: 8, border: "1px solid var(--mf-border)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <div>
-                            <span style={{ fontWeight: 800, display: "block", color: "var(--mf-text)" }}>Ch.{c.chapterNumber}: {c.title}</span>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {plan.chapters.map(c => {
+                        const isExpanded = expandedChapterId === c.id;
+                        return (
+                          <div key={c.id} style={{ background: "var(--mf-bg-base)", borderRadius: 8, border: "1px solid var(--mf-border)", overflow: "hidden", cursor: "pointer", transition: "all 0.2s" }} onClick={() => setExpandedChapterId(isExpanded ? null : c.id)}>
+                            <div style={{ fontSize: 12, padding: "10px 12px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <div>
+                                <span style={{ fontWeight: 800, display: "block", color: "var(--mf-text)" }}>Ch.{c.chapterNumber}: {c.title}</span>
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    try {
+                                      await completeChapter(c.id);
+                                      toast.success("Chapter marked as completed!");
+                                      if (plan.projectId) {
+                                        handleFetchPlans(plan.projectId);
+                                      }
+                                    } catch (err: any) {
+                                      toast.error(err.message || "Failed to mark chapter as completed");
+                                    }
+                                  }}
+                                  style={{
+                                    padding: "4px 10px",
+                                    background: "rgba(0, 255, 128, 0.1)",
+                                    border: "1px solid rgba(0, 255, 128, 0.3)",
+                                    borderRadius: 6,
+                                    color: "var(--mf-green)",
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    cursor: "pointer",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 6
+                                  }}
+                                >
+                                  <CheckCircle size={12} /> Mark Complete This Chapter
+                                </button>
+                                <span style={{ color: "var(--mf-cyan)", fontWeight: 800, fontSize: 11, background: "var(--mf-cyan-dim)", padding: "2px 8px", borderRadius: 4 }}>
+                                  {c.chapterStatus || c.status || "ACTIVE"}
+                                </span>
+                                {isExpanded ? <ChevronDown size={14} color="var(--mf-text-muted)" /> : <ChevronDown size={14} style={{ transform: "rotate(-90deg)" }} color="var(--mf-text-muted)" />}
+                              </div>
+                            </div>
+
+                            {isExpanded && (
+                              <div style={{ padding: "14px", borderTop: "1px solid var(--mf-border)", background: "rgba(0,0,0,0.15)", cursor: "default" }} onClick={(e) => e.stopPropagation()}>
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 16px", fontSize: 12, marginBottom: 16 }}>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", textTransform: "uppercase" }}>Title</span><span style={{ color: "var(--mf-text)", fontWeight: 600 }}>{c.title}</span></div>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", textTransform: "uppercase" }}>Assignee</span><span style={{ color: "var(--mf-text)", fontWeight: 600 }}>{c.ownerName || "None"}</span></div>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", textTransform: "uppercase" }}>Status</span><span style={{ color: "var(--mf-cyan)", fontWeight: 600 }}>{c.chapterStatus || c.status || "ACTIVE"}</span></div>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", textTransform: "uppercase" }}>Target Pages</span><span style={{ color: "var(--mf-text)", fontWeight: 600 }}>{c.targetPageCount || "N/A"}</span></div>
+                                  {c.startDate && <div style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", textTransform: "uppercase" }}>Start Date</span><span style={{ color: "var(--mf-text)", fontWeight: 600 }}>{new Date(c.startDate).toLocaleDateString()}</span></div>}
+                                  {c.deadline && <div style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", textTransform: "uppercase" }}>Deadline</span><span style={{ color: "var(--mf-text)", fontWeight: 600 }}>{new Date(c.deadline).toLocaleDateString()}</span></div>}
+                                  {c.endDate && <div style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", textTransform: "uppercase" }}>End Date</span><span style={{ color: "var(--mf-text)", fontWeight: 600 }}>{new Date(c.endDate).toLocaleDateString()}</span></div>}
+                                </div>
+
+
+                                {c.tasks && c.tasks.length > 0 ? (
+                                  <div>
+                                    <div style={{ fontSize: 11, fontWeight: 800, color: "var(--mf-text-secondary)", marginBottom: 8, textTransform: "uppercase" }}>Tasks</div>
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                      {c.tasks.map((task: any) => (
+                                        <div key={task.id} style={{ background: "rgba(255,255,255,0.03)", padding: "12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.05)", fontSize: 12 }}>
+                                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                                            <span style={{ fontWeight: 800, color: "var(--mf-text)" }}>{task.title}</span>
+                                            <span style={{ color: "var(--mf-cyan)", fontSize: 10, background: "var(--mf-cyan-dim)", padding: "2px 6px", borderRadius: 4, fontWeight: 800 }}>{task.taskWorkflowStatus || task.status}</span>
+                                          </div>
+                                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 12px", color: "var(--mf-text-muted)", fontSize: 11 }}>
+                                            <div><strong>Assignee:</strong> <span style={{ color: "var(--mf-text)" }}>{task.assigneeName || "None"}</span></div>
+                                            <div><strong>Type:</strong> <span style={{ color: "var(--mf-text)" }}>{task.productionTaskType}</span></div>
+                                            {task.acceptanceCriteria && <div style={{ gridColumn: "1 / -1" }}><strong>Acceptance:</strong> {task.acceptanceCriteria}</div>}
+                                            <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 4, marginTop: 2 }}>
+                                              <Clock size={12} color="var(--mf-orange)" />
+                                              <strong style={{ color: "var(--mf-orange)" }}>Deadline:</strong> {task.deadlineDate ? `${task.deadlineDate} ${task.deadlineTime || ''}` : "No deadline"}
+                                            </div>
+                                          </div>
+                                          {task.submissions && task.submissions.length > 0 && (
+                                            <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed rgba(255,255,255,0.1)" }}>
+                                              <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-secondary)", textTransform: "uppercase", marginBottom: 6 }}>Submissions</div>
+                                              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                                {task.submissions.map((sub: any) => (
+                                                  <div key={sub.id} style={{ background: "rgba(0,0,0,0.2)", padding: 8, borderRadius: 6 }}>
+                                                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                                                      <span style={{ fontSize: 11, fontWeight: 700, color: "var(--mf-text)" }}>By {sub.submittedByName}</span>
+                                                      <span style={{ fontSize: 9, color: "var(--mf-text-muted)" }}>{new Date(sub.submittedAt).toLocaleString()}</span>
+                                                    </div>
+                                                    {sub.note && <div style={{ fontSize: 10, color: "var(--mf-text-muted)", marginBottom: 6, fontStyle: "italic" }}>"{sub.note}"</div>}
+                                                    {sub.files && sub.files.length > 0 && (
+                                                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                                        {sub.files.map((f: any) => (
+                                                          <button type="button" key={f.id} onClick={(e) => { e.stopPropagation(); setViewingFileUrl(f.filePath); setViewingFileName(f.originalName); }} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--mf-cyan)", textDecoration: "none", background: "rgba(0,240,255,0.05)", padding: "4px 8px", borderRadius: 4, border: "1px solid rgba(0,240,255,0.1)", cursor: "pointer", width: "100%", textAlign: "left" }}>
+                                                            <FileText size={12} />
+                                                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.originalName}</span>
+                                                            <span style={{ color: "var(--mf-text-muted)", fontSize: 9, marginLeft: "auto" }}>{f.fileType}</span>
+                                                          </button>
+                                                        ))}
+                                                      </div>
+                                                    )}
+                                                    <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+                                                      <button
+                                                        onClick={(e) => { e.stopPropagation(); setReviewingSubmissionId(sub.id); setReviewingTaskId(task.id); }}
+                                                        style={{ padding: "8px 16px", background: "var(--mf-cyan)", border: "none", borderRadius: 6, color: "#000", fontSize: 12, fontWeight: 800, cursor: "pointer", transition: "all 0.2s", display: "flex", alignItems: "center", gap: 6, boxShadow: "0 4px 12px rgba(0, 240, 255, 0.2)" }}
+                                                        onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 6px 16px rgba(0, 240, 255, 0.3)"; }}
+                                                        onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "0 4px 12px rgba(0, 240, 255, 0.2)"; }}
+                                                      >
+                                                        Review Task
+                                                      </button>
+                                                    </div>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div style={{ fontSize: 12, color: "var(--mf-text-muted)", fontStyle: "italic", background: "rgba(255,255,255,0.02)", padding: "10px", borderRadius: 8, textAlign: "center", border: "1px dashed rgba(255,255,255,0.08)" }}>
+                                    No tasks in this chapter yet.
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
-                          <span style={{ color: "var(--mf-cyan)", fontWeight: 800, fontSize: 11, background: "var(--mf-cyan-dim)", padding: "2px 8px", borderRadius: 4 }}>
-                            {c.chapterStatus || c.status || "ACTIVE"}
-                          </span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -826,6 +1101,124 @@ function AssignedProjectsList() {
             ))}
           </div>
         )}
+
+        {/* File Viewer Modal */}
+        {viewingFileUrl && (
+          <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.85)", backdropFilter: "blur(4px)", zIndex: 1000, display: "flex", flexDirection: "column" }}>
+            <div style={{ padding: "16px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.5)", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+              <div style={{ color: "#fff", fontWeight: 800, display: "flex", alignItems: "center", gap: 10 }}>
+                <FileText size={20} color="var(--mf-cyan)" />
+                {viewingFileName || "Viewing File"}
+              </div>
+              <div style={{ display: "flex", gap: 12 }}>
+                <a href={viewingFileUrl} target="_blank" rel="noreferrer" style={{ background: "var(--mf-cyan)", color: "#000", padding: "6px 12px", borderRadius: 6, fontSize: 12, fontWeight: 800, textDecoration: "none" }}>Open in New Tab</a>
+                <button onClick={() => { setViewingFileUrl(null); setViewingFileName(null); }} style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", cursor: "pointer", padding: "6px", borderRadius: 6, display: "flex", alignItems: "center" }}><X size={18} /></button>
+              </div>
+            </div>
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, overflow: "auto" }}>
+              {viewingFileUrl.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
+                <img src={viewingFileUrl} alt="Preview" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 8, boxShadow: "0 10px 40px rgba(0,0,0,0.5)" }} />
+              ) : (
+                <div style={{ color: "var(--mf-text-muted)", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: 40, background: "rgba(255,255,255,0.05)", borderRadius: 12 }}>
+                  <FileText size={48} />
+                  <p style={{ margin: 0 }}>Preview not available for this file type.</p>
+                  <a href={viewingFileUrl} target="_blank" rel="noreferrer" style={{ color: "var(--mf-cyan)", fontWeight: 700, textDecoration: "none" }}>Download or Open File</a>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Review Modal */}
+        <Dialog open={!!reviewingSubmissionId} onOpenChange={(open) => {
+          if (!open) {
+            setReviewingSubmissionId(null);
+            setReviewingTaskId(null);
+            setReviewNote("");
+            setReviewDecision("APPROVED");
+          }
+        }}>
+          <DialogContent className="max-w-md bg-[var(--mf-bg-surface)] text-[var(--mf-text)] border-[var(--mf-border)]">
+            <DialogTitle className="text-lg font-bold text-[var(--mf-text)]">
+              Review Task Submission
+            </DialogTitle>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 16 }}>
+              {loadingTantouComments ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "var(--mf-text-muted)" }}>
+                  <Loader2 size={14} className="animate-spin" /> Loading past reviews...
+                </div>
+              ) : (
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 8 }}>Comments</label>
+                  {tantouComments.length > 0 ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "150px", overflowY: "auto", paddingRight: 8 }}>
+                      {tantouComments.map((comment: any, idx: number) => (
+                        <div key={idx} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "8px 10px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 11 }}>
+                            <span style={{ fontWeight: 800, color: "var(--mf-cyan)" }}>{comment.reviewerName || "You"}</span>
+                            <span style={{ color: "var(--mf-text-muted)" }}>{new Date(comment.reviewedAt).toLocaleString()}</span>
+                          </div>
+                          <div style={{ fontSize: 12, color: "var(--mf-text)" }}>{comment.comment}</div>
+                          <div style={{ fontSize: 10, marginTop: 4, color: comment.decision === "APPROVED" ? "var(--mf-green)" : "var(--mf-red)", fontWeight: 700 }}>
+                            {comment.decision}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: "var(--mf-text-muted)", fontStyle: "italic", background: "rgba(255,255,255,0.02)", padding: "10px", borderRadius: 8, textAlign: "center", border: "1px dashed rgba(255,255,255,0.08)" }}>
+                      No past comments found.
+                    </div>
+                  )}
+                </div>
+              )}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 8 }}>Decision</label>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <button
+                    onClick={() => setReviewDecision("APPROVED")}
+                    style={{ flex: 1, padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 800, display: "flex", justifyContent: "center", alignItems: "center", gap: 8, border: reviewDecision === "APPROVED" ? "2px solid var(--mf-green)" : "1px solid var(--mf-border)", background: reviewDecision === "APPROVED" ? "rgba(0,255,0,0.1)" : "var(--mf-bg-base)", color: reviewDecision === "APPROVED" ? "var(--mf-green)" : "var(--mf-text-muted)", cursor: "pointer" }}
+                  >
+                    <CheckCircle size={16} /> APPROVED
+                  </button>
+                  <button
+                    onClick={() => setReviewDecision("REJECTED")}
+                    style={{ flex: 1, padding: "10px", borderRadius: 8, fontSize: 13, fontWeight: 800, display: "flex", justifyContent: "center", alignItems: "center", gap: 8, border: reviewDecision === "REJECTED" ? "2px solid var(--mf-red)" : "1px solid var(--mf-border)", background: reviewDecision === "REJECTED" ? "rgba(255,0,0,0.1)" : "var(--mf-bg-base)", color: reviewDecision === "REJECTED" ? "var(--mf-red)" : "var(--mf-text-muted)", cursor: "pointer" }}
+                  >
+                    <X size={16} /> REJECTED
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", display: "block", marginBottom: 4 }}>Note *</label>
+                <textarea
+                  value={reviewNote}
+                  onChange={(e) => setReviewNote(e.target.value)}
+                  placeholder="Provide feedback on the submission..."
+                  rows={4}
+                  style={{ width: "100%", padding: "8px 12px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13, resize: "none" }}
+                />
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 8 }}>
+                <button
+                  onClick={() => { setReviewingSubmissionId(null); setReviewingTaskId(null); }}
+                  disabled={submittingReview}
+                  style={{ padding: "8px 16px", background: "var(--mf-bg-base)", border: "1px solid var(--mf-border)", borderRadius: 8, color: "var(--mf-text)", fontSize: 13, fontWeight: 700, cursor: submittingReview ? "not-allowed" : "pointer", opacity: submittingReview ? 0.6 : 1 }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handlePostReview}
+                  disabled={submittingReview}
+                  style={{ padding: "8px 16px", background: "var(--mf-cyan)", border: "none", borderRadius: 8, color: "#000", fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", gap: 8, cursor: submittingReview ? "not-allowed" : "pointer", opacity: submittingReview ? 0.6 : 1 }}
+                >
+                  {submittingReview ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle size={16} />}
+                  Submit Review
+                </button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Create Production Plan Dialog */}
         <Dialog open={showCreatePlanDialog} onOpenChange={(open) => !open && setShowCreatePlanDialog(false)}>
@@ -990,7 +1383,6 @@ function AssignedProjectsList() {
                         <div>Mangaka: <strong style={{ color: ch.assigneeName ? "var(--mf-cyan)" : "var(--mf-text-muted)" }}>{ch.assigneeName || "None"}</strong></div>
                         {ch.targetPageCount != null && <div>Target Pages: <strong>{ch.targetPageCount}</strong></div>}
                         {ch.priority && <div>Priority: <strong>{ch.priority}</strong></div>}
-                        {ch.publishDate && <div>Publish Date: <strong>{new Date(ch.publishDate).toLocaleDateString()}</strong></div>}
                         {ch.startDate && <div>Start Date: <strong>{new Date(ch.startDate).toLocaleDateString()}</strong></div>}
                         {ch.endDate && <div>End Date: <strong>{new Date(ch.endDate).toLocaleDateString()}</strong></div>}
                         {ch.deadline && <div>Deadline: <strong>{new Date(ch.deadline).toLocaleDateString()}</strong></div>}
@@ -1071,7 +1463,6 @@ function AssignedProjectsList() {
                           {selectedChapterDetail.startDate && <div>Start Date: <strong>{new Date(selectedChapterDetail.startDate).toLocaleDateString()}</strong></div>}
                           {selectedChapterDetail.endDate && <div>End Date: <strong>{new Date(selectedChapterDetail.endDate).toLocaleDateString()}</strong></div>}
                           {selectedChapterDetail.deadline && <div>Deadline: <strong>{new Date(selectedChapterDetail.deadline).toLocaleDateString()}</strong></div>}
-                          {selectedChapterDetail.publishDate && <div>Publish Date: <strong>{new Date(selectedChapterDetail.publishDate).toLocaleDateString()}</strong></div>}
                         </div>
 
                         {/* Mangaka Assignment Dropdown */}
@@ -1700,6 +2091,21 @@ function AssignedProjectsList() {
             </div>
           </DialogContent>
         </Dialog>
+        {/* Extend Timeline Plan Modal */}
+        {extendingTimelinePlan && (
+          <ExtendTimelineDialog
+            planId={extendingTimelinePlan.id}
+            currentEndDate={extendingTimelinePlan.endDate}
+            currentPublishDate={extendingTimelinePlan.publishDate}
+            onClose={() => setExtendingTimelinePlan(null)}
+            onSuccess={() => {
+              setExtendingTimelinePlan(null);
+              if (extendingTimelinePlan.projectId) {
+                handleFetchPlans(extendingTimelinePlan.projectId);
+              }
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -2253,7 +2659,7 @@ function FileCard({ file }: { file: SubmissionFileApi }) {
   const canPreview = Boolean(path && canOpen && isImageFile(file));
   const isPsd = isPsdFile(file);
   const isPdf = fileContentType(file).toLowerCase().includes("pdf") || fileName(file).toLowerCase().endsWith(".pdf");
-  
+
   const [previewOpen, setPreviewOpen] = useState(false);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
@@ -2266,10 +2672,10 @@ function FileCard({ file }: { file: SubmissionFileApi }) {
       setFetchError(null);
       return;
     }
-    
+
     // Strip backend origin to use Vite proxy and bypass CORS
     const fetchPath = path.replace(/https?:\/\/[^\/]+(\/uploads\/)/, "$1");
-    
+
     let active = true;
     const loadBlob = async () => {
       setLoadingPreview(true);
@@ -2281,36 +2687,36 @@ function FileCard({ file }: { file: SubmissionFileApi }) {
         });
         if (!res.ok) throw new Error(`HTTP Error ${res.status}`);
         const blob = await res.blob();
-        
-        const displayBlob = (isPdf && blob.type !== "application/pdf") 
-            ? new Blob([blob], { type: "application/pdf" }) 
-            : blob;
-            
+
+        const displayBlob = (isPdf && blob.type !== "application/pdf")
+          ? new Blob([blob], { type: "application/pdf" })
+          : blob;
+
         const url = URL.createObjectURL(displayBlob);
         if (active) setObjectUrl(url);
       } catch (err) {
         if (active) {
-           console.error("Preview fetch error", err);
-           setFetchError(err instanceof Error ? err.message : String(err));
-           setObjectUrl(path); 
+          console.error("Preview fetch error", err);
+          setFetchError(err instanceof Error ? err.message : String(err));
+          setObjectUrl(path);
         }
       } finally {
         if (active) setLoadingPreview(false);
       }
     };
-    
+
     if (path.startsWith("http") || path.startsWith("/")) {
-       loadBlob();
+      loadBlob();
     } else {
-       setObjectUrl(path);
+      setObjectUrl(path);
     }
-    
+
     return () => { active = false; };
   }, [previewOpen, path, isPdf]);
 
   return (
     <>
-      <div 
+      <div
         onClick={() => { if (canOpen && !isPsd) setPreviewOpen(true); }}
         style={{ background: "var(--mf-bg-elevated)", border: "1px solid var(--mf-border)", borderRadius: 12, overflow: "hidden", display: "flex", flexDirection: "column", transition: "transform 0.2s, box-shadow 0.2s", cursor: (canOpen && !isPsd) ? "pointer" : "default" }}
         onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.3)"; }}
@@ -2333,30 +2739,30 @@ function FileCard({ file }: { file: SubmissionFileApi }) {
           {isPsd && <div style={{ fontSize: 10, color: "var(--mf-magenta)", fontWeight: 800, marginTop: 4 }}>NO PREVIEW</div>}
         </div>
       </div>
-      
+
       {previewOpen && (
         <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
           <DialogContent style={{ maxWidth: "90vw", height: "90vh", padding: 0, overflow: "hidden", backgroundColor: "#0a0a0a", borderColor: "#222" }}>
             <DialogTitle className="sr-only">Preview {fileName(file)}</DialogTitle>
             {loadingPreview ? (
               <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--mf-text-muted)" }}>
-                 <Loader2 size={32} style={{ animation: "spin 1s linear infinite" }} />
+                <Loader2 size={32} style={{ animation: "spin 1s linear infinite" }} />
               </div>
             ) : isPdf ? (
               <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", backgroundColor: "#fff" }}>
-                 {fetchError && (
-                   <div style={{ padding: 10, background: "#fff3f3", color: "#d32f2f", fontSize: 12, borderBottom: "1px solid #ffcdd2" }}>
-                     Warning: Failed to load file securely ({fetchError}). The preview below might be empty or blocked by the browser. 
-                     <a href={path || ""} target="_blank" rel="noreferrer" style={{ marginLeft: 8, textDecoration: "underline", fontWeight: "bold" }}>Open File Manually</a>
-                   </div>
-                 )}
-                 <object data={objectUrl || ""} type="application/pdf" style={{ width: "100%", flex: 1, border: "none" }}>
-                   <embed src={objectUrl || ""} type="application/pdf" style={{ width: "100%", height: "100%", border: "none" }} />
-                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: 20 }}>
-                     <p style={{ color: "#000", marginBottom: 12 }}>Trình duyệt của bạn không hỗ trợ hiển thị PDF trực tiếp.</p>
-                     <a href={path || ""} target="_blank" rel="noreferrer" style={{ padding: "8px 16px", background: "var(--mf-cyan)", color: "#000", borderRadius: 8, textDecoration: "none", fontWeight: 800 }}>Tải xuống / Mở trong Tab mới</a>
-                   </div>
-                 </object>
+                {fetchError && (
+                  <div style={{ padding: 10, background: "#fff3f3", color: "#d32f2f", fontSize: 12, borderBottom: "1px solid #ffcdd2" }}>
+                    Warning: Failed to load file securely ({fetchError}). The preview below might be empty or blocked by the browser.
+                    <a href={path || ""} target="_blank" rel="noreferrer" style={{ marginLeft: 8, textDecoration: "underline", fontWeight: "bold" }}>Open File Manually</a>
+                  </div>
+                )}
+                <object data={objectUrl || ""} type="application/pdf" style={{ width: "100%", flex: 1, border: "none" }}>
+                  <embed src={objectUrl || ""} type="application/pdf" style={{ width: "100%", height: "100%", border: "none" }} />
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: 20 }}>
+                    <p style={{ color: "#000", marginBottom: 12 }}>Trình duyệt của bạn không hỗ trợ hiển thị PDF trực tiếp.</p>
+                    <a href={path || ""} target="_blank" rel="noreferrer" style={{ padding: "8px 16px", background: "var(--mf-cyan)", color: "#000", borderRadius: 8, textDecoration: "none", fontWeight: 800 }}>Tải xuống / Mở trong Tab mới</a>
+                  </div>
+                </object>
               </div>
             ) : canPreview ? (
               <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>

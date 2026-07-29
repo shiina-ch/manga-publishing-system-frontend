@@ -455,23 +455,32 @@ function OverviewTab({
           background: "var(--mf-bg-surface)", border: "1px solid var(--mf-border)",
           borderRadius: 16, overflow: "hidden", display: "flex", flexDirection: "column",
         }}>
-          <SectionHeader title="Production Plans & Sketches" subtitle="Overview of plannings and sketch pages" />
+          <SectionHeader title="Production Plans" subtitle="Overview of production plans" />
           <div style={{ flex: 1, padding: "16px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
-            {/* Sketch Pages Progress */}
+            {/* Production Plans Progress */}
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, color: "var(--mf-text-secondary)", marginBottom: 8 }}>
-                <span>Sketch Pages Status</span>
-                <span>{sketchPages.filter(p => p.status === "COMPLETED" || p.status === "completed").length}/{Math.max(sketchPages.length, 1)} Completed</span>
+                <span>Production Plans Status</span>
+                <span>{plannings.filter(p => p.status === "COMPLETED" || p.status === "completed").length}/{Math.max(plannings.length, 1)} Completed</span>
               </div>
-              <div style={{ width: "100%", height: 8, background: "var(--mf-bg-elevated)", borderRadius: 4, overflow: "hidden", display: "flex" }}>
+              <div style={{ width: "100%", height: 8, background: "var(--mf-bg-elevated)", borderRadius: 4, overflow: "hidden", display: "flex", marginBottom: 8 }}>
                 <div style={{
-                  width: `${(sketchPages.filter(p => p.status === "COMPLETED" || p.status === "completed").length / Math.max(sketchPages.length, 1)) * 100}%`,
+                  width: `${(plannings.filter(p => p.status === "COMPLETED" || p.status === "completed").length / Math.max(plannings.length, 1)) * 100}%`,
                   background: "var(--mf-green)"
-                }} />
+                }} title="Completed" />
                 <div style={{
-                  width: `${(sketchPages.filter(p => p.status === "IN_PROGRESS" || p.status === "in_progress").length / Math.max(sketchPages.length, 1)) * 100}%`,
+                  width: `${(plannings.filter(p => p.status === "IN_PRODUCTION" || p.status === "in_production" || p.status === "ACTIVE" || p.status === "active").length / Math.max(plannings.length, 1)) * 100}%`,
                   background: "var(--mf-cyan)"
-                }} />
+                }} title="In Production" />
+                <div style={{
+                  width: `${(plannings.filter(p => p.status === "EXTENDED" || p.status === "extended").length / Math.max(plannings.length, 1)) * 100}%`,
+                  background: "var(--mf-orange)"
+                }} title="Extended" />
+              </div>
+              <div style={{ display: "flex", gap: 12, fontSize: 10, color: "var(--mf-text-muted)", fontWeight: 600 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--mf-green)" }} /> Completed</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--mf-cyan)" }} /> In Production</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 4 }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--mf-orange)" }} /> Extended</div>
               </div>
             </div>
 

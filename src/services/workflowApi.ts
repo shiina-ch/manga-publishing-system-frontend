@@ -243,6 +243,21 @@ export function getSubmissionReviews(): Promise<SubmissionReviewApi[]> {
   return apiRequest<SubmissionReviewApi[]>("/submissionreviews");
 }
 
+export function getReviewsForSubmission(submissionId: number): Promise<SubmissionReviewApi[]> {
+  return apiRequest<SubmissionReviewApi[]>(`/submissionreviews/submission/${submissionId}`);
+}
+
+export function getReviewsByTaskAndTantou(taskId: number, tantouId: number): Promise<SubmissionReviewApi[]> {
+  return apiRequest<SubmissionReviewApi[]>(`/submissionreviews/tasks/${taskId}/tantous/${tantouId}`);
+}
+
+export function postSubmissionReview(submissionId: number, payload: { reviewerId: number, decision: string, note: string }): Promise<SubmissionReviewApi> {
+  return apiRequest<SubmissionReviewApi>(`/workflow/submissions/${submissionId}/reviews`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }, [200, 201]);
+}
+
 export function getTasks(): Promise<TaskApi[]> {
   return apiRequest<TaskApi[]>("/tasks");
 }
@@ -328,10 +343,17 @@ export function submissionToEditorProposal(submission: SubmissionApi): EditorPro
 }
 
 export function taskToAssistantTask(task: TaskApi | SketchTaskApi | SubTaskApi): AssistantTask {
-  const status = normalizeStatus(task.status);
+  const rawStatus = "subtaskStatus" in task && task.subtaskStatus ? task.subtaskStatus : task.status;
+  const status = normalizeStatus(rawStatus);
   const title = "title" in task ? task.title : ("taskType" in task ? task.taskType : "");
   const description = task.description || "";
-  const deadline = "deadline" in task ? task.deadline : ("completedAt" in task ? task.completedAt : "");
+  
+  let deadline = "";
+  if ("deadlineDate" in task && task.deadlineDate) {
+    deadline = `${task.deadlineDate} ${task.deadlineTime || ""}`.trim();
+  } else {
+    deadline = "deadline" in task ? (task.deadline || "") : ("completedAt" in task ? (task.completedAt || "") : "");
+  }
   
   let tags = ["Production"];
   if ("productionTaskType" in task && task.productionTaskType) {
@@ -354,7 +376,7 @@ export function taskToAssistantTask(task: TaskApi | SketchTaskApi | SubTaskApi):
     description: description,
     tags,
     mangaka: "parentTaskId" in task ? `Task #${task.parentTaskId}` : "Unassigned",
-    due: formatDateLabel(deadline || ""),
+    due: ("deadlineDate" in task && task.deadlineDate) ? deadline : formatDateLabel(deadline || ""),
     priority: status === "active" || status === "in_progress" ? "high" : "medium",
     status: status === "completed" ? "submitted" : status || "pending",
   };
@@ -384,10 +406,14 @@ export interface SubTaskApi {
   description?: string;
   productionTaskType?: string;
   status: string;
+  subtaskStatus?: string;
   deadline?: string;
+  deadlineDate?: string;
+  deadlineTime?: string;
   assigneeId: number;
   assigneeName?: string;
-  parentTaskId: number;
+  parentTaskId?: number;
+  taskId?: number;
 }
 
 export async function createSubTask(taskId: number, payload: CreateSubTaskRequest): Promise<void> {
@@ -445,23 +471,23 @@ export async function getSubTasksForAssignee(assigneeId: number, requesterId?: n
   return getAssignedSubTasks(assigneeId);
 }
 
-export async function submitSubTaskWork(subTaskId: number, payload: { note?: string; fileUrl?: string; file?: File }): Promise<void> {
-  try {
-    const formData = new FormData();
-    if (payload.note) formData.append("note", payload.note);
-    if (payload.fileUrl) formData.append("contentUrl", payload.fileUrl);
-    if (payload.file) formData.append("file", payload.file);
+export async function submitSubTask(subTaskId: number, payload: { requesterId: number; note: string; files: File[] }): Promise<void> {
+  const formData = new FormData();
+  formData.append("requesterId", payload.requesterId.toString());
+  if (payload.note) formData.append("note", payload.note);
+  payload.files.forEach(file => formData.append("files", file));
 
-    await apiRequest<unknown>(`/subtasks/${subTaskId}/submit`, {
+  try {
+    await apiRequest<unknown>(`/workflow/subtasks/${subTaskId}/submissions`, {
       method: "POST",
       body: formData,
     });
   } catch (err) {
-    console.warn(`POST /subtasks/${subTaskId}/submit failed, trying status update...`, err);
+    console.warn(`POST /workflow/subtasks/${subTaskId}/submissions failed, trying status update...`, err);
     try {
       await apiRequest<unknown>(`/subtasks/${subTaskId}/status`, {
         method: "PUT",
-        body: JSON.stringify({ status: "submitted", note: payload.note, contentUrl: payload.fileUrl }),
+        body: JSON.stringify({ status: "submitted", note: payload.note }),
       });
     } catch (err2) {
       console.warn("API fallback failed, updating local mock state", err2);
@@ -473,8 +499,72 @@ export async function submitSubTaskWork(subTaskId: number, payload: { note?: str
   if (idx !== -1) {
     mockTasks[idx].status = "submitted";
     mockTasks[idx].note = payload.note;
-    mockTasks[idx].completedUrl = payload.fileUrl;
     localStorage.setItem("mock_subtasks", JSON.stringify(mockTasks));
   }
 }
 
+export async function submitTask(taskId: number, payload: { requesterId: number; submissionType: string; note: string; files: File[] }): Promise<void> {
+  const formData = new FormData();
+  formData.append("requesterId", payload.requesterId.toString());
+  formData.append("submissionType", payload.submissionType);
+  if (payload.note) formData.append("note", payload.note);
+  payload.files.forEach(file => formData.append("files", file));
+
+  await apiRequest<unknown>(`/workflow/tasks/${taskId}/submissions`, {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export interface ActiveSubmissionFileApi {
+  id: number;
+  originalName: string | null;
+  filePath: string | null;
+  fileType: string | null;
+  fileSize: number | null;
+}
+
+export interface ActiveSubmissionApi {
+  id: number;
+  contentUrl: string | null;
+  description?: string | null;
+  productionStatus: string | null;
+  submittedAt: string | null;
+  files: ActiveSubmissionFileApi[];
+}
+
+export interface ActiveSubTaskApi {
+  id: number;
+  title: string | null;
+  description: string | null;
+  deadlineDate: string | null;
+  deadlineTime: string | null;
+  subtaskStatus: string | null;
+  overdue: boolean;
+  submissions: ActiveSubmissionApi[];
+}
+
+export interface ActiveTaskApi {
+  id: number;
+  title: string | null;
+  description: string | null;
+  taskWorkflowStatus: string | null;
+  productionTaskType: string | null;
+  acceptanceCriteria: string | null;
+  deadlineDate: string | null;
+  deadlineTime: string | null;
+  progressPercentage: number;
+  subTasks: ActiveSubTaskApi[];
+}
+
+export async function getMangakaActiveTasks(mangakaId: number): Promise<ActiveTaskApi[]> {
+  try {
+    const res = await apiRequest<ActiveTaskApi[]>(`/tasks/mangaka/${mangakaId}`, {
+      method: "GET",
+    });
+    return res || [];
+  } catch (err) {
+    console.error("Failed to fetch active tasks", err);
+    return [];
+  }
+}

@@ -20,6 +20,7 @@ export interface ProductionPlan {
   publishDate?: string | null;
   deadlineDate?: string | null;
   chapters?: ChapterApi[] | null;
+  planStatus?: string | null;
 }
 
 export interface ProjectAccountSummary {
@@ -190,6 +191,28 @@ export async function updateChapter(chapterId: number, payload: CreateChapterPay
   });
 }
 
+export function completeChapter(chapterId: number): Promise<any> {
+  return apiRequest<any>(`/chapters/${chapterId}/completed`, {
+    method: "PUT",
+  });
+}
+
+export function updateChapterOverdueStatus(chapterId: number): Promise<any> {
+  return apiRequest<any>(`/chapters/${chapterId}/update-overdue`, {
+    method: "PUT",
+  });
+}
+
+export function publishChaptersByPlan(planId: number): Promise<any> {
+  return apiRequest<any>(`/chapters/publish-by-plan/${planId}`, {
+    method: "PUT",
+  });
+}
+
+export function getPublishedChapters(): Promise<any[]> {
+  return apiRequest<any[]>(`/chapters/published`);
+}
+
 export interface CreateProductionPlanPayload {
   title: string;
   startDate?: string;
@@ -219,6 +242,26 @@ export function getProductionPlans(): Promise<ProductionPlanResponse[]> {
 
 export function getProductionPlansByProject(projectId: number): Promise<ProductionPlanResponse[]> {
   return apiRequest<ProductionPlanResponse[]>(`/v1/projects/${projectId}/production-plans`);
+}
+
+export function completeProductionPlan(planId: number, requesterId: number): Promise<ProductionPlanResponse> {
+  return apiRequest<ProductionPlanResponse>(`/v1/production-plans/${planId}/complete?requesterId=${requesterId}`, {
+    method: "PUT",
+  });
+}
+
+export interface ExtendTimelinePayload {
+  newEndDate: string;
+  publishDate?: string;
+  reasonCode: string;
+  reasonNote: string;
+}
+
+export function extendProductionPlanTimeline(planId: number, requesterId: number, payload: ExtendTimelinePayload): Promise<ProductionPlanResponse> {
+  return apiRequest<ProductionPlanResponse>(`/v1/production-plans/${planId}/extend?requesterId=${requesterId}`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function getChaptersByMangaka(mangakaId: number): Promise<any[]> {

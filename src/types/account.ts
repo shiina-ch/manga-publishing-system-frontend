@@ -42,6 +42,7 @@ export interface AccountResponse {
   rejectionReason: string | null;
   rejectedById: number | null;
   rejectedAt: string | null;
+  systemRole?: Array<{ id?: number; roleName?: string }> | null;
 }
 
 export interface RegistrationRequest {

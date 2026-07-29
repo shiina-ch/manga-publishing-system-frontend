@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import {
   getAssignedSubTasks,
-  submitSubTaskWork,
+  submitSubTask,
   taskToAssistantTask,
   type AssistantTask
 } from "../../services/workflowApi";
@@ -34,6 +34,9 @@ const statusMap: Record<string, { label: string; color: string }> = {
   in_progress: { label: "In Progress", color: "var(--mf-cyan)" },
   pending: { label: "Pending", color: "var(--mf-text-muted)" },
   submitted: { label: "Submitted", color: "var(--mf-green)" },
+  todo: { label: "To Do", color: "var(--mf-text-muted)" },
+  review: { label: "Review", color: "var(--mf-orange)" },
+  done: { label: "Done", color: "var(--mf-green)" },
 };
 
 export function AssistantPortal() {
@@ -46,7 +49,7 @@ export function AssistantPortal() {
 
   // Form submission state
   const [submitNote, setSubmitNote] = useState("");
-  const [submitFileUrl, setSubmitFileUrl] = useState("");
+  const [submissionType, setSubmissionType] = useState("FINAL");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -95,7 +98,7 @@ export function AssistantPortal() {
   // Reset form when active task changes
   useEffect(() => {
     setSubmitNote("");
-    setSubmitFileUrl("");
+    setSubmissionType("FINAL");
     setSelectedFile(null);
     setFilePreview(null);
   }, [selectedTaskId]);
@@ -119,17 +122,24 @@ export function AssistantPortal() {
   const handleWorkSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeTask) return;
-    if (!selectedFile && !submitFileUrl.trim() && !submitNote.trim()) {
-      toast.error("Please attach a file, provide a URL, or add submission notes.");
+    
+    const account = tokenStorage.getAccount();
+    if (!account || !account.id) {
+      toast.error("User not logged in");
+      return;
+    }
+
+    if (!selectedFile && !submitNote.trim()) {
+      toast.error("Please attach a file or add submission notes.");
       return;
     }
 
     setSubmitting(true);
     try {
-      await submitSubTaskWork(activeTask.id, {
+      await submitSubTask(activeTask.id, {
+        requesterId: account.id,
         note: submitNote,
-        fileUrl: submitFileUrl,
-        file: selectedFile || undefined,
+        files: selectedFile ? [selectedFile] : [],
       });
 
       toast.success(`Sub-task "${activeTask.label}" submitted successfully!`);
@@ -314,13 +324,6 @@ export function AssistantPortal() {
                     }}>
                       Sub-task #{activeTask.id}
                     </span>
-                    <span style={{
-                      fontSize: 11, fontWeight: 700, color: priorityColor[activeTask.priority],
-                      background: "rgba(255,255,255,0.04)", padding: "3px 10px", borderRadius: 100,
-                      border: "1px solid rgba(255,255,255,0.1)"
-                    }}>
-                      Priority: {activeTask.priority.toUpperCase()}
-                    </span>
                   </div>
                   <h1 style={{ fontSize: 22, fontWeight: 900, color: "#fff", letterSpacing: "-0.01em", margin: 0 }}>
                     {activeTask.label}
@@ -328,23 +331,21 @@ export function AssistantPortal() {
                 </div>
 
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  {submittedTasks.has(activeTask.id) || activeTask.status === "submitted" ? (
-                    <div style={{
-                      padding: "8px 16px", borderRadius: 100, background: "var(--mf-green-dim)",
-                      border: "1px solid var(--mf-green)40", color: "var(--mf-green)",
-                      fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", gap: 8
-                    }}>
-                      <ShieldCheck size={16} /> Work Submitted
-                    </div>
-                  ) : (
-                    <div style={{
-                      padding: "8px 16px", borderRadius: 100, background: "rgba(0, 240, 255, 0.1)",
-                      border: "1px solid rgba(0, 240, 255, 0.3)", color: "var(--mf-cyan)",
-                      fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", gap: 8
-                    }}>
-                      <Clock size={16} /> Pending Submission
-                    </div>
-                  )}
+                  {(() => {
+                    const isSubmitted = submittedTasks.has(activeTask.id) || activeTask.status === "submitted";
+                    const statusInfo = isSubmitted ? { label: "Submitted", color: "var(--mf-green)" } : (statusMap[activeTask.status] || statusMap.pending);
+                    
+                    return (
+                      <div style={{
+                        padding: "8px 16px", borderRadius: 100, background: `${statusInfo.color}15`,
+                        border: `1px solid ${statusInfo.color}40`, color: statusInfo.color,
+                        fontSize: 13, fontWeight: 800, display: "flex", alignItems: "center", gap: 8
+                      }}>
+                        {isSubmitted ? <ShieldCheck size={16} /> : <Clock size={16} />}
+                        {statusInfo.label}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -366,25 +367,10 @@ export function AssistantPortal() {
                 {/* Info Grid */}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
                   <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", padding: "14px 16px", borderRadius: 12 }}>
-                    <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginBottom: 4 }}>Assigned By</div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: "#fff", display: "flex", alignItems: "center", gap: 6 }}>
-                      <User size={14} color="var(--mf-magenta)" />
-                      {activeTask.mangaka}
-                    </div>
-                  </div>
-
-                  <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", padding: "14px 16px", borderRadius: 12 }}>
                     <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginBottom: 4 }}>Deadline / Due Date</div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: "var(--mf-orange)", display: "flex", alignItems: "center", gap: 6 }}>
                       <Clock size={14} />
                       {activeTask.due || "No Deadline Set"}
-                    </div>
-                  </div>
-
-                  <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", padding: "14px 16px", borderRadius: 12 }}>
-                    <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginBottom: 4 }}>Page Details</div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--mf-cyan)" }}>
-                      Page {activeTask.page} · Panel {activeTask.panel}
                     </div>
                   </div>
                 </div>
@@ -495,30 +481,36 @@ export function AssistantPortal() {
                     )}
                   </div>
 
-                  {/* Storage URL Input */}
+                  {/* Submission Type Selection */}
                   <div>
                     <label style={{ display: "block", fontSize: 11, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.06em" }}>
-                      OR CLOUD STORAGE URL (GOOGLE DRIVE / S3 / CLOUDINARY LINK)
+                      SUBMISSION TYPE
                     </label>
                     <div style={{ position: "relative" }}>
-                      <LinkIcon size={16} color="var(--mf-text-muted)" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
-                      <input
-                        type="url"
-                        value={submitFileUrl}
-                        onChange={e => setSubmitFileUrl(e.target.value)}
-                        placeholder="https://drive.google.com/file/d/..."
+                      <select
+                        value={submissionType}
+                        onChange={e => setSubmissionType(e.target.value)}
                         style={{
                           width: "100%",
-                          padding: "12px 14px 12px 40px",
+                          padding: "12px 14px",
                           background: "rgba(255,255,255,0.02)",
                           border: "1px solid rgba(255,255,255,0.1)",
                           borderRadius: 10,
                           color: "#fff",
                           fontSize: 13,
                           outline: "none",
-                          boxSizing: "border-box"
+                          appearance: "none",
+                          cursor: "pointer"
                         }}
-                      />
+                      >
+                        <option value="ROUGH_SKETCH" style={{ background: "var(--mf-bg-base)", color: "#fff" }}>Rough Sketch</option>
+                        <option value="REVISION" style={{ background: "var(--mf-bg-base)", color: "#fff" }}>Revision</option>
+                        <option value="FINAL" style={{ background: "var(--mf-bg-base)", color: "#fff" }}>Final</option>
+                        <option value="TASK_LEVEL" style={{ background: "var(--mf-bg-base)", color: "#fff" }}>Task Level</option>
+                      </select>
+                      <div style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "var(--mf-text-muted)" }}>
+                        ▼
+                      </div>
                     </div>
                   </div>
 

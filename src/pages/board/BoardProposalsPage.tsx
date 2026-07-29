@@ -276,7 +276,6 @@ function useIsLeaderBoard(): boolean {
           const profile: any = await getAccountProfile(accountId);
           const hasLeader =
             profile?.roleName === "LEADER_BOARD" ||
-            profile?.requestedRole === "LEADER_BOARD" ||
             (Array.isArray(profile?.systemRole) && profile.systemRole.some((r: any) => r?.roleName === "LEADER_BOARD")) ||
             profile?.systemRole?.roleName === "LEADER_BOARD" ||
             tokenStorage.hasRole("LEADER_BOARD");

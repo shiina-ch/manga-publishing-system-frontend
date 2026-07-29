@@ -63,7 +63,7 @@ const roleConfig: Record<LayoutRole, RoleConfig> = {
       { icon: CheckSquare, label: "Pending Approvals", path: "/board/voting" },
       { icon: Star, label: "Projects", path: "/board?tab=active-projects" },
       { icon: FileText, label: "Publishing Calendar", path: "/board?tab=publishing-calendar" },
-      { icon: BarChart3, label: "Budget Overview", path: "/board?tab=budget-overview" },
+      { icon: BarChart3, label: "Project Plans", path: "/board?tab=project-plans" },
     ],
     channels: ["editorial-strategy", "publishing-ops", "finance-review", "board-announcements"],
     dms: ["Chief Editor Yamamoto", "Legal: Sato-san", "Marketing Lead"],

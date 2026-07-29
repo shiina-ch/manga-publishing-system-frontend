@@ -388,7 +388,6 @@ function ProjectDetailsDialog({ project, assignmentCache, loading, error, saving
   const account = tokenStorage.getAccount();
   const isLeaderBoard = Boolean(
     account?.systemRole?.some((r: any) => r.roleName === "LEADER_BOARD" || r.roleName === "LEADER") ||
-    account?.requestedRole === "LEADER_BOARD" ||
     tokenStorage.hasRole("LEADER_BOARD")
   );
 
