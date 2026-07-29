@@ -94,6 +94,18 @@ export function updateProject(projectId: number, payload: UpdateProjectPayload):
   });
 }
 
+export interface UpdateProjectBoardPayload {
+  projectWorkflowStatus?: string;
+  tantouId?: number;
+}
+
+export function updateProjectByBoard(projectId: number, editorId: number, payload: UpdateProjectBoardPayload): Promise<ProjectFromApi> {
+  return apiRequest<ProjectFromApi>(`/workflow/projects/${projectId}/board?editorId=${editorId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function assignTantouToProject(projectId: number, tantouId: number): Promise<void> {
   await apiRequest<null>(`/workflow/project/${projectId}/assign-tantou/${tantouId}`, {
     method: "POST",

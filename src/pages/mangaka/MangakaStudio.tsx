@@ -87,14 +87,14 @@ function DelegateSubTaskModal({
   const [assigneeId, setAssigneeId] = useState<number | null>(null);
 
   const [selectedTask, setSelectedTask] = useState<TaskApi | null>(initialTask);
-  
+
   const [title, setTitle] = useState(initialTask ? `Help with: ${initialTask.title || "Task"}` : "");
   const [description, setDescription] = useState("");
   const [deadlineDate, setDeadlineDate] = useState("");
   const [deadlineTime, setDeadlineTime] = useState("");
   const [pageNumber, setPageNumber] = useState<number | "">("");
   const [productionTaskType, setProductionTaskType] = useState<string>("");
-  
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -149,7 +149,7 @@ function DelegateSubTaskModal({
     try {
       const { createSubTask } = await import("../../services/workflowApi");
       const finalDescription = pageNumber !== "" ? `${description}\n[Page ${pageNumber}]`.trim() : description;
-      
+
       await createSubTask(selectedTask.id, {
         requesterId,
         assigneeId,
@@ -945,7 +945,7 @@ function SubmissionDetailsModal({
           setDetails(data);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
     return () => {
       active = false;
     };

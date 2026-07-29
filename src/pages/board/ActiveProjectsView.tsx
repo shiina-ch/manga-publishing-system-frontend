@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertCircle, Calendar, CheckCircle, Edit3, FileText, Loader2, Package, Plus, RefreshCw, Save, UserPlus, X } from "lucide-react";
+import { AlertCircle, Calendar, Check, CheckCircle, ChevronDown, Edit3, FileText, Loader2, Package, Plus, RefreshCw, Save, UserPlus, X } from "lucide-react";
 import { toast } from "react-toastify";
 import { tokenStorage } from "../../storage/tokenStorage";
 import { getAllAccounts, type AdminAccount } from "../../services/adminApi";
@@ -10,10 +10,12 @@ import {
   getProjectById,
   getProjects,
   updateProject,
+  updateProjectByBoard,
   type CreateProjectPayload,
   type ProjectAccountSummary,
   type ProjectFromApi,
   type UpdateProjectPayload,
+  type UpdateProjectBoardPayload,
 } from "../../services/projectApi";
 
 const CARD_COLORS = ["var(--mf-cyan)", "var(--mf-orange)", "var(--mf-magenta)", "var(--mf-green)"];
@@ -250,6 +252,118 @@ function formatDate(value?: string | null): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
+function CustomSelect({
+  value,
+  options,
+  disabled,
+  onChange,
+  accentColor = "var(--mf-cyan)"
+}: {
+  value: string | number;
+  options: Array<{ value: string | number; label: string }>;
+  disabled?: boolean;
+  onChange: (val: any) => void;
+  accentColor?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selectedOption = options.find(o => String(o.value) === String(value)) || options[0];
+
+  return (
+    <div style={{ position: "relative", width: "100%" }}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen(!open)}
+        style={{
+          width: "100%",
+          padding: "6px 12px",
+          background: "rgba(0, 240, 255, 0.06)",
+          border: `1px solid ${accentColor}`,
+          borderRadius: 8,
+          color: accentColor,
+          fontSize: 13,
+          fontWeight: 800,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          cursor: disabled ? "not-allowed" : "pointer",
+          opacity: disabled ? 0.6 : 1,
+          transition: "all 0.15s ease",
+          boxShadow: open ? `0 0 10px ${accentColor}30` : "none"
+        }}
+      >
+        <span style={{ textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+          {selectedOption?.label || String(value)}
+        </span>
+        <ChevronDown size={14} style={{ transform: open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.15s ease", flexShrink: 0, marginLeft: 6 }} />
+      </button>
+
+      {open && (
+        <>
+          <div
+            style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 1300 }}
+            onClick={() => setOpen(false)}
+          />
+          <div
+            className="custom-select-menu"
+            style={{
+              position: "absolute",
+              bottom: "calc(100% + 4px)",
+              left: 0,
+              right: 0,
+              zIndex: 1301,
+              background: "var(--mf-bg-surface, #161622)",
+              border: "1px solid var(--mf-border, rgba(255,255,255,0.15))",
+              borderRadius: 8,
+              boxShadow: "0 -10px 25px rgba(0,0,0,0.6)",
+              maxHeight: 114,
+              overflowY: "auto",
+              padding: "4px",
+              scrollbarWidth: "thin",
+              scrollbarColor: "rgba(0, 240, 255, 0.3) transparent"
+            }}
+          >
+            {options.map(opt => {
+              const isSelected = String(opt.value) === String(value);
+              return (
+                <div
+                  key={opt.value}
+                  onClick={() => {
+                    onChange(opt.value);
+                    setOpen(false);
+                  }}
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    fontWeight: isSelected ? 800 : 500,
+                    color: isSelected ? accentColor : "var(--mf-text-secondary, #e0e0e0)",
+                    background: isSelected ? "rgba(0, 240, 255, 0.12)" : "transparent",
+                    cursor: "pointer",
+                    transition: "background 0.1s ease",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between"
+                  }}
+                  onMouseEnter={e => {
+                    if (!isSelected) e.currentTarget.style.background = "rgba(255, 255, 255, 0.06)";
+                  }}
+                  onMouseLeave={e => {
+                    if (!isSelected) e.currentTarget.style.background = "transparent";
+                  }}
+                >
+                  <span style={{ textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>{opt.label}</span>
+                  {isSelected && <Check size={12} color={accentColor} />}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 interface ProjectDetailsDialogProps {
   project: ProjectFromApi | null;
   assignmentCache: ProjectAssignmentCache;
@@ -258,7 +372,7 @@ interface ProjectDetailsDialogProps {
   saving: boolean;
   onClose: () => void;
   onRetry: () => void;
-  onSave: (payload: UpdateProjectPayload) => Promise<boolean>;
+  onSave: (payload: UpdateProjectPayload, boardPayload?: UpdateProjectBoardPayload) => Promise<boolean>;
 }
 
 function ProjectDetailsDialog({ project, assignmentCache, loading, error, saving, onClose, onRetry, onSave }: ProjectDetailsDialogProps) {
@@ -266,13 +380,57 @@ function ProjectDetailsDialog({ project, assignmentCache, loading, error, saving
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("");
+  const [workflowStatus, setWorkflowStatus] = useState("ACTIVE");
+  const [tantouId, setTantouId] = useState<number>(0);
+  const [tantouAccounts, setTantouAccounts] = useState<AdminAccount[]>([]);
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  const account = tokenStorage.getAccount();
+  const isLeaderBoard = Boolean(
+    account?.systemRole?.some((r: any) => r.roleName === "LEADER_BOARD" || r.roleName === "LEADER") ||
+    account?.requestedRole === "LEADER_BOARD" ||
+    tokenStorage.hasRole("LEADER_BOARD")
+  );
+
+  useEffect(() => {
+    if (project) {
+      setWorkflowStatus(project.projectWorkflowStatus || "ACTIVE");
+      setTantouId(project.tantouId || project.tantou?.id || 0);
+    }
+  }, [project]);
+
+  useEffect(() => {
+    if (isLeaderBoard && tantouAccounts.length === 0) {
+      getAllAccounts()
+        .then(accs => {
+          if (Array.isArray(accs)) {
+            const tantous = accs.filter(acc => {
+              if (acc.systemRole && Array.isArray(acc.systemRole)) {
+                return acc.systemRole.some(r => r.roleName === "TANTOU_EDITOR" || r.roleName?.includes("TANTOU"));
+              }
+              return acc.requestedRole === "TANTOU_EDITOR" || acc.requestedRole === "TANTOU";
+            });
+            const list = tantous.length > 0 ? tantous : accs;
+            setTantouAccounts(list);
+            if (list.length > 0) {
+              setTantouId(current => {
+                if (current && list.some(a => a.id === current)) return current;
+                return list[0].id;
+              });
+            }
+          }
+        })
+        .catch(console.error);
+    }
+  }, [isLeaderBoard, tantouAccounts.length]);
 
   const beginEditing = () => {
     if (!project) return;
     setTitle(project.title ?? "");
     setDescription(project.description ?? "");
     setStatus(project.status ?? "");
+    setWorkflowStatus(project.projectWorkflowStatus || "ACTIVE");
+    setTantouId(project.tantouId || project.tantou?.id || 0);
     setValidationError(null);
     setEditing(true);
   };
@@ -282,6 +440,8 @@ function ProjectDetailsDialog({ project, assignmentCache, loading, error, saving
       setTitle(project.title ?? "");
       setDescription(project.description ?? "");
       setStatus(project.status ?? "");
+      setWorkflowStatus(project.projectWorkflowStatus || "ACTIVE");
+      setTantouId(project.tantouId || project.tantou?.id || 0);
     }
     setValidationError(null);
     setEditing(false);
@@ -296,21 +456,30 @@ function ProjectDetailsDialog({ project, assignmentCache, loading, error, saving
     const payload: UpdateProjectPayload = { title: trimmedTitle, description: description.trim() };
     const trimmedStatus = status.trim();
     if (trimmedStatus) payload.status = trimmedStatus;
-    else if (project?.status) payload.status = project.status; // Prevent wiping status in backend
-    if (await onSave(payload)) setEditing(false);
+    else if (project?.status) payload.status = project.status;
+
+    let boardPayload: UpdateProjectBoardPayload | undefined;
+    if (isLeaderBoard) {
+      boardPayload = {
+        projectWorkflowStatus: workflowStatus,
+        tantouId: Number(tantouId) || 0
+      };
+    }
+
+    if (await onSave(payload, boardPayload)) setEditing(false);
   };
 
   const assignment = project ? resolveProjectAssignment(project, assignmentCache) : null;
   const rows = project ? [
-    ["Created", formatDate(project.createdAt)],
-    ["Start date", formatDate(project.startDate)],
-    ["Expected end", formatDate(project.expectedEndDate)],
-    ["Current phase", project.currentPhase || "—"],
     ["Genre", project.genre || "—"],
     ["Target audience", project.targetAudience || "—"],
     ["Format", project.format || "—"],
     ["Workflow status", project.projectWorkflowStatus || "—"],
     ["Tantou", assignment?.assigned ? (assignment.displayText?.replace(/^Assigned to /, "") ?? "Tantou Assigned") : (project.ownerName || "—")],
+    ["Created", formatDate(project.createdAt)],
+    ["Start date", formatDate(project.startDate)],
+    ["Expected end", formatDate(project.expectedEndDate)],
+    ["Current phase", project.currentPhase || "—"],
     ["Mangaka", accountName(project.mangaka) !== "—" ? accountName(project.mangaka) : (project.mangakaName || "—")],
   ].filter(([_, val]) => Boolean(val) && val !== "—") : [];
 
@@ -358,7 +527,7 @@ function ProjectDetailsDialog({ project, assignmentCache, loading, error, saving
           {!loading && project && (
             <>
               {(error || validationError) && <div style={{ marginBottom: 14, padding: "12px 16px", borderRadius: 10, color: "var(--mf-magenta)", background: "rgba(255,42,109,0.1)", border: "1px solid rgba(255,42,109,0.3)", fontSize: 13, fontWeight: 700 }}>{validationError || error}</div>}
-              {editing ? (
+              {editing && !isLeaderBoard ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
                   <div>
                     <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>TITLE</label>
@@ -366,11 +535,7 @@ function ProjectDetailsDialog({ project, assignmentCache, loading, error, saving
                   </div>
                   <div>
                     <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>DESCRIPTION</label>
-                    <textarea value={description} onChange={event => setDescription(event.target.value)} disabled={saving} rows={5} style={{ ...fieldStyle, resize: "vertical", lineHeight: 1.5 }} onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"} onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"} />
-                  </div>
-                  <div>
-                    <label style={{ display: "block", fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 8, letterSpacing: "0.08em" }}>STATUS</label>
-                    <input value={status} onChange={event => setStatus(event.target.value)} disabled={saving} style={fieldStyle} onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"} onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"} />
+                    <textarea value={description} onChange={event => setDescription(event.target.value)} disabled={saving} rows={4} style={{ ...fieldStyle, resize: "vertical", lineHeight: 1.5 }} onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"} onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"} />
                   </div>
                 </div>
               ) : (
@@ -385,12 +550,43 @@ function ProjectDetailsDialog({ project, assignmentCache, loading, error, saving
                     )}
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14 }}>
-                    {rows.map(([label, value]) => (
-                      <div key={label} style={{ padding: "14px 16px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12 }}>
-                        <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 6, letterSpacing: "0.08em", textTransform: "uppercase" }}>{label}</div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--mf-text-secondary)", wordBreak: "break-word" }}>{value}</div>
-                      </div>
-                    ))}
+                    {rows.map(([label, value]) => {
+                      const isWorkflowCard = label === "Workflow status";
+                      const isTantouCard = label === "Tantou";
+                      const isUnlocked = editing && isLeaderBoard && (isWorkflowCard || isTantouCard);
+
+                      return (
+                        <div key={label} style={{ padding: "14px 16px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12 }}>
+                          <div style={{ fontSize: 10, fontWeight: 800, color: "var(--mf-text-muted)", marginBottom: 6, letterSpacing: "0.08em", textTransform: "uppercase" }}>{label}</div>
+                          {isUnlocked && isWorkflowCard ? (
+                            <CustomSelect
+                              value={workflowStatus}
+                              disabled={saving}
+                              onChange={val => setWorkflowStatus(String(val))}
+                              options={[
+                                { value: "DRAFT", label: "DRAFT" },
+                                { value: "ACTIVE", label: "ACTIVE" },
+                                { value: "ON_HOLD", label: "ON_HOLD" },
+                                { value: "COMPLETED", label: "COMPLETED" },
+                                { value: "CANCELLED", label: "CANCELLED" }
+                              ]}
+                            />
+                          ) : isUnlocked && isTantouCard ? (
+                            <CustomSelect
+                              value={tantouId}
+                              disabled={saving}
+                              onChange={val => setTantouId(Number(val))}
+                              options={tantouAccounts.map(acc => ({
+                                value: acc.id,
+                                label: [acc.firstName, acc.lastName].filter(Boolean).join(" ") || acc.username || acc.email
+                              }))}
+                            />
+                          ) : (
+                            <div style={{ fontSize: 13, fontWeight: 500, color: "var(--mf-text-secondary)", wordBreak: "break-word" }}>{value}</div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </>
               )}
@@ -847,12 +1043,27 @@ export function ActiveProjectsView() {
     }
   };
 
-  const saveProject = async (payload: UpdateProjectPayload): Promise<boolean> => {
+  const saveProject = async (payload: UpdateProjectPayload, boardPayload?: UpdateProjectBoardPayload): Promise<boolean> => {
     if (!details || saving) return false;
     setSaving(true);
     setDetailsError(null);
     try {
-      const updated = await updateProject(details.id, payload);
+      const account = tokenStorage.getAccount();
+      const editorId = account?.id;
+      let updated = details;
+
+      if (boardPayload && editorId) {
+        updated = await updateProjectByBoard(details.id, editorId, boardPayload);
+      }
+      if (payload.title) {
+        try {
+          const titleUpdated = await updateProject(details.id, payload);
+          updated = { ...updated, ...titleUpdated };
+        } catch {
+          // Keep board update result
+        }
+      }
+
       if (!mounted.current) return false;
       const existing = projects.find(p => p.id === updated.id);
       const finalUpdated = { ...updated, createdAt: updated.createdAt || existing?.createdAt };
@@ -968,7 +1179,14 @@ export function ActiveProjectsView() {
 
   return (
     <div style={{ padding: "24px 28px", overflowY: "auto", flex: 1 }}>
-      <style>{`@keyframes mf-project-spin { to { transform: rotate(360deg); } } .mf-spin { animation: mf-project-spin 1s linear infinite; }`}</style>
+      <style>{`
+        @keyframes mf-project-spin { to { transform: rotate(360deg); } }
+        .mf-spin { animation: mf-project-spin 1s linear infinite; }
+        .custom-select-menu::-webkit-scrollbar { width: 4px; }
+        .custom-select-menu::-webkit-scrollbar-track { background: transparent; }
+        .custom-select-menu::-webkit-scrollbar-thumb { background: rgba(0, 240, 255, 0.3); border-radius: 4px; }
+        .custom-select-menu::-webkit-scrollbar-thumb:hover { background: var(--mf-cyan); }
+      `}</style>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, marginBottom: 22, flexWrap: "wrap" }}>
         <div>
           <h2 style={{ fontSize: 20, fontWeight: 900, letterSpacing: "-0.02em" }}>Active Projects</h2>
