@@ -68,10 +68,12 @@ function isImage(f: NonNullable<SubmissionApi["files"]>[number]): boolean {
 
 // ─── VotingRoom ──────────────────────────────────────────────────────────────
 export function VotingRoom() {
-  const [submissions, setSubmissions] = useState<SubmissionApi[]>([]);
-  const [allReviews, setAllReviews] = useState<SubmissionReviewApi[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [submissions, setSubmissions] = useState<SubmissionApi[]>([]);
+  const [submissionDetails, setSubmissionDetails] = useState<SubmissionApi | null>(null);
+  const submission = submissionDetails;
   const [loading, setLoading] = useState(true);
+  const [allReviews, setAllReviews] = useState<SubmissionReviewApi[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState<"approve" | "reject" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -92,7 +94,7 @@ export function VotingRoom() {
     setError(null);
     try {
       const [subs, revs] = await Promise.all([getWorkflowSubmissions(), getSubmissionReviews()]);
-      
+
       const reviewMap = new Map<number, number>();
       for (const r of revs) {
         if (r.decision === "REJECTED" || r.decision === "REJECT") {
@@ -100,7 +102,7 @@ export function VotingRoom() {
           reviewMap.set(subId, (reviewMap.get(subId) || 0) + 1);
         }
       }
-      
+
       const updatedSubs = subs.map(s => {
         const rejectCount = reviewMap.get(s.id) || 0;
         if (rejectCount >= 2 && s.status !== "APPROVED") {
@@ -128,31 +130,50 @@ export function VotingRoom() {
 
   useEffect(() => { void load(); }, [load]);
 
+  const [accountEmails, setAccountEmails] = useState<Record<number, string>>({});
+
   useEffect(() => {
-    const reviewerIds = Array.from(new Set(
-      allReviews
-        .map(r => r.reviewerId)
-        .filter((id): id is number => typeof id === "number")
-    ));
-    reviewerIds.forEach(id => {
+    const idsToFetch = new Set<number>();
+    allReviews.forEach(r => {
+      if (typeof r.reviewerId === "number") idsToFetch.add(r.reviewerId);
+    });
+    if (submission && typeof submission.submittedById === "number") {
+      idsToFetch.add(submission.submittedById);
+    }
+
+    Array.from(idsToFetch).forEach(id => {
       if (!reviewerNames[id]) {
         getAccountProfile(id).then(profile => {
           const name = `${profile.firstName || ""} ${profile.lastName || ""}`.trim() || profile.email;
           if (name) {
             setReviewerNames(prev => ({ ...prev, [id]: name }));
           }
-        }).catch(() => {});
+          if (profile.email) {
+            setAccountEmails(prev => ({ ...prev, [id]: profile.email }));
+          }
+        }).catch(() => { });
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allReviews]);
+  }, [allReviews, submission]);
 
   useEffect(() => {
     setActionError(null);
     setComment("");
-  }, [selectedId]);
+    if (selectedId) {
+      import("../../services/workflowApi").then(({ getSubmissionById }) => {
+        getSubmissionById(selectedId)
+          .then(setSubmissionDetails)
+          .catch(() => {
+            // fallback
+            setSubmissionDetails(submissions.find(s => s.id === selectedId) ?? null);
+          });
+      });
+    } else {
+      setSubmissionDetails(null);
+    }
+  }, [selectedId, submissions]);
 
-  const submission = submissions.find(s => s.id === selectedId) ?? null;
   const reviews = allReviews.filter(r => r.submissionId === selectedId && r.stage === "EDITORIAL_BOARD");
   const files = submission?.files ?? [];
   const canVote = ["PENDING_BOARD_REVIEW"].includes(normalizeStatus(submission?.status));
@@ -335,7 +356,7 @@ export function VotingRoom() {
                 <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--mf-text-muted)", alignItems: "center", flexWrap: "wrap" }}>
                   <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <User size={11} />
-                    {submission.submittedByName || submission.submittedBy?.email || submission.submittedBy?.username || "—"}
+                    {submission.submittedById ? (reviewerNames[Number(submission.submittedById)] || submission.submittedByName || "—") : (submission.submittedByName || "—")}
                   </span>
                   <span style={{
                     padding: "2px 9px", borderRadius: 100, fontSize: 10, fontWeight: 800,
@@ -363,10 +384,10 @@ export function VotingRoom() {
                     </div>
                     <div>
                       <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)" }}>
-                        {submission.submittedByName || [submission.submittedBy?.firstName, submission.submittedBy?.lastName].filter(Boolean).join(" ") || "—"}
+                        {submission.submittedById ? (reviewerNames[Number(submission.submittedById)] || submission.submittedByName || "—") : (submission.submittedByName || "—")}
                       </div>
                       <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 2 }}>
-                        {submission.submittedBy?.email ?? "—"}
+                        {(submission.submittedById ? accountEmails[Number(submission.submittedById)] : null) || submission.submittedBy?.email || "—"}
                       </div>
                       <div style={{ fontSize: 10, color: "var(--mf-orange)", fontWeight: 700, marginTop: 2 }}>
                         Mangaka

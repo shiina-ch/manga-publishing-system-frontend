@@ -37,6 +37,8 @@ export interface ProjectFromApi {
   startDate?: string | null;
   expectedEndDate?: string | null;
   currentPhase?: string | null;
+  ownerId?: number | null;
+  ownerName?: string | null;
   genre?: string | null;
   targetAudience?: string | null;
   format?: string | null;
@@ -141,3 +143,11 @@ export function createProductionPlan(projectId: number, payload: ProductionPlanP
   });
 }
 
+export interface ProductionPlanResponse extends ProductionPlan {
+  projectId: number;
+  projectTitle: string;
+}
+
+export function getProductionPlans(): Promise<ProductionPlanResponse[]> {
+  return apiRequest<ProductionPlanResponse[]>("/production-plans");
+}

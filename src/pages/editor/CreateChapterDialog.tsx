@@ -1,9 +1,8 @@
-import { useState } from "react";
-import { AlertCircle, FileText, Loader2, Save, X } from "lucide-react";
+import { useState, useEffect } from "react";
+import { AlertCircle, FileText, Loader2, Save, X, UserPlus } from "lucide-react";
 import { toast } from "react-toastify";
 import { createChapter, updateChapter, assignMangakaToProject, assignChapterToMangaka, type CreateChapterPayload } from "../../services/projectApi";
-import { searchAccountByEmail } from "../../services/accountApi";
-import { UserPlus } from "lucide-react";
+import { getAllAccounts, type AdminAccount } from "../../services/adminApi";
 
 interface CreateChapterDialogProps {
   projectId: number;
@@ -51,8 +50,19 @@ export function CreateChapterDialog({ projectId, planId, chapterId, initialTitle
   const [endDate, setEndDate] = useState("");
   const [publishDate, setPublishDate] = useState("");
 
-  const [mangakaEmail, setMangakaEmail] = useState("");
   const [mangakaId, setMangakaId] = useState(initialMangakaId ? String(initialMangakaId) : "");
+  const [availableMangakas, setAvailableMangakas] = useState<AdminAccount[]>([]);
+  const [loadingMangakas, setLoadingMangakas] = useState(true);
+
+  useEffect(() => {
+    getAllAccounts()
+      .then(accounts => {
+        const mangakas = accounts.filter(a => a.systemRole?.some(r => r.roleName === 'MANGAKA') || a.requestedRole === 'MANGAKA');
+        setAvailableMangakas(mangakas.length > 0 ? mangakas : accounts);
+      })
+      .catch(() => setAvailableMangakas([]))
+      .finally(() => setLoadingMangakas(false));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -91,19 +101,10 @@ export function CreateChapterDialog({ projectId, planId, chapterId, initialTitle
 
     try {
       let finalMangakaId: number | null = null;
-      if (mangakaEmail.trim()) {
-        const found = await searchAccountByEmail(mangakaEmail.trim());
-        if (found && found.id) {
-          finalMangakaId = found.id;
-        } else {
-          setError("No account found with this email. Please check the Mangaka's email.");
-          setSaving(false);
-          return;
-        }
-      } else if (mangakaId.trim()) {
+      if (mangakaId.trim()) {
         finalMangakaId = Number(mangakaId.trim());
         if (isNaN(finalMangakaId) || finalMangakaId <= 0) {
-          setError("Please enter a valid positive Mangaka Account ID.");
+          setError("Please select a valid Mangaka.");
           setSaving(false);
           return;
         }
@@ -135,17 +136,21 @@ export function CreateChapterDialog({ projectId, planId, chapterId, initialTitle
             await assignChapterToMangaka(savedChapterId, finalMangakaId);
           }
           try {
-             const cachedStr = localStorage.getItem("project_mangaka_assignments") || "{}";
-             const cached = JSON.parse(cachedStr);
-             cached[projectId] = { 
-               id: finalMangakaId, 
-               name: mangakaEmail || `Mangaka #${finalMangakaId}`,
-               status: "MANGAKA_ASSIGNED",
-               deadline: payload.endDate,
-               chapterId: savedChapterId
-             };
-             localStorage.setItem("project_mangaka_assignments", JSON.stringify(cached));
-          } catch (e) {}
+            const cachedStr = localStorage.getItem("project_mangaka_assignments") || "{}";
+            const cached = JSON.parse(cachedStr);
+            const chosen = availableMangakas.find(a => a.id === finalMangakaId);
+            const chosenName = chosen
+              ? (chosen.firstName || chosen.lastName ? `${chosen.firstName} ${chosen.lastName}`.trim() : (chosen.username || chosen.email || ""))
+              : `Mangaka #${finalMangakaId}`;
+            cached[projectId] = {
+              id: finalMangakaId,
+              name: chosenName,
+              status: "MANGAKA_ASSIGNED",
+              deadline: payload.endDate,
+              chapterId: savedChapterId
+            };
+            localStorage.setItem("project_mangaka_assignments", JSON.stringify(cached));
+          } catch (e) { }
           toast.success(chapterId ? "Chapter updated successfully!" : "Chapter assigned & Mangaka assigned to Project successfully!");
         } catch (assignErr: any) {
           toast.error("Chapter saved, but failed to assign Mangaka: " + (assignErr.message || "Unknown error"));
@@ -346,32 +351,26 @@ export function CreateChapterDialog({ projectId, planId, chapterId, initialTitle
 
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <div>
-                  <label style={labelStyle}>MANGAKA EMAIL</label>
-                  <input
-                    type="email"
-                    value={mangakaEmail}
-                    onChange={e => setMangakaEmail(e.target.value)}
-                    disabled={saving || Boolean(mangakaId)}
-                    placeholder="Enter Mangaka's email..."
-                    style={{ ...fieldStyle, opacity: mangakaId ? 0.55 : 1 }}
-                    onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"}
-                    onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"}
-                  />
-                </div>
-                <div>
-                  <label style={labelStyle}>OR MANGAKA ACCOUNT ID</label>
-                  <input
-                    type="number"
-                    min={1}
-                    step={1}
+                  <label style={labelStyle}>SELECT MANGAKA</label>
+                  <select
                     value={mangakaId}
                     onChange={e => setMangakaId(e.target.value)}
-                    disabled={saving || Boolean(mangakaEmail)}
-                    placeholder="Enter account ID directly..."
-                    style={{ ...fieldStyle, opacity: mangakaEmail ? 0.55 : 1 }}
+                    disabled={saving || loadingMangakas}
+                    style={{ ...fieldStyle, appearance: "auto" }}
                     onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"}
                     onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"}
-                  />
+                  >
+                    <option value="">-- Choose a Mangaka (Optional) --</option>
+                    {loadingMangakas ? (
+                      <option disabled>Loading members...</option>
+                    ) : (
+                      availableMangakas.map(acc => (
+                        <option key={acc.id} value={acc.id} style={{ color: "#000" }}>
+                          {acc.firstName || acc.lastName ? `${acc.firstName} ${acc.lastName}` : (acc.username || acc.email)} (ID: {acc.id})
+                        </option>
+                      ))
+                    )}
+                  </select>
                 </div>
               </div>
             </div>

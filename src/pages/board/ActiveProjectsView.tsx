@@ -576,22 +576,29 @@ export function ActiveProjectsView() {
       if (mounted.current && listRequest.current === requestId) {
         let incoming = Array.isArray(result) ? result : [];
 
-        const missingCreatedAt = incoming.some(p => !p.createdAt);
-        if (missingCreatedAt) {
-          try {
-            const { getSubmissions } = await import("../../services/workflowApi");
-            const submissions = await getSubmissions();
-            incoming = incoming.map(project => {
-              if (project.createdAt) return project;
-              const sub = submissions.find(s => s.title === project.title && s.status === "APPROVED");
-              if (sub && (sub.reviewedAt || sub.submittedAt)) {
-                return { ...project, createdAt: sub.reviewedAt || sub.submittedAt };
+        // Always fetch submissions to ensure we overwrite the backend's default ownerName (which is the Admin) with the true submitter's name
+        try {
+          const { getSubmissions } = await import("../../services/workflowApi");
+          const submissions = await getSubmissions();
+          incoming = incoming.map(project => {
+            const sub = submissions.find(s => s.title === project.title && s.status === "APPROVED");
+            if (sub) {
+              const updates: Partial<typeof project> = {};
+              if (!project.createdAt && (sub.reviewedAt || sub.submittedAt)) {
+                updates.createdAt = sub.reviewedAt || sub.submittedAt;
               }
-              return project;
-            });
-          } catch (e) {
-            // Ignore error if submissions cannot be loaded
-          }
+              const submitterName = sub.submittedByName || sub.submittedBy?.name || sub.submittedBy?.username || (sub.submittedById ? `User #${sub.submittedById}` : undefined);
+              if (submitterName) {
+                updates.ownerName = submitterName;
+              }
+              if (Object.keys(updates).length > 0) {
+                return { ...project, ...updates };
+              }
+            }
+            return project;
+          });
+        } catch (e) {
+          // Ignore error if submissions cannot be loaded
         }
 
         setProjects(current => mergeProjectLists(current, incoming));
@@ -782,7 +789,14 @@ export function ActiveProjectsView() {
                 {/* Column 1: Title & Date */}
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 6 }}>{project.title || "—"}</div>
-                  <div style={{ fontSize: 11, color: "var(--mf-text-muted)", display: "flex", alignItems: "center", gap: 5 }}><Calendar size={11} /> Created {formatDate(project.createdAt)}</div>
+                  <div style={{ fontSize: 11, color: "var(--mf-text-muted)", display: "flex", alignItems: "center", gap: 5 }}>
+                    <Calendar size={11} /> Created {formatDate(project.createdAt)}
+                  </div>
+                  {project.ownerName && (
+                    <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 4 }}>
+                      Submitted by: <span style={{ color: "var(--mf-text-secondary)", fontWeight: 700 }}>{project.ownerName}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Column 2: Description */}

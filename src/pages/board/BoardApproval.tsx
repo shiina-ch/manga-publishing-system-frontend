@@ -69,6 +69,7 @@ function PendingApprovalsView() {
   const [allReviews, setAllReviews] = useState<SubmissionReviewApi[]>([]);
   const [reviewerNames, setReviewerNames] = useState<Record<number, string>>({});
   const [selected, setSelected] = useState<number | null>(null);
+  const submission = submissions.find(s => s.id === selected) ?? null;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -111,30 +112,38 @@ function PendingApprovalsView() {
 
   useEffect(() => { void load(); }, [load]);
 
-  useEffect(() => {
-    const reviewerIds = Array.from(new Set(
-      allReviews
-        .map(r => r.reviewerId)
-        .filter((id): id is number => typeof id === "number")
-    ));
+  const [accountEmails, setAccountEmails] = useState<Record<number, string>>({});
 
-    reviewerIds.forEach(id => {
+  useEffect(() => {
+    const idsToFetch = new Set<number>();
+    allReviews.forEach(r => {
+      if (typeof r.reviewerId === "number") idsToFetch.add(r.reviewerId);
+    });
+    if (submission && typeof submission.submittedById === "number") {
+      idsToFetch.add(submission.submittedById);
+    }
+
+    Array.from(idsToFetch).forEach(id => {
       if (!reviewerNames[id]) {
         getAccountProfile(id)
           .then(profile => {
             const name = `${profile.firstName || ""} ${profile.lastName || ""}`.trim() || profile.email;
             setReviewerNames(prev => ({ ...prev, [id]: name }));
+            if (profile.email) {
+              setAccountEmails(prev => ({ ...prev, [id]: profile.email }));
+            }
           })
           .catch(() => {
             // fallback
-            const fallbackVal = allReviews.find(r => r.reviewerId === id)?.reviewerEmail || `Tantou Editor #${id}`;
+            const fallbackVal = allReviews.find(r => r.reviewerId === id)?.reviewerEmail || `Account #${id}`;
             setReviewerNames(prev => ({ ...prev, [id]: fallbackVal }));
           });
       }
     });
-  }, [allReviews, reviewerNames]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allReviews, submission]);
 
-  const submission = submissions.find(s => s.id === selected) ?? null;
+
   const reviews = allReviews.filter(r => Number(r.submissionId) === Number(selected) && r.stage?.toUpperCase() === "EDITORIAL_BOARD");
   const files = submission?.files ?? [];
 
@@ -235,7 +244,7 @@ function PendingApprovalsView() {
               <div style={{ display: "flex", gap: 12, fontSize: 12, color: "var(--mf-text-muted)", alignItems: "center" }}>
                 <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   <User size={11} />
-                  {submission.submittedByName || submission.submittedBy?.email || submission.submittedBy?.username || "—"}
+                  {submission.submittedById ? (reviewerNames[Number(submission.submittedById)] || submission.submittedByName || "—") : (submission.submittedByName || "—")}
                 </span>
                 <span style={{
                   padding: "2px 9px", borderRadius: 100, fontSize: 10, fontWeight: 800,
@@ -262,10 +271,10 @@ function PendingApprovalsView() {
                   </div>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 800, color: "var(--mf-text)" }}>
-                      {submission.submittedByName || [submission.submittedBy?.firstName, submission.submittedBy?.lastName].filter(Boolean).join(" ") || "—"}
+                      {submission.submittedById ? (reviewerNames[Number(submission.submittedById)] || submission.submittedByName || "—") : (submission.submittedByName || "—")}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 2 }}>
-                      {submission.submittedBy?.email ?? "—"}
+                      {(submission.submittedById ? accountEmails[Number(submission.submittedById)] : null) || submission.submittedBy?.email || "—"}
                     </div>
                     <div style={{ fontSize: 10, color: "var(--mf-orange)", fontWeight: 700, marginTop: 2 }}>
                       Mangaka

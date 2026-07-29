@@ -19,7 +19,8 @@ import {
 } from "../../services/workflowApi";
 import { tokenStorage } from "../../storage/tokenStorage";
 import { getAccountProfile, type AccountProfile } from "../../services/accountApi";
-import { getProjects, type ProjectFromApi } from "../../services/projectApi";
+import { getAllAccounts, type AdminAccount } from "../../services/adminApi";
+import { getProjects, getProjectById, getProductionPlans, assignMangakaToProject, type ProjectFromApi } from "../../services/projectApi";
 import { ProductionPlanDialog } from "./ProductionPlanDialog";
 import { CreateChapterDialog } from "./CreateChapterDialog";
 
@@ -842,9 +843,11 @@ function ApprovedList({
 function ProjectDetailsModal({
   project,
   onClose,
+  onSuccess,
 }: {
   project: ProjectFromApi;
   onClose: () => void;
+  onSuccess?: () => void;
 }) {
   const plan = project.productionPlan;
 
@@ -855,11 +858,18 @@ function ProjectDetailsModal({
   const [chapterTimeline, setChapterTimeline] = useState(plan?.chapterTimeline || "");
   const [saving, setSaving] = useState(false);
 
-  // Mock list of Mangakas - ready for API integration
-  const mangakaList = [
-    { id: 6, name: "Master Mangaka" },
-    { id: 10, name: "Newbie Mangaka" }
-  ];
+  const [availableMangakas, setAvailableMangakas] = useState<AdminAccount[]>([]);
+  const [loadingMangakas, setLoadingMangakas] = useState(true);
+
+  useEffect(() => {
+    getAllAccounts()
+      .then(accounts => {
+        const mangakas = accounts.filter(a => a.systemRole?.some(r => r.roleName === 'MANGAKA') || a.requestedRole === 'MANGAKA');
+        setAvailableMangakas(mangakas.length > 0 ? mangakas : accounts);
+      })
+      .catch(() => setAvailableMangakas([]))
+      .finally(() => setLoadingMangakas(false));
+  }, []);
 
   const fieldStyle = {
     width: "100%",
@@ -886,14 +896,39 @@ function ProjectDetailsModal({
     textTransform: "uppercase" as const
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setSaving(true);
-    // Giả lập API
-    setTimeout(() => {
+    try {
+      if (mangakaId && mangakaId !== project.mangaka?.id?.toString()) {
+        await assignMangakaToProject(project.id, Number(mangakaId));
+
+        // Update local storage cache
+        try {
+          const cachedStr = localStorage.getItem("project_mangaka_assignments") || "{}";
+          const cached = JSON.parse(cachedStr);
+          const chosen = availableMangakas.find(a => a.id.toString() === mangakaId);
+          const chosenName = chosen
+            ? (chosen.firstName || chosen.lastName ? `${chosen.firstName} ${chosen.lastName}`.trim() : (chosen.username || chosen.email || ""))
+            : `Mangaka #${mangakaId}`;
+          cached[project.id] = {
+            id: Number(mangakaId),
+            name: chosenName,
+            status: "MANGAKA_ASSIGNED",
+            deadline: plan?.deadline,
+            chapterId: (project as any).cachedChapterId
+          };
+          localStorage.setItem("project_mangaka_assignments", JSON.stringify(cached));
+        } catch (e) { }
+      }
+
+      toast.success("Project updated and assigned successfully!");
+      if (onSuccess) onSuccess();
+      else onClose();
+    } catch (err: any) {
+      toast.error("Failed to update: " + (err.message || "Unknown error"));
+    } finally {
       setSaving(false);
-      toast.success("Project details updated successfully");
-      onClose();
-    }, 600);
+    }
   };
 
   return (
@@ -961,23 +996,25 @@ function ProjectDetailsModal({
 
         {/* Body */}
         <div style={{ padding: "28px 32px 32px", display: "flex", flexDirection: "column", gap: 20 }}>
-          
-          <div>
+
+          <div style={{ flex: 1 }}>
             <label style={labelStyle}>MANGAKA ASSIGNMENT</label>
             <select
-              style={fieldStyle}
+              className="mf-select"
               value={mangakaId}
               onChange={(e) => setMangakaId(e.target.value)}
-              onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"}
-              onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"}
+              style={{ ...fieldStyle, appearance: "auto" }}
             >
               <option value="" style={{ background: "var(--mf-bg-deep)" }}>-- Select Mangaka --</option>
-              {project.mangaka && !mangakaList.find(m => m.id.toString() === mangakaId) && (
-                <option value={project.mangaka.id} style={{ background: "var(--mf-bg-deep)" }}>{project.mangaka.name}</option>
+              {loadingMangakas ? (
+                <option disabled>Loading members...</option>
+              ) : (
+                availableMangakas.map(m => (
+                  <option key={m.id} value={m.id} style={{ background: "var(--mf-bg-deep)" }}>
+                    {m.firstName || m.lastName ? `${m.firstName} ${m.lastName}` : (m.username || m.email)} (ID: {m.id})
+                  </option>
+                ))
               )}
-              {mangakaList.map(m => (
-                <option key={m.id} value={m.id} style={{ background: "var(--mf-bg-deep)" }}>{m.name}</option>
-              ))}
             </select>
           </div>
 
@@ -996,9 +1033,9 @@ function ProjectDetailsModal({
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
             <div>
               <label style={labelStyle}>PRIORITY</label>
-              <select 
-                style={fieldStyle} 
-                value={priority} 
+              <select
+                style={fieldStyle}
+                value={priority}
                 onChange={(e) => setPriority(e.target.value)}
                 onFocus={e => e.currentTarget.style.borderColor = "var(--mf-cyan)"}
                 onBlur={e => e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"}
@@ -1367,16 +1404,56 @@ function ProductionPlanList() {
     setError(null);
     try {
       // Use dynamic import so it doesn't break static chunking further up
-      const { getChapters } = await import("../../services/workflowApi");
-      const [allProjects, allChapters] = await Promise.all([
-        getProjects(),
-        getChapters().catch(() => []) // Fallback to empty array if fails
+      const { getChapters, getSubmissions } = await import("../../services/workflowApi");
+      const [plans, allChapters, allSubmissions] = await Promise.all([
+        getProductionPlans(),
+        getChapters().catch(() => []), // Fallback to empty array if fails
+        getSubmissions().catch(() => []) // Fetch submissions to get true submitters
       ]);
 
       const projectChapters = new Map<number, any>();
       for (const ch of allChapters) {
         if (ch.projectId) projectChapters.set(ch.projectId, ch);
       }
+
+      // Fetch project details for each plan in parallel (guaranteed not to crash since they have a production plan)
+      const projectPromises = plans.map(plan =>
+        getProjectById(plan.projectId)
+          .then(proj => {
+            proj.productionPlan = plan;
+
+            // Map flat fields from backend ProjectResponse to the frontend mangaka object
+            const projAny = proj as any;
+            if (projAny.mangakaId && projAny.mangakaName) {
+              proj.mangaka = {
+                id: projAny.mangakaId,
+                name: projAny.mangakaName
+              };
+            }
+
+            // Override ownerName with the true submitter from the voting round
+            const sub = allSubmissions.find(s => s.title === proj.title && s.status === "APPROVED");
+            if (sub) {
+              const submitterName = sub.submittedByName || sub.submittedBy?.name || sub.submittedBy?.username || (sub.submittedById ? `User #${sub.submittedById}` : undefined);
+              if (submitterName) {
+                proj.ownerName = submitterName;
+              }
+            }
+
+            return proj;
+          })
+          .catch(() => {
+            // Fallback project representation if API fails
+            return {
+              id: plan.projectId,
+              title: plan.projectTitle,
+              productionPlan: plan,
+              status: "ACTIVE",
+            } as ProjectFromApi;
+          })
+      );
+
+      const allProjects = await Promise.all(projectPromises);
 
       // Restore Mangaka from Chapters AND Cache
       try {
@@ -1386,9 +1463,7 @@ function ProductionPlanList() {
           const ch = projectChapters.get(p.id);
 
           if (ch) {
-            if (!p.mangaka && ch.ownerId) {
-              p.mangaka = { id: ch.ownerId, name: ch.ownerName || "Assigned Mangaka" };
-            }
+            // Removed incorrect fallback that set mangaka to chapter owner (Tantou)
             if (ch.chapterStatus) p.projectWorkflowStatus = ch.chapterStatus;
             if (ch.publishDate && p.productionPlan) p.productionPlan.deadline = ch.publishDate;
             (p as any).cachedChapterId = ch.id;
@@ -1401,7 +1476,7 @@ function ProductionPlanList() {
         }
       } catch (e) { }
 
-      // Filter only projects that have a production plan
+      // Filter only projects that have a production plan (should be all since we queried from plans)
       const withPlans = allProjects.filter(p => p.productionPlan != null);
       setProjects(withPlans);
     } catch (err) {
@@ -1466,7 +1541,12 @@ function ProductionPlanList() {
                 >
                   <div style={{ padding: "20px 24px", borderBottom: "1px solid var(--mf-border)" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-                      <div style={{ fontSize: 15, fontWeight: 900, color: "var(--mf-text)", letterSpacing: "-0.01em" }}>{p.title || `Project #${p.id}`}</div>
+                      <div>
+                        <div style={{ fontSize: 15, fontWeight: 900, color: "var(--mf-text)", letterSpacing: "-0.01em" }}>{p.title || `Project #${p.id}`}</div>
+                        <div style={{ fontSize: 11, color: "var(--mf-text-muted)", marginTop: 4 }}>
+                          Submitted by: <span style={{ color: "var(--mf-text-secondary)", fontWeight: 700 }}>{p.ownerName || `Owner #${p.ownerId || "N/A"}`}</span>
+                        </div>
+                      </div>
                       <span style={{ padding: "3px 10px", background: plan.priority === "High" ? "rgba(255,42,122,0.1)" : "var(--mf-cyan-dim)", color: plan.priority === "High" ? "var(--mf-magenta)" : "var(--mf-cyan)", fontSize: 10, fontWeight: 800, borderRadius: 100, border: `1px solid ${plan.priority === "High" ? "rgba(255,42,122,0.3)" : "var(--mf-cyan)35"}` }}>
                         {plan.priority || "Medium"} Priority
                       </span>
@@ -1537,6 +1617,10 @@ function ProductionPlanList() {
         <ProjectDetailsModal
           project={projects.find(p => p.id === viewProjectId)!}
           onClose={() => setViewProjectId(null)}
+          onSuccess={() => {
+            setViewProjectId(null);
+            void loadData(); // Reload to refresh the list and show assignments for the Tantou
+          }}
         />
       )}
     </div>

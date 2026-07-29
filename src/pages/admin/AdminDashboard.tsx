@@ -11,7 +11,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { getAllAccounts, activateAccount, deactivateAccount, type AdminAccount } from "../../services/adminApi";
 import {
-  getChapters, getSubmissions, getSubmissionReviews, getVotes,
+  getChapters, getSubmissions, getWorkflowSubmissions, getSubmissionReviews, getVotes,
   getTasks, getSketchTasks, getSketchPages, getPlannings, getSubTasksForTask,
   type ChapterApi, type SubmissionApi, type SubmissionReviewApi, type VoteApi,
   type TaskApi, type SketchTaskApi, type SketchPageApi, type PlanningApi, type SubTaskApi
@@ -1751,6 +1751,7 @@ export function AdminDashboard() {
       getAllAccounts().catch(() => []),
       getChapters().catch(() => []),
       getSubmissions().catch(() => []),
+      getWorkflowSubmissions().catch(() => []),
       getSubmissionReviews().catch(() => []),
       getVotes().catch(() => []),
       getTasks().catch(() => []),
@@ -1759,7 +1760,7 @@ export function AdminDashboard() {
       getPlannings().catch(() => []),
       getProjects().catch(() => [])
     ])
-      .then(([accounts, chapterRows, subRows, reviewRows, voteRows, taskRows, sketchTaskRows, sketchPageRows, planningRows, projectRows]) => {
+      .then(([accounts, chapterRows, subRows, workflowSubRows, reviewRows, voteRows, taskRows, sketchTaskRows, sketchPageRows, planningRows, projectRows]) => {
         if (cancelled) return;
         const nonAdminAccounts = accounts.filter(a => {
           const hasAdminSystem = a.systemRole?.some(r => r.roleName === "ADMIN" || r.roleName === "MANAGER");
@@ -1791,10 +1792,19 @@ export function AdminDashboard() {
           };
         });
 
+        // Merge titles from workflow submissions into default DTO submissions
+        const mergedSubmissions = subRows.map(sub => {
+          const match = workflowSubRows.find(w => w.id === sub.id);
+          return {
+            ...sub,
+            title: match?.title || sub.title
+          };
+        });
+
         setRegistrations(nonAdminAccounts);
         setOnlineUsers(users);
         setChapters(mappedChapters);
-        setSystemSubmissions(subRows);
+        setSystemSubmissions(mergedSubmissions);
         setSubmissionReviews(reviewRows);
         setVotes(voteRows);
         setTasks(taskRows || []);
